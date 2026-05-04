@@ -24,6 +24,9 @@ final class NotificationRepositioner: ObservableObject {
 
     init() {
         refreshAccessibilityStatus()
+        // If the user grants permission via System Settings (without clicking
+        // the in-app button), poll until we notice and start observing.
+        startPermissionPollIfNeeded()
         // The NotificationCenterUI process can be relaunched; re-bind when it does.
         NSWorkspace.shared.notificationCenter.addObserver(
             forName: NSWorkspace.didLaunchApplicationNotification,
