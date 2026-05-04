@@ -1,0 +1,71 @@
+#!/usr/bin/env bash
+# Build NotificationNanny.app from the SwiftPM sources — no Xcode required.
+#
+# Output: ./build/NotificationNanny.app
+#
+# Usage:
+#   ./build-app.sh           # build only
+#   ./build-app.sh --run     # build, then open the app
+#   ./build-app.sh --install # build, then copy to /Applications
+
+set -euo pipefail
+
+cd "$(dirname "$0")"
+
+APP_NAME="NotificationNanny"
+BUNDLE_ID="com.notificationnanny.app"
+BUILD_DIR="build"
+APP_DIR="${BUILD_DIR}/${APP_NAME}.app"
+CONTENTS="${APP_DIR}/Contents"
+MACOS_DIR="${CONTENTS}/MacOS"
+RESOURCES_DIR="${CONTENTS}/Resources"
+
+# A universal build (--arch arm64 --arch x86_64) needs full Xcode. Default to the
+# host arch so this works with just the Command Line Tools. Set UNIVERSAL=1 to
+# opt in if you have full Xcode.
+SWIFT_BUILD_ARGS=(-c release)
+if [[ "${UNIVERSAL:-0}" == "1" ]]; then
+    SWIFT_BUILD_ARGS+=(--arch arm64 --arch x86_64)
+fi
+
+echo "==> Compiling (release)…"
+swift build "${SWIFT_BUILD_ARGS[@]}"
+
+BINARY_PATH="$(swift build "${SWIFT_BUILD_ARGS[@]}" --show-bin-path)/${APP_NAME}"
+if [[ ! -f "${BINARY_PATH}" ]]; then
+    echo "error: built binary not found at ${BINARY_PATH}" >&2
+    exit 1
+fi
+
+echo "==> Assembling .app bundle…"
+rm -rf "${APP_DIR}"
+mkdir -p "${MACOS_DIR}" "${RESOURCES_DIR}"
+
+cp "${BINARY_PATH}" "${MACOS_DIR}/${APP_NAME}"
+chmod +x "${MACOS_DIR}/${APP_NAME}"
+
+# Info.plist — substitute the templated keys with real values.
+sed \
+    -e "s/\$(EXECUTABLE_NAME)/${APP_NAME}/g" \
+    -e "s/\$(PRODUCT_BUNDLE_IDENTIFIER)/${BUNDLE_ID}/g" \
+    Resources/Info.plist > "${CONTENTS}/Info.plist"
+
+echo "==> Ad-hoc codesigning (required for Accessibility TCC)…"
+codesign --force --deep --sign - \
+    --entitlements Resources/NotificationNanny.entitlements \
+    "${APP_DIR}"
+
+echo "==> Built ${APP_DIR}"
+
+case "${1:-}" in
+    --run)
+        echo "==> Launching…"
+        open "${APP_DIR}"
+        ;;
+    --install)
+        echo "==> Installing to /Applications…"
+        rm -rf "/Applications/${APP_NAME}.app"
+        cp -R "${APP_DIR}" "/Applications/"
+        echo "==> Installed. Launch it from /Applications."
+        ;;
+esac
