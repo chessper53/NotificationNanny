@@ -177,8 +177,10 @@ struct MenuBarContent: View {
     private var offsetSection: some View {
         let placement = settings.placementBinding(for: selectedScreen)
         let visible = selectedScreen.visibleFrame
-        let xRange = -visible.width ... visible.width
-        let yRange = -visible.height ... visible.height
+        let width = Double(visible.width)
+        let height = Double(visible.height)
+        let xRange = -width ... width
+        let yRange = -height ... height
         return VStack(alignment: .leading, spacing: 8) {
             HStack {
                 Text("Fine-tune")
@@ -319,11 +321,21 @@ enum TestNotification {
     static func send() {
         let stamp = Int(Date().timeIntervalSince1970) % 100000
         let script = """
-        display notification "Drag the sliders to reposition me!" with title "NotificationNanny" subtitle "Test #\(stamp)"
+        display notification "Thank you for using NotificationNanny!" with title "NotificationNanny" subtitle "Test #\(stamp)"
         """
         let task = Process()
         task.launchPath = "/usr/bin/osascript"
         task.arguments = ["-e", script]
         try? task.run()
+
+        // Diagnostic probe — log all on-screen windows shortly after the
+        // banner should have appeared, to see which process owns it.
+        NotificationProbe.dumpOnScreenWindows(tag: "before")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+            NotificationProbe.dumpOnScreenWindows(tag: "t+0.4s")
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+            NotificationProbe.dumpOnScreenWindows(tag: "t+1.5s")
+        }
     }
 }

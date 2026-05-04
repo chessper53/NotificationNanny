@@ -1,6 +1,9 @@
 import AppKit
 import ApplicationServices
 import Combine
+import os
+
+private let log = Logger(subsystem: "com.notificationnanny", category: "repositioner")
 
 /// Watches `com.apple.notificationcenterui` for new windows and repositions them
 /// to the user-selected location via the Accessibility API.
@@ -90,32 +93,38 @@ final class NotificationRepositioner: ObservableObject {
 
     func startObserving() {
         guard hasAccessibilityPermission else {
+            log.warning("startObserving: no AX permission, polling")
             startPermissionPollIfNeeded()
             return
         }
 
         teardownObserver()
 
-        guard let runningApp = NSRunningApplication
-            .runningApplications(withBundleIdentifier: "com.apple.notificationcenterui")
-            .first else {
+        let pid = findNotificationProcessPid()
+        guard pid > 0 else {
+            log.error("startObserving: could not find notification process")
             return
         }
-        let pid = runningApp.processIdentifier
+        log.info("startObserving: attaching to pid \(pid)")
         let app = AXUIElementCreateApplication(pid)
 
         var newObserver: AXObserver?
         let createResult = AXObserverCreate(pid, axNotificationCallback, &newObserver)
-        guard createResult == .success, let newObserver else { return }
+        guard createResult == .success, let newObserver else {
+            log.error("AXObserverCreate failed: \(createResult.rawValue)")
+            return
+        }
 
         let selfPtr = Unmanaged.passUnretained(self).toOpaque()
         let notes: [String] = [
             kAXWindowCreatedNotification as String,
             kAXFocusedWindowChangedNotification as String,
             kAXWindowMovedNotification as String,
+            kAXMainWindowChangedNotification as String,
         ]
         for name in notes {
-            AXObserverAddNotification(newObserver, app, name as CFString, selfPtr)
+            let r = AXObserverAddNotification(newObserver, app, name as CFString, selfPtr)
+            log.info("Subscribe \(name, privacy: .public): \(r.rawValue)")
         }
 
         CFRunLoopAddSource(
@@ -129,7 +138,82 @@ final class NotificationRepositioner: ObservableObject {
         self.ncPid = pid
         self.isObserving = true
 
+        log.info("Observer attached, listing current windows…")
+        dumpWindows()
         repositionVisibleWindows()
+    }
+
+    /// Try the historical bundle id first; fall back to scanning the process
+    /// list for `usernotificationsd` or anything else that handles banners on
+    /// modern macOS.
+    private func findNotificationProcessPid() -> pid_t {
+        if let app = NSRunningApplication
+            .runningApplications(withBundleIdentifier: "com.apple.notificationcenterui")
+            .first {
+            log.info("Found NotificationCenter via bundle id, pid \(app.processIdentifier)")
+            return app.processIdentifier
+        }
+        // Walk all running apps looking for anything notification-y.
+        for app in NSWorkspace.shared.runningApplications {
+            guard let bid = app.bundleIdentifier else { continue }
+            if bid.localizedCaseInsensitiveContains("notification") {
+                log.info("Fallback: \(bid), pid \(app.processIdentifier)")
+                return app.processIdentifier
+            }
+        }
+        // Last resort: pgrep usernotificationsd via shell.
+        return pgrepFirst(name: "usernotificationsd")
+    }
+
+    private func pgrepFirst(name: String) -> pid_t {
+        let task = Process()
+        let pipe = Pipe()
+        task.launchPath = "/usr/bin/pgrep"
+        task.arguments = [name]
+        task.standardOutput = pipe
+        task.standardError = Pipe()
+        do {
+            try task.run()
+            task.waitUntilExit()
+            let data = pipe.fileHandleForReading.readDataToEndOfFile()
+            if let str = String(data: data, encoding: .utf8),
+               let line = str.split(separator: "\n").first,
+               let pid = pid_t(line.trimmingCharacters(in: .whitespaces)) {
+                log.info("pgrep \(name): pid \(pid)")
+                return pid
+            }
+        } catch {
+            log.error("pgrep failed: \(error.localizedDescription)")
+        }
+        return 0
+    }
+
+    private func dumpWindows() {
+        guard let ncApp else { return }
+        var value: CFTypeRef?
+        let result = AXUIElementCopyAttributeValue(ncApp, kAXWindowsAttribute as CFString, &value)
+        guard result == .success, let windows = value as? [AXUIElement] else {
+            log.warning("dumpWindows: copy failed (\(result.rawValue))")
+            return
+        }
+        log.info("dumpWindows: \(windows.count) window(s)")
+        for (i, w) in windows.enumerated() {
+            var sizeRef: CFTypeRef?
+            var posRef: CFTypeRef?
+            var titleRef: CFTypeRef?
+            AXUIElementCopyAttributeValue(w, kAXSizeAttribute as CFString, &sizeRef)
+            AXUIElementCopyAttributeValue(w, kAXPositionAttribute as CFString, &posRef)
+            AXUIElementCopyAttributeValue(w, kAXTitleAttribute as CFString, &titleRef)
+            var size = CGSize.zero, pos = CGPoint.zero
+            if let v = sizeRef, CFGetTypeID(v) == AXValueGetTypeID() {
+                AXValueGetValue(v as! AXValue, .cgSize, &size)
+            }
+            if let v = posRef, CFGetTypeID(v) == AXValueGetTypeID() {
+                AXValueGetValue(v as! AXValue, .cgPoint, &pos)
+            }
+            let title = (titleRef as? String) ?? ""
+            log.info("  [\(i)] '\(title)' size=\(size.width)x\(size.height) pos=(\(pos.x),\(pos.y))")
+        }
     }
 
     private func teardownObserver() {
@@ -149,6 +233,7 @@ final class NotificationRepositioner: ObservableObject {
     // MARK: - Repositioning
 
     fileprivate func handleAXEvent(element: AXUIElement, notification: String) {
+        log.info("AX event: \(notification, privacy: .public)")
         // The event element may be the app or the window; try repositioning both.
         repositionWindow(element)
         repositionVisibleWindows()
@@ -193,7 +278,8 @@ final class NotificationRepositioner: ObservableObject {
         )
 
         guard let positionValue = AXValueCreate(.cgPoint, &newOrigin) else { return }
-        AXUIElementSetAttributeValue(window, kAXPositionAttribute as CFString, positionValue)
+        let r = AXUIElementSetAttributeValue(window, kAXPositionAttribute as CFString, positionValue)
+        log.info("Set position size=\(size.width)x\(size.height) → (\(newOrigin.x),\(newOrigin.y)) result=\(r.rawValue)")
     }
 
     /// Convert an AX point (top-left of primary screen) to NSScreen coords
