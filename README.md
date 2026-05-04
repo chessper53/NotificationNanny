@@ -1,5 +1,5 @@
 # NotificationNanny
-A lightweight macOS menu-bar app that lets you reposition it to any location on your Desktop(s) instead of the default top-right.
+A macOS menu-bar app that lets you reposition it to any location on your Desktop(s) instead of the default top-right.
 
 ![macOS 13+](https://img.shields.io/badge/macOS-13%2B-blue) ![Swift](https://img.shields.io/badge/Swift-5.9-orange)
 
@@ -7,7 +7,7 @@ A lightweight macOS menu-bar app that lets you reposition it to any location on 
 
 ## Requirements
 
-- macOS 13 Ventura or later
+- macOS 13 Ventura or later (Verified mainly on macOS Tahoe 26, but should work on past versions too)
 - **Accessibility permission** (prompted on first launch)
 
 ---
@@ -18,18 +18,18 @@ A lightweight macOS menu-bar app that lets you reposition it to any location on 
 brew install --cask notificationnanny
 ```
 
-On first launch a bell icon (🔔) appears in your menu bar. Click it, choose **Grant Accessibility Permission…**, and enable NotificationNanny under **System Settings → Privacy & Security → Accessibility**. Then pick a position from the menu — done.
+On first launch a bell icon appears in your menu bar. Click it, choose **Grant Accessibility Permission…**, and enable NotificationNanny under **System Settings → Privacy & Security → Accessibility**. Then pick a position from the menu — done.
 
 To test it:
 ```sh
 osascript -e 'display notification "It worked!" with title "NotificationNanny"'
 ```
-
+Or you can trigger one in the App itself
 ---
 
 ## How it works (and the caveats)
 
-> **This is a deliberate workaround, not a supported feature.** macOS exposes no public API for moving notification banners. Everything below relies on undocumented behaviour inside `NotificationCenter.app` (`com.apple.notificationcenterui`). Apple can — and occasionally does — break this without notice. Use it knowing that a future macOS update may render it ineffective.
+> **This is a deliberate workaround, not a supported feature.** macOS exposes no public API for moving notification banners. Everything below relies on undocumented behaviour inside `NotificationCenter.app` (`com.apple.notificationcenterui`). Apple can, and occasionally does break this without notice.
 
 With that said, here's what NotificationNanny actually does:
 
@@ -56,4 +56,4 @@ NotificationNanny does not collect, transmit, or store any personal data. The Ac
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+MIT see [LICENSE](LICENSE).
