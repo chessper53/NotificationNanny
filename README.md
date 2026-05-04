@@ -13,7 +13,17 @@ A lightweight macOS menu-bar app that lets you reposition it to any location on 
 ---
 
 ## Installation and usage
-Later Homebrew support is planned
+
+```sh
+brew install --cask notificationnanny
+```
+
+On first launch a bell icon (🔔) appears in your menu bar. Click it, choose **Grant Accessibility Permission…**, and enable NotificationNanny under **System Settings → Privacy & Security → Accessibility**. Then pick a position from the menu — done.
+
+To test it:
+```sh
+osascript -e 'display notification "It worked!" with title "NotificationNanny"'
+```
 
 ---
 
