@@ -1,9 +1,15 @@
 import SwiftUI
 import AppKit
 
+extension Color {
+    /// Brand accent — purple (#895C9B).
+    static let nannyAccent = Color(red: 0x89 / 255, green: 0x5C / 255, blue: 0x9B / 255)
+}
+
 struct MenuBarContent: View {
     @EnvironmentObject var settings: AppSettings
     @EnvironmentObject var repositioner: NotificationRepositioner
+    @EnvironmentObject var launchAtLogin: LaunchAtLogin
 
     @State private var selectedDisplayID: CGDirectDisplayID =
         NSScreen.main?.displayID ?? NSScreen.screens.first?.displayID ?? 0
@@ -33,7 +39,16 @@ struct MenuBarContent: View {
         }
         .padding(16)
         .frame(width: 320)
-        .onAppear { syncSelectedDisplay() }
+        .tint(Color.nannyAccent)
+        .onAppear {
+            syncSelectedDisplay()
+            // Re-check permission every time the popover opens so granting in
+            // System Settings is reflected without needing to restart.
+            repositioner.refreshAccessibilityStatus()
+            if repositioner.hasAccessibilityPermission, !repositioner.isObserving {
+                repositioner.startObserving()
+            }
+        }
     }
 
     private func syncSelectedDisplay() {
@@ -96,42 +111,74 @@ struct MenuBarContent: View {
         }
     }
 
-    // MARK: - Position grid
+    // MARK: - Position grid (matches the screen's aspect ratio)
 
     private var positionSection: some View {
         let placement = settings.placementBinding(for: selectedScreen)
+        let visible = selectedScreen.visibleFrame
+        let aspect = visible.width / max(visible.height, 1)
+        let gridWidth: CGFloat = 288    // popover (320) − horizontal padding (16+16)
+        let gridHeight: CGFloat = min(200, max(80, gridWidth / aspect))
+        let spacing: CGFloat = 6
+        let cellWidth = (gridWidth - spacing * 2) / 3
+        let cellHeight = (gridHeight - spacing * 2) / 3
+
         return VStack(alignment: .leading, spacing: 6) {
             HStack {
                 Text("Position")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 Spacer()
+                Text("\(Int(visible.width)) × \(Int(visible.height))")
+                    .font(.caption2.monospacedDigit())
+                    .foregroundStyle(.tertiary)
                 if screens.count > 1 {
-                    Text(selectedScreen.nannyDisplayName)
+                    Text("· \(selectedScreen.nannyDisplayName)")
                         .font(.caption2)
                         .foregroundStyle(.tertiary)
                 }
             }
-            LazyVGrid(
-                columns: Array(repeating: GridItem(.flexible(), spacing: 6), count: 3),
-                spacing: 6
-            ) {
-                ForEach(NotificationPosition.allCases) { pos in
-                    PositionTile(
-                        position: pos,
-                        isSelected: placement.wrappedValue.position == pos
-                    ) {
-                        placement.wrappedValue.position = pos
+            VStack(spacing: spacing) {
+                ForEach(0..<3, id: \.self) { row in
+                    HStack(spacing: spacing) {
+                        ForEach(0..<3, id: \.self) { col in
+                            let pos = positionFor(row: row, col: col)
+                            PositionTile(
+                                position: pos,
+                                isSelected: placement.wrappedValue.position == pos,
+                                size: CGSize(width: cellWidth, height: cellHeight)
+                            ) {
+                                placement.wrappedValue.position = pos
+                            }
+                        }
                     }
                 }
             }
+            .frame(width: gridWidth, height: gridHeight)
         }
     }
 
-    // MARK: - Offset sliders
+    private func positionFor(row: Int, col: Int) -> NotificationPosition {
+        switch (row, col) {
+        case (0, 0): return .topLeft
+        case (0, 1): return .topCenter
+        case (0, 2): return .topRight
+        case (1, 0): return .middleLeft
+        case (1, 1): return .middleCenter
+        case (1, 2): return .middleRight
+        case (2, 0): return .bottomLeft
+        case (2, 1): return .bottomCenter
+        default:     return .bottomRight
+        }
+    }
+
+    // MARK: - Offset sliders (range = full screen dimensions)
 
     private var offsetSection: some View {
         let placement = settings.placementBinding(for: selectedScreen)
+        let visible = selectedScreen.visibleFrame
+        let xRange = -visible.width ... visible.width
+        let yRange = -visible.height ... visible.height
         return VStack(alignment: .leading, spacing: 8) {
             HStack {
                 Text("Fine-tune")
@@ -147,35 +194,35 @@ struct MenuBarContent: View {
                 .disabled(placement.wrappedValue.xOffset == 0
                           && placement.wrappedValue.yOffset == 0)
             }
-            sliderRow(
-                title: "Horizontal",
-                value: placement.xOffset,
-                range: -400...400,
-                hint: placement.wrappedValue.xOffset >= 0 ? "right" : "left"
-            )
-            sliderRow(
-                title: "Vertical",
-                value: placement.yOffset,
-                range: -400...400,
-                hint: placement.wrappedValue.yOffset >= 0 ? "down" : "up"
-            )
+            sliderRow(title: "Horizontal", value: placement.xOffset, range: xRange)
+            sliderRow(title: "Vertical",   value: placement.yOffset, range: yRange)
         }
     }
 
     private func sliderRow(title: String,
                            value: Binding<Double>,
-                           range: ClosedRange<Double>,
-                           hint: String) -> some View {
+                           range: ClosedRange<Double>) -> some View {
         VStack(alignment: .leading, spacing: 2) {
-            HStack {
-                Text(title).font(.caption2)
-                Spacer()
-                Text("\(Int(value.wrappedValue)) px \(hint)")
-                    .font(.caption2.monospacedDigit())
+            Text(title)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+            HStack(spacing: 8) {
+                Slider(value: value, in: range)
+                    .controlSize(.mini)
+                TextField(
+                    "0",
+                    value: value,
+                    format: .number.precision(.fractionLength(0))
+                )
+                .textFieldStyle(.roundedBorder)
+                .controlSize(.mini)
+                .multilineTextAlignment(.trailing)
+                .frame(width: 56)
+                .font(.caption2.monospacedDigit())
+                Text("px")
+                    .font(.caption2)
                     .foregroundStyle(.secondary)
             }
-            Slider(value: value, in: range)
-                .controlSize(.mini)
         }
     }
 
@@ -203,6 +250,20 @@ struct MenuBarContent: View {
                 .controlSize(.small)
             }
 
+            Toggle("Launch at login", isOn: Binding(
+                get: { launchAtLogin.isEnabled },
+                set: { launchAtLogin.setEnabled($0) }
+            ))
+            .toggleStyle(.checkbox)
+            .controlSize(.small)
+            .font(.caption)
+
+            if let error = launchAtLogin.lastError {
+                Text(error)
+                    .font(.caption2)
+                    .foregroundStyle(.red)
+            }
+
             HStack {
                 Spacer()
                 Button("Quit") {
@@ -221,6 +282,7 @@ struct MenuBarContent: View {
 private struct PositionTile: View {
     let position: NotificationPosition
     let isSelected: Bool
+    let size: CGSize
     let action: () -> Void
 
     var body: some View {
@@ -228,19 +290,20 @@ private struct PositionTile: View {
             ZStack(alignment: position.alignment) {
                 RoundedRectangle(cornerRadius: 6, style: .continuous)
                     .fill(isSelected
-                          ? Color.accentColor.opacity(0.18)
+                          ? Color.nannyAccent.opacity(0.18)
                           : Color.secondary.opacity(0.08))
                     .overlay(
                         RoundedRectangle(cornerRadius: 6, style: .continuous)
-                            .stroke(isSelected ? Color.accentColor : Color.secondary.opacity(0.25),
+                            .stroke(isSelected ? Color.nannyAccent : Color.secondary.opacity(0.25),
                                     lineWidth: isSelected ? 1.5 : 1)
                     )
                 Capsule()
-                    .fill(isSelected ? Color.accentColor : Color.secondary)
-                    .frame(width: 18, height: 5)
+                    .fill(isSelected ? Color.nannyAccent : Color.secondary)
+                    .frame(width: min(20, size.width * 0.4),
+                           height: max(4, min(6, size.height * 0.18)))
                     .padding(5)
             }
-            .frame(height: 38)
+            .frame(width: size.width, height: size.height)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
