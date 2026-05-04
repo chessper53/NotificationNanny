@@ -111,18 +111,10 @@ struct MenuBarContent: View {
         }
     }
 
-    // MARK: - Position grid (matches the screen's aspect ratio)
+    // MARK: - Drag-to-position tile
 
     private var positionSection: some View {
-        let placement = settings.placementBinding(for: selectedScreen)
         let visible = selectedScreen.visibleFrame
-        let aspect = visible.width / max(visible.height, 1)
-        let gridWidth: CGFloat = 288    // popover (320) − horizontal padding (16+16)
-        let gridHeight: CGFloat = min(200, max(80, gridWidth / aspect))
-        let spacing: CGFloat = 6
-        let cellWidth = (gridWidth - spacing * 2) / 3
-        let cellHeight = (gridHeight - spacing * 2) / 3
-
         return VStack(alignment: .leading, spacing: 6) {
             HStack {
                 Text("Position")
@@ -138,37 +130,10 @@ struct MenuBarContent: View {
                         .foregroundStyle(.tertiary)
                 }
             }
-            VStack(spacing: spacing) {
-                ForEach(0..<3, id: \.self) { row in
-                    HStack(spacing: spacing) {
-                        ForEach(0..<3, id: \.self) { col in
-                            let pos = positionFor(row: row, col: col)
-                            PositionTile(
-                                position: pos,
-                                isSelected: placement.wrappedValue.position == pos,
-                                size: CGSize(width: cellWidth, height: cellHeight)
-                            ) {
-                                placement.wrappedValue.position = pos
-                            }
-                        }
-                    }
-                }
-            }
-            .frame(width: gridWidth, height: gridHeight)
-        }
-    }
-
-    private func positionFor(row: Int, col: Int) -> NotificationPosition {
-        switch (row, col) {
-        case (0, 0): return .topLeft
-        case (0, 1): return .topCenter
-        case (0, 2): return .topRight
-        case (1, 0): return .middleLeft
-        case (1, 1): return .middleCenter
-        case (1, 2): return .middleRight
-        case (2, 0): return .bottomLeft
-        case (2, 1): return .bottomCenter
-        default:     return .bottomRight
+            DraggableScreenTile(
+                screen: selectedScreen,
+                placement: settings.placementBinding(for: selectedScreen)
+            )
         }
     }
 
@@ -279,37 +244,180 @@ struct MenuBarContent: View {
     }
 }
 
-// MARK: - Position tile
+// MARK: - Drag-to-position tile
 
-private struct PositionTile: View {
-    let position: NotificationPosition
-    let isSelected: Bool
-    let size: CGSize
-    let action: () -> Void
+/// A miniature screen that the user can drag a "banner" around inside.
+/// The banner's centre maps to the position (anchor + offsets) the
+/// repositioner uses for real banners.
+private struct DraggableScreenTile: View {
+    let screen: NSScreen
+    @Binding var placement: ScreenPlacement
+
+    /// Banner geometry in real screen pixels — kept in sync with what
+    /// `NotificationRepositioner` assumes.
+    private static let realBannerSize = CGSize(width: 372, height: 100)
 
     var body: some View {
-        Button(action: action) {
-            ZStack(alignment: position.alignment) {
-                RoundedRectangle(cornerRadius: 6, style: .continuous)
-                    .fill(isSelected
-                          ? Color.nannyAccent.opacity(0.18)
-                          : Color.secondary.opacity(0.08))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 6, style: .continuous)
-                            .stroke(isSelected ? Color.nannyAccent : Color.secondary.opacity(0.25),
-                                    lineWidth: isSelected ? 1.5 : 1)
-                    )
-                Capsule()
-                    .fill(isSelected ? Color.nannyAccent : Color.secondary)
-                    .frame(width: min(20, size.width * 0.4),
-                           height: max(4, min(6, size.height * 0.18)))
-                    .padding(5)
-            }
-            .frame(width: size.width, height: size.height)
-            .contentShape(Rectangle())
+        let visible = screen.visibleFrame
+        let aspect = visible.width / max(visible.height, 1)
+        let tileWidth: CGFloat = 288
+        let tileHeight: CGFloat = min(220, max(100, tileWidth / aspect))
+        let scale = tileWidth / visible.width
+        let bannerWidth = max(36, Self.realBannerSize.width * scale)
+        let bannerHeight = max(14, Self.realBannerSize.height * scale)
+
+        let bannerCenterReal = bannerCenterInVisibleCoords(visible: visible)
+        let bannerCenterTile = CGPoint(
+            x: (bannerCenterReal.x - visible.minX) * scale,
+            y: (bannerCenterReal.y - visible.minY) * scale
+        )
+
+        return ZStack(alignment: .topLeading) {
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(Color.secondary.opacity(0.08))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .stroke(Color.secondary.opacity(0.25), lineWidth: 1)
+                )
+
+            // Mini menu-bar hint at the top.
+            Rectangle()
+                .fill(Color.secondary.opacity(0.12))
+                .frame(height: 6)
+                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+
+            BannerChip(width: bannerWidth, height: bannerHeight)
+                .position(x: bannerCenterTile.x, y: bannerCenterTile.y)
+                .gesture(
+                    DragGesture(minimumDistance: 0, coordinateSpace: .local)
+                        .onChanged { value in
+                            updatePlacement(
+                                fromTilePoint: value.location,
+                                tileSize: CGSize(width: tileWidth, height: tileHeight),
+                                visible: visible
+                            )
+                        }
+                )
         }
-        .buttonStyle(.plain)
-        .help(position.label)
+        .frame(width: tileWidth, height: tileHeight)
+        .contentShape(Rectangle())
+        .onTapGesture { tap in
+            updatePlacement(
+                fromTilePoint: tap,
+                tileSize: CGSize(width: tileWidth, height: tileHeight),
+                visible: visible
+            )
+        }
+    }
+
+    /// Compute the banner centre in NSScreen-visibleFrame coords given the
+    /// current placement (anchor + offsets).
+    private func bannerCenterInVisibleCoords(visible: CGRect) -> CGPoint {
+        let banner = Self.realBannerSize
+        // Anchor → banner top-left in visible-frame coords (y down inside the rect).
+        let x: CGFloat
+        switch placement.position {
+        case .topLeft, .middleLeft, .bottomLeft:
+            x = 0
+        case .topCenter, .middleCenter, .bottomCenter:
+            x = (visible.width - banner.width) / 2
+        case .topRight, .middleRight, .bottomRight:
+            x = visible.width - banner.width
+        }
+        let y: CGFloat
+        switch placement.position {
+        case .topLeft, .topCenter, .topRight:
+            y = 0
+        case .middleLeft, .middleCenter, .middleRight:
+            y = (visible.height - banner.height) / 2
+        case .bottomLeft, .bottomCenter, .bottomRight:
+            y = visible.height - banner.height
+        }
+        let cx = visible.minX + x + banner.width / 2 + CGFloat(placement.xOffset)
+        let cy = visible.minY + y + banner.height / 2 + CGFloat(placement.yOffset)
+        return CGPoint(x: cx, y: cy)
+    }
+
+    /// Convert a tile-local tap/drag point into a placement.
+    private func updatePlacement(fromTilePoint point: CGPoint,
+                                 tileSize: CGSize,
+                                 visible: CGRect) {
+        let scale = tileSize.width / visible.width
+        let banner = Self.realBannerSize
+
+        // Banner centre in visible-frame coords, clamped so the banner stays
+        // fully on-screen.
+        let centreX = max(banner.width / 2,
+                          min(visible.width - banner.width / 2, point.x / scale))
+        let centreY = max(banner.height / 2,
+                          min(visible.height - banner.height / 2, point.y / scale))
+
+        // Re-anchor to the nearest of the 9 grid points so symbolic positions
+        // (top-right, etc.) stay meaningful, then encode the residual as an offset.
+        let bandX: AnchorBand
+        switch centreX {
+        case ..<(visible.width / 3): bandX = .start
+        case (visible.width * 2 / 3)...: bandX = .end
+        default: bandX = .middle
+        }
+        let bandY: AnchorBand
+        switch centreY {
+        case ..<(visible.height / 3): bandY = .start
+        case (visible.height * 2 / 3)...: bandY = .end
+        default: bandY = .middle
+        }
+
+        let anchor = position(for: bandX, bandY)
+
+        // Anchor reference point (banner top-left in visible coords).
+        let refX: CGFloat
+        switch bandX {
+        case .start:  refX = banner.width / 2
+        case .middle: refX = visible.width / 2
+        case .end:    refX = visible.width - banner.width / 2
+        }
+        let refY: CGFloat
+        switch bandY {
+        case .start:  refY = banner.height / 2
+        case .middle: refY = visible.height / 2
+        case .end:    refY = visible.height - banner.height / 2
+        }
+
+        placement.position = anchor
+        placement.xOffset = Double(centreX - refX)
+        placement.yOffset = Double(centreY - refY)
+    }
+
+    private enum AnchorBand { case start, middle, end }
+
+    private func position(for x: AnchorBand, _ y: AnchorBand) -> NotificationPosition {
+        switch (y, x) {
+        case (.start,  .start):  return .topLeft
+        case (.start,  .middle): return .topCenter
+        case (.start,  .end):    return .topRight
+        case (.middle, .start):  return .middleLeft
+        case (.middle, .middle): return .middleCenter
+        case (.middle, .end):    return .middleRight
+        case (.end,    .start):  return .bottomLeft
+        case (.end,    .middle): return .bottomCenter
+        case (.end,    .end):    return .bottomRight
+        }
+    }
+}
+
+private struct BannerChip: View {
+    let width: CGFloat
+    let height: CGFloat
+
+    var body: some View {
+        RoundedRectangle(cornerRadius: 4, style: .continuous)
+            .fill(Color.nannyAccent.opacity(0.85))
+            .overlay(
+                RoundedRectangle(cornerRadius: 4, style: .continuous)
+                    .stroke(Color.nannyAccent, lineWidth: 1)
+            )
+            .frame(width: width, height: height)
+            .shadow(color: .black.opacity(0.2), radius: 2, y: 1)
     }
 }
 
@@ -327,15 +435,5 @@ enum TestNotification {
         task.launchPath = "/usr/bin/osascript"
         task.arguments = ["-e", script]
         try? task.run()
-
-        // Diagnostic probe — log all on-screen windows shortly after the
-        // banner should have appeared, to see which process owns it.
-        NotificationProbe.dumpOnScreenWindows(tag: "before")
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
-            NotificationProbe.dumpOnScreenWindows(tag: "t+0.4s")
-        }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
-            NotificationProbe.dumpOnScreenWindows(tag: "t+1.5s")
-        }
     }
 }

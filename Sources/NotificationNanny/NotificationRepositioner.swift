@@ -48,12 +48,12 @@ final class NotificationRepositioner: ObservableObject {
         guard self.settings == nil else { return }
         self.settings = settings
 
-        // Re-apply on every settings change. Throttle so dragging a slider doesn't
-        // hammer the AX API at full screen-refresh rate.
+        // Re-apply on every settings change. Burst over ~2.5s because macOS
+        // can snap the banner back to its default position after we move it.
         settings.objectWillChange
             .throttle(for: .milliseconds(16), scheduler: DispatchQueue.main, latest: true)
             .sink { [weak self] _ in
-                self?.repositionVisibleWindows()
+                self?.burstReposition()
             }
             .store(in: &cancellables)
 
@@ -234,9 +234,21 @@ final class NotificationRepositioner: ObservableObject {
 
     fileprivate func handleAXEvent(element: AXUIElement, notification: String) {
         log.info("AX event: \(notification, privacy: .public)")
-        // The event element may be the app or the window; try repositioning both.
         repositionWindow(element)
+        burstReposition()
+    }
+
+    /// Re-apply over ~2.5s because macOS may snap the banner back after our move.
+    private func burstReposition() {
         repositionVisibleWindows()
+        let delays: [TimeInterval] = [0.03, 0.06, 0.1, 0.2, 0.4, 0.8, 1.5, 2.5]
+        for delay in delays {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+                Task { @MainActor in
+                    self?.repositionVisibleWindows()
+                }
+            }
+        }
     }
 
     private func repositionVisibleWindows() {
@@ -249,37 +261,81 @@ final class NotificationRepositioner: ObservableObject {
         }
     }
 
+    /// Default banner geometry inside the NotificationCenter overlay window.
+    /// On Tahoe the "window" is screen-sized and the banner is drawn in its
+    /// top-right corner — to put the banner where the user wants we have to
+    /// translate the whole overlay by `bannerTarget − bannerOffsetInOverlay`.
+    private static let bannerSize = CGSize(width: 372, height: 100)
+    private static let bannerInsetFromTopRight = CGPoint(x: 14, y: 14)
+
     private func repositionWindow(_ window: AXUIElement) {
         guard let settings, settings.isEnabled else { return }
 
-        var sizeRef: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(window, kAXSizeAttribute as CFString, &sizeRef) == .success,
-              let sizeValue = sizeRef, CFGetTypeID(sizeValue) == AXValueGetTypeID() else { return }
         var size = CGSize.zero
-        AXValueGetValue(sizeValue as! AXValue, .cgSize, &size)
-        guard size.width > 0, size.height > 0 else { return }
+        var sizeRef: CFTypeRef?
+        if AXUIElementCopyAttributeValue(window, kAXSizeAttribute as CFString, &sizeRef) == .success,
+           let v = sizeRef, CFGetTypeID(v) == AXValueGetTypeID() {
+            AXValueGetValue(v as! AXValue, .cgSize, &size)
+        }
 
-        // Figure out which screen the notification currently lives on so we
-        // reposition relative to the right display in a multi-monitor setup.
-        var currentAxPoint = CGPoint.zero
+        var oldPos = CGPoint.zero
         var posRef: CFTypeRef?
         if AXUIElementCopyAttributeValue(window, kAXPositionAttribute as CFString, &posRef) == .success,
-           let posValue = posRef, CFGetTypeID(posValue) == AXValueGetTypeID() {
-            AXValueGetValue(posValue as! AXValue, .cgPoint, &currentAxPoint)
+           let v = posRef, CFGetTypeID(v) == AXValueGetTypeID() {
+            AXValueGetValue(v as! AXValue, .cgPoint, &oldPos)
         }
-        guard let screen = screenContainingAxPoint(currentAxPoint) ?? NSScreen.main else { return }
+
+        guard let screen = screenContainingAxPoint(oldPos) ?? NSScreen.main else { return }
         let placement = settings.placement(for: screen)
 
-        var newOrigin = placement.position.axOrigin(
-            forWindowSize: size,
+        // Where we want the BANNER to end up.
+        let bannerTarget = placement.position.axOrigin(
+            forWindowSize: Self.bannerSize,
             screen: screen,
             xOffset: CGFloat(placement.xOffset),
             yOffset: CGFloat(placement.yOffset)
         )
 
+        // If the AX "window" we're moving is actually the screen-sized
+        // overlay, translate so the banner inside lands on bannerTarget.
+        let isOverlay = size.width > 700 || size.height > 400
+        let bannerOffsetInWindow: CGPoint
+        if isOverlay {
+            bannerOffsetInWindow = CGPoint(
+                x: size.width - Self.bannerInsetFromTopRight.x - Self.bannerSize.width,
+                y: Self.bannerInsetFromTopRight.y
+            )
+        } else {
+            // Standalone banner window — origin already corresponds to banner.
+            bannerOffsetInWindow = .zero
+        }
+
+        var newOrigin = CGPoint(
+            x: bannerTarget.x - bannerOffsetInWindow.x,
+            y: bannerTarget.y - bannerOffsetInWindow.y
+        )
+
         guard let positionValue = AXValueCreate(.cgPoint, &newOrigin) else { return }
-        let r = AXUIElementSetAttributeValue(window, kAXPositionAttribute as CFString, positionValue)
-        log.info("Set position size=\(size.width)x\(size.height) → (\(newOrigin.x),\(newOrigin.y)) result=\(r.rawValue)")
+        let setResult = AXUIElementSetAttributeValue(window, kAXPositionAttribute as CFString, positionValue)
+
+        var afterPos = CGPoint.zero
+        var afterRef: CFTypeRef?
+        if AXUIElementCopyAttributeValue(window, kAXPositionAttribute as CFString, &afterRef) == .success,
+           let v = afterRef, CFGetTypeID(v) == AXValueGetTypeID() {
+            AXValueGetValue(v as! AXValue, .cgPoint, &afterPos)
+        }
+
+        let summary = String(
+            format: "%@ size=%.0fx%.0f before=(%.0f,%.0f) banner→(%.0f,%.0f) winMove=(%.0f,%.0f) after=(%.0f,%.0f) r=%d",
+            isOverlay ? "OVERLAY" : "BANNER",
+            size.width, size.height,
+            oldPos.x, oldPos.y,
+            bannerTarget.x, bannerTarget.y,
+            newOrigin.x, newOrigin.y,
+            afterPos.x, afterPos.y,
+            Int(setResult.rawValue)
+        )
+        log.info("set \(summary, privacy: .public)")
     }
 
     /// Convert an AX point (top-left of primary screen) to NSScreen coords
