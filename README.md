@@ -2,6 +2,8 @@
 
 A macOS menu-bar app that lets you reposition notification banners to any location on any of your displays — instead of being stuck in the top-right corner.
 
+I work full time, but I'm happy to look at any issues that come up — feel free to open one!
+
 ![macOS 13+](https://img.shields.io/badge/macOS-13%2B-blue) ![Swift](https://img.shields.io/badge/Swift-5.9-orange)
 
 ---
@@ -19,12 +21,7 @@ A bell icon appears in your menu bar. On first launch, click **Grant Accessibili
 
 ## Usage
 
-Click the menu bar bell to open the panel:
-
-- **Drag** the purple chip around the screen tile to set your preferred position
-- **Fine-tune** with the horizontal/vertical sliders for pixel-perfect placement
-- **Send Test Notification** fires a banner so you can see exactly where it lands
-- Settings are remembered **per display** — different positions on different screens
+Click the menu bar bell to open the panel. Drag the purple chip around the screen tile to set your preferred position, or use the horizontal and vertical sliders for pixel-perfect placement. Hit **Send Test Notification** to fire a banner and see exactly where it lands. Settings are remembered per display, so you can have different positions on different screens.
 
 ---
 
@@ -32,18 +29,11 @@ Click the menu bar bell to open the panel:
 
 > **This is a deliberate workaround, not a supported feature.** macOS exposes no public API for moving notification banners. Everything below relies on undocumented behaviour inside `com.apple.notificationcenterui`. Apple can break this without notice.
 
-1. Requests **Accessibility permission** from the user.
-2. Uses `AXUIElement` to attach to the `com.apple.notificationcenterui` process.
-3. Subscribes to `kAXWindowCreatedNotification` to detect new banners.
-4. Sets `kAXPositionAttribute` on each window to move it to the chosen location.
+NotificationNanny requests Accessibility permission, then uses `AXUIElement` to attach to the `com.apple.notificationcenterui` process. It subscribes to `kAXWindowCreatedNotification` to detect new banners and sets `kAXPositionAttribute` on each window to move it to the chosen location.
 
-Because cross-process Accessibility access is incompatible with the App Sandbox, the sandbox is disabled. The app is ad-hoc signed with a custom entitlements file so macOS can persistently remember the Accessibility permission grant.
+Because cross-process Accessibility access is incompatible with the App Sandbox, the sandbox is disabled. The app is ad-hoc signed with a custom entitlements file so macOS can persistently remember the permission grant.
 
-**Known limitations:**
-
-- The banner briefly appears at its default position before jumping — this is an unavoidable race with the system animation.
-- Validated on macOS Tahoe 26. Behaviour on older or newer releases may vary — open an issue if something breaks.
-- Any macOS update that restructures `NotificationCenter.app` internals could silently break repositioning.
+The banner briefly appears at its default position before jumping — this is an unavoidable race with the system animation. The app has been validated on macOS Tahoe 26; any macOS update that restructures `NotificationCenter.app` internals could silently break repositioning.
 
 ---
 
