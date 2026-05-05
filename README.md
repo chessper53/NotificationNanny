@@ -1,8 +1,8 @@
 # NotificationNanny
 
-A macOS menu-bar app that lets you reposition notification banners to any location on any of your displays — instead of being stuck in the top-right corner.
+A macOS menu-bar app that lets you reposition notification banners to any location on any of your displays, instead of being stuck in the top-right corner.
 
-I work full time, but I'm happy to look at any issues that come up — feel free to open one!
+I work full time, but I'm happy to look at any issues that come up. Feel free to open one!
 
 ![macOS 13+](https://img.shields.io/badge/macOS-13%2B-blue) ![Swift](https://img.shields.io/badge/Swift-5.9-orange)
 
@@ -33,13 +33,13 @@ NotificationNanny requests Accessibility permission, then uses `AXUIElement` to 
 
 Because cross-process Accessibility access is incompatible with the App Sandbox, the sandbox is disabled. The app is ad-hoc signed with a custom entitlements file so macOS can persistently remember the permission grant.
 
-The banner briefly appears at its default position before jumping — this is an unavoidable race with the system animation. The app has been validated on macOS Tahoe 26; any macOS update that restructures `NotificationCenter.app` internals could silently break repositioning.
+The banner briefly appears at its default position before jumping (an unavoidable race with the system animation). The app has been validated on macOS Tahoe 26; any macOS update that restructures `NotificationCenter.app` internals could silently break repositioning.
 
 ---
 
 ## Building from source
 
-No Xcode required — just the Command Line Tools:
+No Xcode required, just the Command Line Tools:
 
 ```sh
 git clone https://github.com/chessper53/NotificationNanny.git
@@ -57,4 +57,4 @@ NotificationNanny does not collect, transmit, or store any personal data. The Ac
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+MIT. See [LICENSE](LICENSE).
