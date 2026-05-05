@@ -1,12 +1,11 @@
 cask "notificationnanny" do
   version "0.1.0"
-  sha256 :no_check  # replace with the SHA256 of NotificationNanny-<version>.zip after release
+  sha256 "b4922ef85e1c40fae6d05ff1903f73d4d528a557095621b363b8fb140bc494f7"
 
-  # Update GITHUB_USER once you publish the repo.
-  url "https://github.com/GITHUB_USER/NotificationNanny/releases/download/v#{version}/NotificationNanny-#{version}.zip"
+  url "https://github.com/chessper53/NotificationNanny/releases/download/v#{version}/NotificationNanny-#{version}.zip"
   name "NotificationNanny"
   desc "Reposition macOS notification banners to any corner of any display"
-  homepage "https://github.com/GITHUB_USER/NotificationNanny"
+  homepage "https://github.com/chessper53/NotificationNanny"
 
   depends_on macos: ">= :ventura"
 
@@ -14,7 +13,7 @@ cask "notificationnanny" do
 
   zap trash: [
     "~/Library/Preferences/com.notificationnanny.app.plist",
-    "~/Library/Application Scripts/com.notificationnanny.app",
+    "~/Library/Application Support/com.notificationnanny.app",
     "~/Library/Containers/com.notificationnanny.app",
   ]
 end
