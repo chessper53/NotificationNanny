@@ -1,50 +1,61 @@
 # NotificationNanny
-A macOS menu-bar app that lets you reposition it to any location on your Desktop(s) instead of the default top-right.
+
+A macOS menu-bar app that lets you reposition notification banners to any location on any of your displays — instead of being stuck in the top-right corner.
 
 ![macOS 13+](https://img.shields.io/badge/macOS-13%2B-blue) ![Swift](https://img.shields.io/badge/Swift-5.9-orange)
 
 ---
 
-## Requirements
-
-- macOS 13 Ventura or later (Verified mainly on macOS Tahoe 26, but should work on past versions too)
-- **Accessibility permission** (prompted on first launch)
-
----
-
-## Installation and usage
+## Installation
 
 ```sh
+brew tap chessper53/notificationnanny https://github.com/chessper53/NotificationNanny
 brew install --cask notificationnanny
 ```
 
-On first launch a bell icon appears in your menu bar. Click it, choose **Grant Accessibility Permission…**, and enable NotificationNanny under **System Settings → Privacy & Security → Accessibility**. Then pick a position from the menu — done.
+A bell icon appears in your menu bar. On first launch, click **Grant Accessibility Permission…** and enable NotificationNanny under **System Settings → Privacy & Security → Accessibility**.
 
-To test it:
-```sh
-osascript -e 'display notification "It worked!" with title "NotificationNanny"'
-```
-Or you can trigger one in the App itself
 ---
 
-## How it works (and the caveats)
+## Usage
 
-> **This is a deliberate workaround, not a supported feature.** macOS exposes no public API for moving notification banners. Everything below relies on undocumented behaviour inside `NotificationCenter.app` (`com.apple.notificationcenterui`). Apple can, and occasionally does break this without notice.
+Click the menu bar bell to open the panel:
 
-With that said, here's what NotificationNanny actually does:
+- **Drag** the purple chip around the screen tile to set your preferred position
+- **Fine-tune** with the horizontal/vertical sliders for pixel-perfect placement
+- **Send Test Notification** fires a banner so you can see exactly where it lands
+- Settings are remembered **per display** — different positions on different screens
+
+---
+
+## How it works
+
+> **This is a deliberate workaround, not a supported feature.** macOS exposes no public API for moving notification banners. Everything below relies on undocumented behaviour inside `com.apple.notificationcenterui`. Apple can break this without notice.
 
 1. Requests **Accessibility permission** from the user.
-2. Uses the Accessibility API (`AXUIElement`) to attach to the `com.apple.notificationcenterui` process.
-3. Subscribes to `kAXWindowCreatedNotification` to be notified whenever a new banner window appears.
-4. Sets `kAXPositionAttribute` on each window to move it to the user-selected location.
+2. Uses `AXUIElement` to attach to the `com.apple.notificationcenterui` process.
+3. Subscribes to `kAXWindowCreatedNotification` to detect new banners.
+4. Sets `kAXPositionAttribute` on each window to move it to the chosen location.
 
-Because cross-process Accessibility access is incompatible with the App Sandbox, the sandbox is disabled. The app is ad-hoc code-signed with a custom entitlements file so macOS can persistently remember the Accessibility permission grant.
+Because cross-process Accessibility access is incompatible with the App Sandbox, the sandbox is disabled. The app is ad-hoc signed with a custom entitlements file so macOS can persistently remember the Accessibility permission grant.
 
-**Other known limitations:**
+**Known limitations:**
 
-- The notification still animates in from its default position before being moved — you may see a brief jump depending on your macOS version and machine speed.
-- Validated on macOS Tahoe 26.4.1. Behaviour on newer releases is not guaranteed but should be possible. (If not just open an issue with the macOS version and any relevant details.)
-- Because this attaches to a system process, any macOS update that restructures `NotificationCenter.app` internals could silently break repositioning.
+- The banner briefly appears at its default position before jumping — this is an unavoidable race with the system animation.
+- Validated on macOS Tahoe 26. Behaviour on older or newer releases may vary — open an issue if something breaks.
+- Any macOS update that restructures `NotificationCenter.app` internals could silently break repositioning.
+
+---
+
+## Building from source
+
+No Xcode required — just the Command Line Tools:
+
+```sh
+git clone https://github.com/chessper53/NotificationNanny.git
+cd NotificationNanny
+./build-app.sh --run
+```
 
 ---
 
@@ -56,4 +67,4 @@ NotificationNanny does not collect, transmit, or store any personal data. The Ac
 
 ## License
 
-MIT see [LICENSE](LICENSE).
+MIT — see [LICENSE](LICENSE).
