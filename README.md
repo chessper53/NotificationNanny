@@ -52,9 +52,3 @@ cd NotificationNanny
 ## Privacy
 
 NotificationNanny does not collect, transmit, or store any personal data. The Accessibility permission is used solely to reposition notification windows on your local machine.
-
----
-
-## License
-
-MIT. See [LICENSE](LICENSE).
