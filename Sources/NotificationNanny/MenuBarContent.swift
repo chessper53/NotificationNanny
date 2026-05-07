@@ -277,15 +277,6 @@ struct MenuBarContent: View {
                     .font(.caption)
                     .lineLimit(1)
                 Spacer()
-                if index < 5 {
-                    Text("⌥\(index + 1)")
-                        .font(.caption2.monospacedDigit())
-                        .foregroundStyle(.tertiary)
-                        .padding(.horizontal, 3)
-                        .padding(.vertical, 1)
-                        .background(Color.secondary.opacity(0.1))
-                        .clipShape(RoundedRectangle(cornerRadius: 3))
-                }
                 Button { movePreset(at: index, by: -1) } label: {
                     Image(systemName: "chevron.up").font(.caption2)
                 }
@@ -431,6 +422,12 @@ private struct DraggableScreenTile: View {
                 .fill(Color.secondary.opacity(0.12))
                 .frame(height: 6)
                 .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            BannerChip(width: bannerWidth, height: bannerHeight)
+                .opacity(0.3)
+                .position(
+                    x: bannerCenterTile.x,
+                    y: bannerCenterTile.y + (placement.position.stacksUpward ? -(bannerHeight + 4) : (bannerHeight + 4))
+                )
             BannerChip(width: bannerWidth, height: bannerHeight)
                 .position(x: bannerCenterTile.x, y: bannerCenterTile.y)
                 .gesture(

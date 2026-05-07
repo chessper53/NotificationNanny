@@ -90,7 +90,8 @@ final class NotificationRepositioner: ObservableObject {
 
         let selfPtr = Unmanaged.passUnretained(self).toOpaque()
         for name in [kAXWindowCreatedNotification, kAXFocusedWindowChangedNotification,
-                     kAXWindowMovedNotification, kAXMainWindowChangedNotification] as [String] {
+                     kAXWindowMovedNotification, kAXMainWindowChangedNotification,
+                     kAXUIElementDestroyedNotification] as [String] {
             AXObserverAddNotification(newObserver, app, name as CFString, selfPtr)
         }
         CFRunLoopAddSource(CFRunLoopGetMain(), AXObserverGetRunLoopSource(newObserver), .defaultMode)
@@ -139,6 +140,10 @@ final class NotificationRepositioner: ObservableObject {
 
     fileprivate func handleAXEvent(element: AXUIElement, notification: String) {
         log.info("AX event: \(notification, privacy: .public)")
+        if notification == kAXUIElementDestroyedNotification as String {
+            repositionVisibleWindows()
+            return
+        }
         if notification == kAXWindowMovedNotification as String {
             var cur = CGPoint.zero; var ref: CFTypeRef?
             if AXUIElementCopyAttributeValue(element, kAXPositionAttribute as CFString, &ref) == .success,
@@ -165,13 +170,22 @@ final class NotificationRepositioner: ObservableObject {
         var value: CFTypeRef?
         guard AXUIElementCopyAttributeValue(ncApp, kAXWindowsAttribute as CFString, &value) == .success,
               let windows = value as? [AXUIElement] else { return }
-        for window in windows { snapWindow(window) }
+        for (index, window) in windows.enumerated() { snapWindow(window, stackIndex: index) }
+    }
+
+    private func currentStackIndex(for window: AXUIElement) -> Int {
+        guard let ncApp else { return 0 }
+        var value: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(ncApp, kAXWindowsAttribute as CFString, &value) == .success,
+              let windows = value as? [AXUIElement] else { return 0 }
+        return windows.firstIndex(where: { CFEqual($0, window) }) ?? 0
     }
 
     // MARK: - Banner geometry
 
     private static let bannerSize = CGSize(width: 372, height: 100)
     private static let bannerInsetFromTopRight = CGPoint(x: 14, y: 14)
+    private static let stackGap: CGFloat = 8
     private var animationGeneration = 0
     private var lastSelfSetPosition: CGPoint = .zero
 
@@ -213,7 +227,7 @@ final class NotificationRepositioner: ObservableObject {
 
     // MARK: - Repositioning
 
-    private func targetOrigin(for window: AXUIElement) -> RepositionTarget? {
+    private func targetOrigin(for window: AXUIElement, stackIndex: Int = 0) -> RepositionTarget? {
         guard let settings, settings.isEnabled else { return nil }
 
         var size = CGSize.zero
@@ -263,24 +277,27 @@ final class NotificationRepositioner: ObservableObject {
             bannerOffset = .zero; bannerSz = size
         }
 
+        let stackDirection: CGFloat = placement.position.stacksUpward ? -1 : 1
+        let stackYOffset = stackDirection * CGFloat(stackIndex) * (bannerSz.height + Self.stackGap)
         let bannerTarget = placement.position.axOrigin(
             forWindowSize: bannerSz, screen: screen,
-            xOffset: CGFloat(placement.xOffset), yOffset: CGFloat(placement.yOffset))
+            xOffset: CGFloat(placement.xOffset), yOffset: CGFloat(placement.yOffset) + stackYOffset)
         let origin = CGPoint(x: bannerTarget.x - bannerOffset.x, y: bannerTarget.y - bannerOffset.y)
 
         return RepositionTarget(windowOrigin: origin, placement: placement, screen: screen,
                                 bannerOffsetInWindow: bannerOffset, bannerSize: bannerSz)
     }
 
-    private func snapWindow(_ window: AXUIElement) {
-        guard let t = targetOrigin(for: window) else { return }
+    private func snapWindow(_ window: AXUIElement, stackIndex: Int = 0) {
+        guard let t = targetOrigin(for: window, stackIndex: stackIndex) else { return }
         var origin = t.windowOrigin
         guard let v = AXValueCreate(.cgPoint, &origin) else { return }
         AXUIElementSetAttributeValue(window, kAXPositionAttribute as CFString, v)
     }
 
     private func repositionWindow(_ window: AXUIElement) {
-        guard let info = targetOrigin(for: window), let settings else { return }
+        let stackIndex = currentStackIndex(for: window)
+        guard let info = targetOrigin(for: window, stackIndex: stackIndex), let settings else { return }
 
         animationGeneration &+= 1
         let gen = animationGeneration
