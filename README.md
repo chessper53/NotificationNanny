@@ -25,11 +25,12 @@ To upgrade to the latest version:
 brew upgrade --cask notificationnanny
 ```
 
-> **Coming from an older install?** If you get `already installed` but aren't on the latest version, your tap may be pointing to an outdated source. Re-tap and upgrade:
+> **Coming from an older install?** If you get a remote mismatch or `already installed` error, uninstall and retap:
 > ```sh
+> brew uninstall --cask notificationnanny
 > brew untap chessper53/notificationnanny
 > brew tap chessper53/notificationnanny https://github.com/chessper53/NotificationNanny
-> brew upgrade --cask notificationnanny
+> brew install --cask notificationnanny
 > ```
 
 A bell icon appears in your menu bar. On first launch, click **Grant Accessibility Permission…** and enable NotificationNanny under **System Settings → Privacy & Security → Accessibility**.
