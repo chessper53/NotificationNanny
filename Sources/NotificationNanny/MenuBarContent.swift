@@ -16,7 +16,6 @@ struct MenuBarContent: View {
 
     private var screens: [NSScreen] { NSScreen.screens }
 
-    /// Always resolve from the live screens list — display IDs come and go.
     private var selectedScreen: NSScreen {
         screens.first(where: { $0.displayID == selectedDisplayID })
             ?? NSScreen.main
@@ -35,6 +34,10 @@ struct MenuBarContent: View {
             Divider()
             offsetSection
             Divider()
+            autoDismissSection
+            Divider()
+            perAppSection
+            Divider()
             actionSection
         }
         .padding(16)
@@ -42,8 +45,6 @@ struct MenuBarContent: View {
         .tint(Color.nannyAccent)
         .onAppear {
             syncSelectedDisplay()
-            // Re-check permission every time the popover opens so granting in
-            // System Settings is reflected without needing to restart.
             repositioner.refreshAccessibilityStatus()
             if repositioner.hasAccessibilityPermission, !repositioner.isObserving {
                 repositioner.startObserving()
@@ -111,7 +112,7 @@ struct MenuBarContent: View {
         }
     }
 
-    // MARK: - Drag-to-position tile
+    // MARK: - Position tile
 
     private var positionSection: some View {
         let visible = selectedScreen.visibleFrame
@@ -137,7 +138,7 @@ struct MenuBarContent: View {
         }
     }
 
-    // MARK: - Offset sliders (range = full screen dimensions)
+    // MARK: - Offset sliders
 
     private var offsetSection: some View {
         let placement = settings.placementBinding(for: selectedScreen)
@@ -193,6 +194,91 @@ struct MenuBarContent: View {
         }
     }
 
+    // MARK: - Auto-dismiss
+
+    private var autoDismissSection: some View {
+        HStack(spacing: 8) {
+            Text("Auto-dismiss")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Spacer()
+            if settings.autoDismissSeconds > 0 {
+                TextField(
+                    "",
+                    value: $settings.autoDismissSeconds,
+                    format: .number.precision(.fractionLength(0))
+                )
+                .textFieldStyle(.roundedBorder)
+                .controlSize(.mini)
+                .multilineTextAlignment(.trailing)
+                .frame(width: 40)
+                .font(.caption2.monospacedDigit())
+                Stepper("", value: $settings.autoDismissSeconds, in: 1...300, step: 1)
+                    .labelsHidden()
+                    .controlSize(.mini)
+                Text("s")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+            Toggle("", isOn: Binding(
+                get: { settings.autoDismissSeconds > 0 },
+                set: { settings.autoDismissSeconds = $0 ? 10 : 0 }
+            ))
+            .labelsHidden()
+            .toggleStyle(.switch)
+            .controlSize(.small)
+        }
+    }
+
+    // MARK: - Per-app positions
+
+    /// Running apps that can be added manually (not already in the list).
+    private var addableApps: [String] {
+        NSWorkspace.shared.runningApplications
+            .filter { $0.activationPolicy == .regular }
+            .compactMap { $0.localizedName }
+            .filter { !settings.knownApps.contains($0) && $0 != "NotificationNanny" }
+            .sorted()
+    }
+
+    private var perAppSection: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text("Per-app positions")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Menu {
+                    if addableApps.isEmpty {
+                        Text("No other apps running")
+                    } else {
+                        ForEach(addableApps, id: \.self) { appName in
+                            Button(appName) { settings.recordApp(appName) }
+                        }
+                    }
+                } label: {
+                    Image(systemName: "plus")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                .menuStyle(.borderlessButton)
+                .fixedSize()
+            }
+            if settings.knownApps.isEmpty {
+                Text("Apps appear here automatically after their first notification, or add one via +.")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else {
+                VStack(spacing: 2) {
+                    ForEach(settings.knownApps, id: \.self) { app in
+                        AppOverrideRow(appName: app, settings: settings)
+                    }
+                }
+            }
+        }
+    }
+
     // MARK: - Actions
 
     private var actionSection: some View {
@@ -244,17 +330,159 @@ struct MenuBarContent: View {
     }
 }
 
+// MARK: - Per-app override row
+
+private struct AppOverrideRow: View {
+    let appName: String
+    @ObservedObject var settings: AppSettings
+    @EnvironmentObject var repositioner: NotificationRepositioner
+    @State private var expanded = false
+
+    private var placementBinding: Binding<ScreenPlacement> {
+        settings.appPlacementBinding(for: appName)
+    }
+
+    var body: some View {
+        let hasOverride = settings.appPlacement(for: appName) != nil
+        return VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 6) {
+                Text(appName)
+                    .font(.caption)
+                    .lineLimit(1)
+                Spacer()
+                if hasOverride {
+                    Text(placementBinding.wrappedValue.position.label)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                } else {
+                    Text("Global")
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                }
+                Button {
+                    settings.forgetApp(appName)
+                    expanded = false
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.borderless)
+                Button {
+                    withAnimation(.easeInOut(duration: 0.15)) { expanded.toggle() }
+                } label: {
+                    Image(systemName: expanded ? "chevron.up" : "chevron.down")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.borderless)
+            }
+
+            if expanded {
+                HStack(alignment: .top, spacing: 10) {
+                    PositionGrid(
+                        selection: Binding(
+                            get: { placementBinding.wrappedValue.position },
+                            set: { var p = placementBinding.wrappedValue; p.position = $0; placementBinding.wrappedValue = p }
+                        )
+                    )
+                    VStack(alignment: .leading, spacing: 5) {
+                        appOffsetField("X", value: Binding(
+                            get: { placementBinding.wrappedValue.xOffset },
+                            set: { var p = placementBinding.wrappedValue; p.xOffset = $0; placementBinding.wrappedValue = p }
+                        ))
+                        appOffsetField("Y", value: Binding(
+                            get: { placementBinding.wrappedValue.yOffset },
+                            set: { var p = placementBinding.wrappedValue; p.yOffset = $0; placementBinding.wrappedValue = p }
+                        ))
+                        Spacer(minLength: 0)
+                        HStack {
+                            Button {
+                                repositioner.sendTest(as: appName)
+                            } label: {
+                                Image(systemName: "paperplane.fill")
+                            }
+                            .buttonStyle(.borderless)
+                            .font(.caption2)
+                            .help("Send a test notification as \(appName)")
+                            Spacer()
+                            Button("Reset") {
+                                var p = placementBinding.wrappedValue
+                                p.xOffset = 0; p.yOffset = 0
+                                placementBinding.wrappedValue = p
+                            }
+                            .buttonStyle(.borderless)
+                            .font(.caption2)
+                            .disabled(placementBinding.wrappedValue.xOffset == 0
+                                      && placementBinding.wrappedValue.yOffset == 0)
+                        }
+                    }
+                }
+                .padding(.bottom, 2)
+                .transition(.opacity)
+            }
+        }
+        .padding(.vertical, 2)
+    }
+
+    private func appOffsetField(_ label: String, value: Binding<Double>) -> some View {
+        HStack(spacing: 4) {
+            Text(label)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .frame(width: 10, alignment: .leading)
+            TextField("0", value: value, format: .number.precision(.fractionLength(0)))
+                .textFieldStyle(.roundedBorder)
+                .controlSize(.mini)
+                .multilineTextAlignment(.trailing)
+                .frame(width: 52)
+                .font(.caption2.monospacedDigit())
+            Text("px")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+        }
+    }
+}
+
+// MARK: - 3×3 position grid
+
+private struct PositionGrid: View {
+    @Binding var selection: NotificationPosition
+
+    private static let rows: [[NotificationPosition]] = [
+        [.topLeft,    .topCenter,    .topRight],
+        [.middleLeft, .middleCenter, .middleRight],
+        [.bottomLeft, .bottomCenter, .bottomRight],
+    ]
+
+    var body: some View {
+        VStack(spacing: 3) {
+            ForEach(Array(Self.rows.enumerated()), id: \.offset) { _, row in
+                HStack(spacing: 3) {
+                    ForEach(row) { pos in
+                        Button {
+                            selection = pos
+                        } label: {
+                            RoundedRectangle(cornerRadius: 3, style: .continuous)
+                                .fill(selection == pos
+                                      ? Color.nannyAccent
+                                      : Color.secondary.opacity(0.15))
+                                .frame(width: 28, height: 18)
+                        }
+                        .buttonStyle(.borderless)
+                        .help(pos.label)
+                    }
+                }
+            }
+        }
+    }
+}
+
 // MARK: - Drag-to-position tile
 
-/// A miniature screen that the user can drag a "banner" around inside.
-/// The banner's centre maps to the position (anchor + offsets) the
-/// repositioner uses for real banners.
 private struct DraggableScreenTile: View {
     let screen: NSScreen
     @Binding var placement: ScreenPlacement
 
-    /// Banner geometry in real screen pixels — kept in sync with what
-    /// `NotificationRepositioner` assumes.
     private static let realBannerSize = CGSize(width: 372, height: 100)
 
     var body: some View {
@@ -280,7 +508,6 @@ private struct DraggableScreenTile: View {
                         .stroke(Color.secondary.opacity(0.25), lineWidth: 1)
                 )
 
-            // Mini menu-bar hint at the top.
             Rectangle()
                 .fill(Color.secondary.opacity(0.12))
                 .frame(height: 6)
@@ -310,50 +537,44 @@ private struct DraggableScreenTile: View {
         }
     }
 
-    /// Compute the banner centre in NSScreen-visibleFrame coords given the
-    /// current placement (anchor + offsets).
     private func bannerCenterInVisibleCoords(visible: CGRect) -> CGPoint {
         let banner = Self.realBannerSize
-        // Anchor → banner top-left in visible-frame coords (y down inside the rect).
+        let inset: CGFloat = 8
         let x: CGFloat
         switch placement.position {
         case .topLeft, .middleLeft, .bottomLeft:
-            x = 0
+            x = inset
         case .topCenter, .middleCenter, .bottomCenter:
             x = (visible.width - banner.width) / 2
         case .topRight, .middleRight, .bottomRight:
-            x = visible.width - banner.width
+            x = visible.width - banner.width - inset
         }
         let y: CGFloat
         switch placement.position {
         case .topLeft, .topCenter, .topRight:
-            y = 0
+            y = inset
         case .middleLeft, .middleCenter, .middleRight:
             y = (visible.height - banner.height) / 2
         case .bottomLeft, .bottomCenter, .bottomRight:
-            y = visible.height - banner.height
+            y = visible.height - banner.height - inset
         }
         let cx = visible.minX + x + banner.width / 2 + CGFloat(placement.xOffset)
         let cy = visible.minY + y + banner.height / 2 + CGFloat(placement.yOffset)
         return CGPoint(x: cx, y: cy)
     }
 
-    /// Convert a tile-local tap/drag point into a placement.
     private func updatePlacement(fromTilePoint point: CGPoint,
                                  tileSize: CGSize,
                                  visible: CGRect) {
         let scale = tileSize.width / visible.width
         let banner = Self.realBannerSize
+        let inset: CGFloat = 8
 
-        // Banner centre in visible-frame coords, clamped so the banner stays
-        // fully on-screen.
-        let centreX = max(banner.width / 2,
-                          min(visible.width - banner.width / 2, point.x / scale))
-        let centreY = max(banner.height / 2,
-                          min(visible.height - banner.height / 2, point.y / scale))
+        let centreX = max(inset + banner.width / 2,
+                          min(visible.width - inset - banner.width / 2, point.x / scale))
+        let centreY = max(inset + banner.height / 2,
+                          min(visible.height - inset - banner.height / 2, point.y / scale))
 
-        // Re-anchor to the nearest of the 9 grid points so symbolic positions
-        // (top-right, etc.) stay meaningful, then encode the residual as an offset.
         let bandX: AnchorBand
         switch centreX {
         case ..<(visible.width / 3): bandX = .start
@@ -369,18 +590,17 @@ private struct DraggableScreenTile: View {
 
         let anchor = position(for: bandX, bandY)
 
-        // Anchor reference point (banner top-left in visible coords).
         let refX: CGFloat
         switch bandX {
-        case .start:  refX = banner.width / 2
+        case .start:  refX = inset + banner.width / 2
         case .middle: refX = visible.width / 2
-        case .end:    refX = visible.width - banner.width / 2
+        case .end:    refX = visible.width - inset - banner.width / 2
         }
         let refY: CGFloat
         switch bandY {
-        case .start:  refY = banner.height / 2
+        case .start:  refY = inset + banner.height / 2
         case .middle: refY = visible.height / 2
-        case .end:    refY = visible.height - banner.height / 2
+        case .end:    refY = visible.height - inset - banner.height / 2
         }
 
         placement.position = anchor
@@ -424,8 +644,6 @@ private struct BannerChip: View {
 // MARK: - Test notification
 
 enum TestNotification {
-    /// Fires a banner via AppleScript so we don't have to ask for our own
-    /// UNUserNotificationCenter authorization just to verify positioning.
     static func send() {
         let stamp = Int(Date().timeIntervalSince1970) % 100000
         let script = """

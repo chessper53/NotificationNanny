@@ -64,6 +64,8 @@ echo "==> Built ${APP_DIR}"
 
 case "${1:-}" in
     --run)
+        echo "==> Resetting Accessibility permission…"
+        tccutil reset Accessibility "${BUNDLE_ID}" 2>/dev/null || true
         echo "==> Launching…"
         open "${APP_DIR}"
         ;;
