@@ -10,6 +10,11 @@ struct MenuBarContent: View {
     @EnvironmentObject var repositioner: NotificationRepositioner
     @EnvironmentObject var launchAtLogin: LaunchAtLogin
 
+    @State private var isAddingPreset  = false
+    @State private var newPresetName   = ""
+    @State private var editingPresetID: UUID? = nil
+    @State private var editingName     = ""
+
     private var screens: [NSScreen] { NSScreen.screens }
 
     private var selectedScreen: NSScreen {
@@ -31,6 +36,8 @@ struct MenuBarContent: View {
             offsetSection
             Divider()
             autoDismissSection
+            Divider()
+            presetsSection
             Divider()
             actionSection
         }
@@ -195,6 +202,153 @@ struct MenuBarContent: View {
             .toggleStyle(.switch)
             .controlSize(.small)
         }
+    }
+
+    // MARK: - Presets
+
+    private var presetsSection: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("Presets")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            if settings.presets.isEmpty && !isAddingPreset {
+                Text("No presets yet")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+            }
+
+            ForEach(Array(settings.presets.enumerated()), id: \.element.id) { index, preset in
+                presetRow(preset, index: index)
+            }
+
+            if isAddingPreset {
+                HStack(spacing: 6) {
+                    TextField("Name", text: $newPresetName)
+                        .textFieldStyle(.roundedBorder)
+                        .controlSize(.mini)
+                        .font(.caption)
+                        .onSubmit { commitPreset() }
+                    Button("Save", action: commitPreset)
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.mini)
+                        .disabled(newPresetName.trimmingCharacters(in: .whitespaces).isEmpty)
+                    Button("Cancel") { newPresetName = ""; isAddingPreset = false }
+                        .buttonStyle(.borderless)
+                        .controlSize(.mini)
+                }
+            } else if settings.presets.count < 5 {
+                Button { isAddingPreset = true } label: {
+                    Label("Save current as preset", systemImage: "plus")
+                }
+                .buttonStyle(.borderless)
+                .font(.caption)
+            } else {
+                Text("5 preset limit reached")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func presetRow(_ preset: Preset, index: Int) -> some View {
+        if editingPresetID == preset.id {
+            HStack(spacing: 6) {
+                TextField("", text: $editingName)
+                    .textFieldStyle(.roundedBorder)
+                    .controlSize(.mini)
+                    .font(.caption)
+                    .onSubmit { commitRename(preset) }
+                Button("Done") { commitRename(preset) }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.mini)
+                    .disabled(editingName.trimmingCharacters(in: .whitespaces).isEmpty)
+                Button { cancelRename() } label: {
+                    Image(systemName: "xmark").font(.caption2)
+                }
+                .buttonStyle(.borderless)
+                .foregroundStyle(.secondary)
+            }
+        } else {
+            HStack(spacing: 4) {
+                Button(preset.name) { settings.applyPreset(preset) }
+                    .buttonStyle(.borderless)
+                    .font(.caption)
+                    .lineLimit(1)
+                Spacer()
+                if index < 5 {
+                    Text("⌥\(index + 1)")
+                        .font(.caption2.monospacedDigit())
+                        .foregroundStyle(.tertiary)
+                        .padding(.horizontal, 3)
+                        .padding(.vertical, 1)
+                        .background(Color.secondary.opacity(0.1))
+                        .clipShape(RoundedRectangle(cornerRadius: 3))
+                }
+                Button { movePreset(at: index, by: -1) } label: {
+                    Image(systemName: "chevron.up").font(.caption2)
+                }
+                .buttonStyle(.borderless)
+                .foregroundStyle(.secondary)
+                .disabled(index == 0)
+                Button { movePreset(at: index, by: 1) } label: {
+                    Image(systemName: "chevron.down").font(.caption2)
+                }
+                .buttonStyle(.borderless)
+                .foregroundStyle(.secondary)
+                .disabled(index == settings.presets.count - 1)
+                Button { beginRename(preset) } label: {
+                    Image(systemName: "pencil").font(.caption2)
+                }
+                .buttonStyle(.borderless)
+                .foregroundStyle(.secondary)
+                Button { settings.deletePreset(preset) } label: {
+                    Image(systemName: "xmark").font(.caption2)
+                }
+                .buttonStyle(.borderless)
+                .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private func movePreset(at index: Int, by offset: Int) {
+        let dest = index + offset
+        guard dest >= 0, dest < settings.presets.count else { return }
+        var updated = settings.presets
+        updated.swapAt(index, dest)
+        settings.presets = updated
+    }
+
+    private func beginRename(_ preset: Preset) {
+        editingPresetID = preset.id
+        editingName = preset.name
+    }
+
+    private func commitRename(_ preset: Preset) {
+        let trimmed = editingName.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty,
+              let i = settings.presets.firstIndex(where: { $0.id == preset.id }) else {
+            cancelRename(); return
+        }
+        var updated = settings.presets
+        updated[i].name = trimmed
+        settings.presets = updated
+        editingPresetID = nil
+        editingName = ""
+    }
+
+    private func cancelRename() {
+        editingPresetID = nil
+        editingName = ""
+    }
+
+    private func commitPreset() {
+        let name = newPresetName.trimmingCharacters(in: .whitespaces)
+        guard !name.isEmpty else { return }
+        settings.saveCurrentAsPreset(name: name)
+        newPresetName = ""
+        isAddingPreset = false
     }
 
     // MARK: - Actions
