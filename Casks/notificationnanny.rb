@@ -9,7 +9,12 @@ cask "notificationnanny" do
 
   depends_on macos: ">= :ventura"
 
-  app "NotificationNanny.app", disable_quarantine: true
+  app "NotificationNanny.app"
+
+  postflight do
+    system_command "/usr/bin/xattr",
+      args: ["-d", "-r", "com.apple.quarantine", "#{appdir}/NotificationNanny.app"]
+  end
 
   zap trash: [
     "~/Library/Preferences/com.notificationnanny.app.plist",
