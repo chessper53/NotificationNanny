@@ -19,6 +19,12 @@ brew tap chessper53/notificationnanny https://github.com/chessper53/Notification
 brew install --cask notificationnanny
 ```
 
+To upgrade to the latest version:
+
+```sh
+brew upgrade --cask notificationnanny
+```
+
 A bell icon appears in your menu bar. On first launch, click **Grant Accessibility Permission…** and enable NotificationNanny under **System Settings → Privacy & Security → Accessibility**.
 
 ---
