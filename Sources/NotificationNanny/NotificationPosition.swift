@@ -38,6 +38,13 @@ enum NotificationPosition: String, CaseIterable, Identifiable, Codable {
         }
     }
 
+    var stacksUpward: Bool {
+        switch self {
+        case .bottomLeft, .bottomCenter, .bottomRight: return true
+        default: return false
+        }
+    }
+
     /// Built-in inset from the visible frame so default positions don't kiss the screen edge.
     private static let safeInset: CGFloat = 8
 
