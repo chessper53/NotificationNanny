@@ -38,7 +38,7 @@ if git rev-parse "${TAG}" &>/dev/null; then
 fi
 
 echo "==> Building ${VERSION}…"
-UNIVERSAL=1 VERSION="${VERSION}" bash build-app.sh
+VERSION="${VERSION}" bash build-app.sh
 
 echo "==> Packaging ${ZIP_NAME}…"
 rm -f "build/${ZIP_NAME}"
