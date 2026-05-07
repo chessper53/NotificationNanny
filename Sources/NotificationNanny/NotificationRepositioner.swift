@@ -212,7 +212,7 @@ final class NotificationRepositioner: ObservableObject {
                 AXValueGetValue(v as! AXValue, .cgPoint, &pos)
             }
             let title = (titleRef as? String) ?? ""
-            log.info("  [\(i)] '\(title)' size=\(size.width)x\(size.height) pos=(\(pos.x),\(pos.y))")
+            log.info("  [\(i)] '\(title, privacy: .public)' size=\(size.width)x\(size.height) pos=(\(pos.x),\(pos.y))")
         }
     }
 
@@ -228,18 +228,36 @@ final class NotificationRepositioner: ObservableObject {
         ncApp = nil
         ncPid = 0
         isObserving = false
+        detectedBannerInfo = nil
+        forcedAppName = nil
     }
 
     // MARK: - Repositioning
 
     fileprivate func handleAXEvent(element: AXUIElement, notification: String) {
         log.info("AX event: \(notification, privacy: .public)")
+        // kAXWindowMovedNotification also fires when WE move the window.
+        // Filter those out by comparing the current position to the last
+        // position we set ourselves — our own events have delta ≈ 0.
+        // A real new notification makes macOS move the overlay back to its
+        // default corner, which produces a large delta and passes the filter.
+        if notification == kAXWindowMovedNotification as String {
+            var cur = CGPoint.zero
+            var ref: CFTypeRef?
+            if AXUIElementCopyAttributeValue(element, kAXPositionAttribute as CFString, &ref) == .success,
+               let v = ref, CFGetTypeID(v) == AXValueGetTypeID() {
+                AXValueGetValue(v as! AXValue, .cgPoint, &cur)
+            }
+            guard hypot(cur.x - lastSelfSetPosition.x,
+                        cur.y - lastSelfSetPosition.y) > 4 else { return }
+        }
         repositionWindow(element)
-        burstReposition()
     }
 
-    /// Re-apply over ~2.5s because macOS may snap the banner back after our move.
+    /// Snap all visible windows into position over ~2.5s.
+    /// Used for settings changes; cancels any in-flight scheduled work.
     private func burstReposition() {
+        animationGeneration &+= 1
         repositionVisibleWindows()
         let delays: [TimeInterval] = [0.03, 0.06, 0.1, 0.2, 0.4, 0.8, 1.5, 2.5]
         for delay in delays {
@@ -257,19 +275,117 @@ final class NotificationRepositioner: ObservableObject {
         let result = AXUIElementCopyAttributeValue(ncApp, kAXWindowsAttribute as CFString, &value)
         guard result == .success, let windows = value as? [AXUIElement] else { return }
         for window in windows {
-            repositionWindow(window)
+            snapWindow(window)
         }
     }
 
+    // MARK: - Banner geometry detection
+
     /// Default banner geometry inside the NotificationCenter overlay window.
-    /// On Tahoe the "window" is screen-sized and the banner is drawn in its
-    /// top-right corner — to put the banner where the user wants we have to
-    /// translate the whole overlay by `bannerTarget − bannerOffsetInOverlay`.
     private static let bannerSize = CGSize(width: 372, height: 100)
     private static let bannerInsetFromTopRight = CGPoint(x: 14, y: 14)
 
-    private func repositionWindow(_ window: AXUIElement) {
-        guard let settings, settings.isEnabled else { return }
+    /// Incremented each time repositioning starts so stale scheduled blocks bail out.
+    private var animationGeneration = 0
+
+    /// The position we most recently wrote via AXUIElementSetAttributeValue,
+    /// read back after the call so it reflects any clamping macOS applied.
+    /// Used to filter our own kAXWindowMovedNotification echoes in handleAXEvent.
+    private var lastSelfSetPosition: CGPoint = .zero
+
+    /// Cached result from reading actual banner bounds out of the overlay's AX tree.
+    /// Nil until the first successful detection; cleared when the observer tears down.
+    private struct BannerInfo {
+        let offsetInWindow: CGPoint   // banner top-left relative to overlay top-left (AX coords)
+        let size: CGSize
+    }
+    private var detectedBannerInfo: BannerInfo?
+
+    private struct RepositionTarget {
+        let windowOrigin: CGPoint
+        let placement: ScreenPlacement
+        let screen: NSScreen
+        let bannerOffsetInWindow: CGPoint
+        let bannerSize: CGSize
+        let appName: String?
+    }
+
+    /// Walk the overlay window's AX child list looking for an element whose size
+    /// matches a notification banner (200–700 wide, 40–250 tall).
+    private func detectBannerInfo(in window: AXUIElement, windowPos: CGPoint) -> BannerInfo? {
+        var childrenRef: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(window, kAXChildrenAttribute as CFString, &childrenRef) == .success,
+              let children = childrenRef as? [AXUIElement], !children.isEmpty else { return nil }
+        for child in children {
+            var childPosRef: CFTypeRef?
+            var childSizeRef: CFTypeRef?
+            guard AXUIElementCopyAttributeValue(child, kAXPositionAttribute as CFString, &childPosRef) == .success,
+                  AXUIElementCopyAttributeValue(child, kAXSizeAttribute as CFString, &childSizeRef) == .success,
+                  let posV = childPosRef, let sizeV = childSizeRef,
+                  CFGetTypeID(posV) == AXValueGetTypeID(),
+                  CFGetTypeID(sizeV) == AXValueGetTypeID()
+            else { continue }
+            var childPos = CGPoint.zero
+            var childSize = CGSize.zero
+            AXValueGetValue(posV as! AXValue, .cgPoint, &childPos)
+            AXValueGetValue(sizeV as! AXValue, .cgSize, &childSize)
+            guard childSize.width >= 200, childSize.width <= 700,
+                  childSize.height >= 40,  childSize.height <= 250 else { continue }
+            let offset = CGPoint(x: childPos.x - windowPos.x, y: childPos.y - windowPos.y)
+            log.info("Banner detected: size=\(childSize.width)x\(childSize.height) offset=(\(offset.x),\(offset.y))")
+            return BannerInfo(offsetInWindow: offset, size: childSize)
+        }
+        return nil
+    }
+
+    /// Forced app name for test notifications. Persists until the first banner
+    /// is successfully repositioned using it, or until the 5-second expiry.
+    /// Not consumed on each read so that multiple AX events for the same
+    /// notification all agree on the app name.
+    private var forcedAppName: String?
+    private var forcedAppNameExpiry: Date = .distantPast
+
+    func sendTest(as appName: String) {
+        forcedAppName = appName
+        forcedAppNameExpiry = Date().addingTimeInterval(5)
+        TestNotification.send()
+    }
+
+    /// Best-effort: try window title, then first child's title/description.
+    /// Returns nil if the AX tree doesn't expose the source app name.
+    private func detectAppName(in window: AXUIElement) -> String? {
+        if let forced = forcedAppName, Date() < forcedAppNameExpiry {
+            log.info("App name via forced override: \(forced, privacy: .public)")
+            return forced
+        }
+        var titleRef: CFTypeRef?
+        if AXUIElementCopyAttributeValue(window, kAXTitleAttribute as CFString, &titleRef) == .success,
+           let title = titleRef as? String, !title.isEmpty, title.count <= 60 {
+            log.info("App name via window title: \(title, privacy: .public)")
+            return title
+        }
+        var childrenRef: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(window, kAXChildrenAttribute as CFString, &childrenRef) == .success,
+              let children = childrenRef as? [AXUIElement] else { return nil }
+        for child in children {
+            var ref: CFTypeRef?
+            if AXUIElementCopyAttributeValue(child, kAXTitleAttribute as CFString, &ref) == .success,
+               let s = ref as? String, !s.isEmpty, s.count <= 60 {
+                log.info("App name via child title: \(s, privacy: .public)")
+                return s
+            }
+            ref = nil
+            if AXUIElementCopyAttributeValue(child, kAXDescriptionAttribute as CFString, &ref) == .success,
+               let s = ref as? String, !s.isEmpty, s.count <= 60 {
+                log.info("App name via child description: \(s, privacy: .public)")
+                return s
+            }
+        }
+        return nil
+    }
+
+    private func targetOrigin(for window: AXUIElement) -> RepositionTarget? {
+        guard let settings, settings.isEnabled else { return nil }
 
         var size = CGSize.zero
         var sizeRef: CFTypeRef?
@@ -285,57 +401,130 @@ final class NotificationRepositioner: ObservableObject {
             AXValueGetValue(v as! AXValue, .cgPoint, &oldPos)
         }
 
-        guard let screen = screenContainingAxPoint(oldPos) ?? NSScreen.main else { return }
-        let placement = settings.placement(for: screen)
+        guard let screen = screenContainingAxPoint(oldPos) ?? NSScreen.main else { return nil }
 
-        // Where we want the BANNER to end up.
+        let appName = detectAppName(in: window)
+
+        // Per-app override (position + offsets) takes priority over the global per-screen setting.
+        let placement = (appName.flatMap { settings.appPlacement(for: $0) })
+            ?? settings.placement(for: screen)
+
+        let isOverlay = size.width > 700 || size.height > 400
+        let bannerOffsetInWindow: CGPoint
+        let effectiveBannerSize: CGSize
+
+        if isOverlay {
+            let info: BannerInfo
+            if let cached = detectedBannerInfo {
+                info = cached
+            } else if let detected = detectBannerInfo(in: window, windowPos: oldPos) {
+                detectedBannerInfo = detected
+                info = detected
+            } else {
+                info = BannerInfo(
+                    offsetInWindow: CGPoint(
+                        x: size.width - Self.bannerInsetFromTopRight.x - Self.bannerSize.width,
+                        y: Self.bannerInsetFromTopRight.y),
+                    size: Self.bannerSize)
+            }
+            bannerOffsetInWindow = info.offsetInWindow
+            effectiveBannerSize  = info.size
+        } else {
+            bannerOffsetInWindow = .zero
+            effectiveBannerSize  = size
+        }
+
         let bannerTarget = placement.position.axOrigin(
-            forWindowSize: Self.bannerSize,
+            forWindowSize: effectiveBannerSize,
             screen: screen,
             xOffset: CGFloat(placement.xOffset),
             yOffset: CGFloat(placement.yOffset)
         )
 
-        // If the AX "window" we're moving is actually the screen-sized
-        // overlay, translate so the banner inside lands on bannerTarget.
-        let isOverlay = size.width > 700 || size.height > 400
-        let bannerOffsetInWindow: CGPoint
-        if isOverlay {
-            bannerOffsetInWindow = CGPoint(
-                x: size.width - Self.bannerInsetFromTopRight.x - Self.bannerSize.width,
-                y: Self.bannerInsetFromTopRight.y
-            )
-        } else {
-            // Standalone banner window — origin already corresponds to banner.
-            bannerOffsetInWindow = .zero
-        }
-
-        var newOrigin = CGPoint(
+        let origin = CGPoint(
             x: bannerTarget.x - bannerOffsetInWindow.x,
             y: bannerTarget.y - bannerOffsetInWindow.y
         )
+        return RepositionTarget(windowOrigin: origin, placement: placement,
+                                screen: screen, bannerOffsetInWindow: bannerOffsetInWindow,
+                                bannerSize: effectiveBannerSize, appName: appName)
+    }
 
-        guard let positionValue = AXValueCreate(.cgPoint, &newOrigin) else { return }
+    /// Simple snap used by `repositionVisibleWindows` (burst/settings changes).
+    private func snapWindow(_ window: AXUIElement) {
+        guard let t = targetOrigin(for: window) else { return }
+        var origin = t.windowOrigin
+        guard let positionValue = AXValueCreate(.cgPoint, &origin) else { return }
         let setResult = AXUIElementSetAttributeValue(window, kAXPositionAttribute as CFString, positionValue)
+        log.info("snap → (\(origin.x, privacy: .public), \(origin.y, privacy: .public)) r=\(setResult.rawValue)")
+    }
 
-        var afterPos = CGPoint.zero
-        var afterRef: CFTypeRef?
-        if AXUIElementCopyAttributeValue(window, kAXPositionAttribute as CFString, &afterRef) == .success,
-           let v = afterRef, CFGetTypeID(v) == AXValueGetTypeID() {
-            AXValueGetValue(v as! AXValue, .cgPoint, &afterPos)
+    /// Snap + hold schedule + app recording + optional auto-dismiss.
+    /// Called from the AX event path (new notification arriving).
+    private func repositionWindow(_ window: AXUIElement) {
+        guard let info = targetOrigin(for: window), let settings else { return }
+
+        let target = info.windowOrigin
+        animationGeneration &+= 1
+        let gen = animationGeneration
+
+        setWindowPosition(window, to: target)
+        scheduleHolds(window: window, target: target, generation: gen)
+
+        if let appName = info.appName {
+            settings.recordApp(appName)
+            if appName == forcedAppName { forcedAppName = nil }
         }
 
-        let summary = String(
-            format: "%@ size=%.0fx%.0f before=(%.0f,%.0f) banner→(%.0f,%.0f) winMove=(%.0f,%.0f) after=(%.0f,%.0f) r=%d",
-            isOverlay ? "OVERLAY" : "BANNER",
-            size.width, size.height,
-            oldPos.x, oldPos.y,
-            bannerTarget.x, bannerTarget.y,
-            newOrigin.x, newOrigin.y,
-            afterPos.x, afterPos.y,
-            Int(setResult.rawValue)
-        )
-        log.info("set \(summary, privacy: .public)")
+        if settings.autoDismissSeconds > 0 {
+            scheduleAutoDismiss(window: window, info: info, generation: gen)
+        }
+    }
+
+    private func scheduleHolds(window: AXUIElement, target: CGPoint, generation: Int) {
+        for delay in [0.1, 0.5, 1.0, 2.0] as [Double] {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+                guard self?.animationGeneration == generation else { return }
+                self?.setWindowPosition(window, to: target)
+            }
+        }
+    }
+
+    /// After the dismiss delay, slide the overlay above the top screen edge.
+    private func scheduleAutoDismiss(window: AXUIElement, info: RepositionTarget, generation: Int) {
+        let delay = settings?.autoDismissSeconds ?? 0
+        guard delay > 0 else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+            guard let self, self.animationGeneration == generation else { return }
+            self.animationGeneration &+= 1
+            let hidden = self.offScreenOrigin(for: info)
+            self.setWindowPosition(window, to: hidden)
+        }
+    }
+
+    /// Position that hides the overlay above the visible top edge of its screen.
+    private func offScreenOrigin(for info: RepositionTarget) -> CGPoint {
+        let primaryHeight = NSScreen.screens.first?.frame.height ?? info.screen.frame.height
+        let visible = info.screen.visibleFrame
+        let axTop = primaryHeight - visible.maxY
+        let hiddenY = axTop - info.bannerSize.height - info.bannerOffsetInWindow.y - 10
+        return CGPoint(x: info.windowOrigin.x, y: hiddenY)
+    }
+
+    @discardableResult
+    private func setWindowPosition(_ window: AXUIElement, to point: CGPoint) -> CGPoint {
+        var p = point
+        guard let value = AXValueCreate(.cgPoint, &p) else { return point }
+        AXUIElementSetAttributeValue(window, kAXPositionAttribute as CFString, value)
+        // Read back what macOS actually set (may differ from point if clamped).
+        var ref: CFTypeRef?
+        var actual = point
+        if AXUIElementCopyAttributeValue(window, kAXPositionAttribute as CFString, &ref) == .success,
+           let v = ref, CFGetTypeID(v) == AXValueGetTypeID() {
+            AXValueGetValue(v as! AXValue, .cgPoint, &actual)
+        }
+        lastSelfSetPosition = actual
+        return actual
     }
 
     /// Convert an AX point (top-left of primary screen) to NSScreen coords
