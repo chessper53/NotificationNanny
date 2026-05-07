@@ -2,7 +2,6 @@ import SwiftUI
 import AppKit
 
 extension Color {
-    /// Brand accent — purple (#895C9B).
     static let nannyAccent = Color(red: 0x89 / 255, green: 0x5C / 255, blue: 0x9B / 255)
 }
 
@@ -11,15 +10,12 @@ struct MenuBarContent: View {
     @EnvironmentObject var repositioner: NotificationRepositioner
     @EnvironmentObject var launchAtLogin: LaunchAtLogin
 
-    @State private var selectedDisplayID: CGDirectDisplayID =
-        NSScreen.main?.displayID ?? NSScreen.screens.first?.displayID ?? 0
-
     private var screens: [NSScreen] { NSScreen.screens }
 
     private var selectedScreen: NSScreen {
-        screens.first(where: { $0.displayID == selectedDisplayID })
-            ?? NSScreen.main
-            ?? screens.first!
+        if settings.targetDisplayID != 0,
+           let s = screens.first(where: { $0.displayID == settings.targetDisplayID }) { return s }
+        return NSScreen.main ?? screens[0]
     }
 
     var body: some View {
@@ -27,7 +23,7 @@ struct MenuBarContent: View {
             header
             Divider()
             if screens.count > 1 {
-                screenPicker
+                screenPickerSection
                 Divider()
             }
             positionSection
@@ -36,25 +32,16 @@ struct MenuBarContent: View {
             Divider()
             autoDismissSection
             Divider()
-            perAppSection
-            Divider()
             actionSection
         }
         .padding(16)
         .frame(width: 320)
         .tint(Color.nannyAccent)
         .onAppear {
-            syncSelectedDisplay()
             repositioner.refreshAccessibilityStatus()
             if repositioner.hasAccessibilityPermission, !repositioner.isObserving {
                 repositioner.startObserving()
             }
-        }
-    }
-
-    private func syncSelectedDisplay() {
-        if !screens.contains(where: { $0.displayID == selectedDisplayID }) {
-            selectedDisplayID = NSScreen.main?.displayID ?? screens.first?.displayID ?? 0
         }
     }
 
@@ -94,15 +81,15 @@ struct MenuBarContent: View {
 
     // MARK: - Screen picker
 
-    private var screenPicker: some View {
+    private var screenPickerSection: some View {
         HStack(spacing: 8) {
-            Text("Configuring")
+            Text("Show on")
                 .font(.caption)
                 .foregroundStyle(.secondary)
-            Picker("", selection: $selectedDisplayID) {
+            Picker("", selection: $settings.targetDisplayID) {
+                Text("Auto").tag(CGDirectDisplayID(0))
                 ForEach(screens, id: \.displayID) { screen in
-                    Text(screen.nannyDisplayName)
-                        .tag(screen.displayID)
+                    Text(screen.nannyDisplayName).tag(screen.displayID)
                 }
             }
             .labelsHidden()
@@ -125,7 +112,7 @@ struct MenuBarContent: View {
                 Text("\(Int(visible.width)) × \(Int(visible.height))")
                     .font(.caption2.monospacedDigit())
                     .foregroundStyle(.tertiary)
-                if screens.count > 1 {
+                if screens.count > 1 && settings.targetDisplayID != 0 {
                     Text("· \(selectedScreen.nannyDisplayName)")
                         .font(.caption2)
                         .foregroundStyle(.tertiary)
@@ -143,10 +130,6 @@ struct MenuBarContent: View {
     private var offsetSection: some View {
         let placement = settings.placementBinding(for: selectedScreen)
         let visible = selectedScreen.visibleFrame
-        let width = Double(visible.width)
-        let height = Double(visible.height)
-        let xRange = -width ... width
-        let yRange = -height ... height
         return VStack(alignment: .leading, spacing: 8) {
             HStack {
                 Text("Fine-tune")
@@ -159,37 +142,28 @@ struct MenuBarContent: View {
                 }
                 .buttonStyle(.borderless)
                 .font(.caption2)
-                .disabled(placement.wrappedValue.xOffset == 0
-                          && placement.wrappedValue.yOffset == 0)
+                .disabled(placement.wrappedValue.xOffset == 0 && placement.wrappedValue.yOffset == 0)
             }
-            sliderRow(title: "Horizontal", value: placement.xOffset, range: xRange)
-            sliderRow(title: "Vertical",   value: placement.yOffset, range: yRange)
+            sliderRow(title: "Horizontal", value: placement.xOffset,
+                      range: -Double(visible.width)...Double(visible.width))
+            sliderRow(title: "Vertical",   value: placement.yOffset,
+                      range: -Double(visible.height)...Double(visible.height))
         }
     }
 
-    private func sliderRow(title: String,
-                           value: Binding<Double>,
+    private func sliderRow(title: String, value: Binding<Double>,
                            range: ClosedRange<Double>) -> some View {
         VStack(alignment: .leading, spacing: 2) {
-            Text(title)
-                .font(.caption2)
-                .foregroundStyle(.secondary)
+            Text(title).font(.caption2).foregroundStyle(.secondary)
             HStack(spacing: 8) {
-                Slider(value: value, in: range)
+                Slider(value: value, in: range).controlSize(.mini)
+                TextField("0", value: value, format: .number.precision(.fractionLength(0)))
+                    .textFieldStyle(.roundedBorder)
                     .controlSize(.mini)
-                TextField(
-                    "0",
-                    value: value,
-                    format: .number.precision(.fractionLength(0))
-                )
-                .textFieldStyle(.roundedBorder)
-                .controlSize(.mini)
-                .multilineTextAlignment(.trailing)
-                .frame(width: 56)
-                .font(.caption2.monospacedDigit())
-                Text("px")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.trailing)
+                    .frame(width: 56)
+                    .font(.caption2.monospacedDigit())
+                Text("px").font(.caption2).foregroundStyle(.secondary)
             }
         }
     }
@@ -198,27 +172,20 @@ struct MenuBarContent: View {
 
     private var autoDismissSection: some View {
         HStack(spacing: 8) {
-            Text("Auto-dismiss")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+            Text("Auto-dismiss").font(.caption).foregroundStyle(.secondary)
             Spacer()
             if settings.autoDismissSeconds > 0 {
-                TextField(
-                    "",
-                    value: $settings.autoDismissSeconds,
-                    format: .number.precision(.fractionLength(0))
-                )
-                .textFieldStyle(.roundedBorder)
-                .controlSize(.mini)
-                .multilineTextAlignment(.trailing)
-                .frame(width: 40)
-                .font(.caption2.monospacedDigit())
+                TextField("", value: $settings.autoDismissSeconds,
+                          format: .number.precision(.fractionLength(0)))
+                    .textFieldStyle(.roundedBorder)
+                    .controlSize(.mini)
+                    .multilineTextAlignment(.trailing)
+                    .frame(width: 40)
+                    .font(.caption2.monospacedDigit())
                 Stepper("", value: $settings.autoDismissSeconds, in: 1...300, step: 1)
                     .labelsHidden()
                     .controlSize(.mini)
-                Text("s")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
+                Text("s").font(.caption2).foregroundStyle(.secondary)
             }
             Toggle("", isOn: Binding(
                 get: { settings.autoDismissSeconds > 0 },
@@ -227,55 +194,6 @@ struct MenuBarContent: View {
             .labelsHidden()
             .toggleStyle(.switch)
             .controlSize(.small)
-        }
-    }
-
-    // MARK: - Per-app positions
-
-    /// Running apps that can be added manually (not already in the list).
-    private var addableApps: [String] {
-        NSWorkspace.shared.runningApplications
-            .filter { $0.activationPolicy == .regular }
-            .compactMap { $0.localizedName }
-            .filter { !settings.knownApps.contains($0) && $0 != "NotificationNanny" }
-            .sorted()
-    }
-
-    private var perAppSection: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack {
-                Text("Per-app positions")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                Spacer()
-                Menu {
-                    if addableApps.isEmpty {
-                        Text("No other apps running")
-                    } else {
-                        ForEach(addableApps, id: \.self) { appName in
-                            Button(appName) { settings.recordApp(appName) }
-                        }
-                    }
-                } label: {
-                    Image(systemName: "plus")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                .menuStyle(.borderlessButton)
-                .fixedSize()
-            }
-            if settings.knownApps.isEmpty {
-                Text("Apps appear here automatically after their first notification, or add one via +.")
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
-                    .fixedSize(horizontal: false, vertical: true)
-            } else {
-                VStack(spacing: 2) {
-                    ForEach(settings.knownApps, id: \.self) { app in
-                        AppOverrideRow(appName: app, settings: settings)
-                    }
-                }
-            }
         }
     }
 
@@ -312,166 +230,15 @@ struct MenuBarContent: View {
             .font(.caption)
 
             if let error = launchAtLogin.lastError {
-                Text(error)
-                    .font(.caption2)
-                    .foregroundStyle(.red)
+                Text(error).font(.caption2).foregroundStyle(.red)
             }
 
             HStack {
                 Spacer()
-                Button("Quit") {
-                    NSApplication.shared.terminate(nil)
-                }
-                .keyboardShortcut("q")
-                .buttonStyle(.borderless)
-                .font(.caption)
-            }
-        }
-    }
-}
-
-// MARK: - Per-app override row
-
-private struct AppOverrideRow: View {
-    let appName: String
-    @ObservedObject var settings: AppSettings
-    @EnvironmentObject var repositioner: NotificationRepositioner
-    @State private var expanded = false
-
-    private var placementBinding: Binding<ScreenPlacement> {
-        settings.appPlacementBinding(for: appName)
-    }
-
-    var body: some View {
-        let hasOverride = settings.appPlacement(for: appName) != nil
-        return VStack(alignment: .leading, spacing: 4) {
-            HStack(spacing: 6) {
-                Text(appName)
+                Button("Quit") { NSApplication.shared.terminate(nil) }
+                    .keyboardShortcut("q")
+                    .buttonStyle(.borderless)
                     .font(.caption)
-                    .lineLimit(1)
-                Spacer()
-                if hasOverride {
-                    Text(placementBinding.wrappedValue.position.label)
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                } else {
-                    Text("Global")
-                        .font(.caption2)
-                        .foregroundStyle(.tertiary)
-                }
-                Button {
-                    settings.forgetApp(appName)
-                    expanded = false
-                } label: {
-                    Image(systemName: "xmark.circle.fill")
-                        .foregroundStyle(.secondary)
-                }
-                .buttonStyle(.borderless)
-                Button {
-                    withAnimation(.easeInOut(duration: 0.15)) { expanded.toggle() }
-                } label: {
-                    Image(systemName: expanded ? "chevron.up" : "chevron.down")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                }
-                .buttonStyle(.borderless)
-            }
-
-            if expanded {
-                HStack(alignment: .top, spacing: 10) {
-                    PositionGrid(
-                        selection: Binding(
-                            get: { placementBinding.wrappedValue.position },
-                            set: { var p = placementBinding.wrappedValue; p.position = $0; placementBinding.wrappedValue = p }
-                        )
-                    )
-                    VStack(alignment: .leading, spacing: 5) {
-                        appOffsetField("X", value: Binding(
-                            get: { placementBinding.wrappedValue.xOffset },
-                            set: { var p = placementBinding.wrappedValue; p.xOffset = $0; placementBinding.wrappedValue = p }
-                        ))
-                        appOffsetField("Y", value: Binding(
-                            get: { placementBinding.wrappedValue.yOffset },
-                            set: { var p = placementBinding.wrappedValue; p.yOffset = $0; placementBinding.wrappedValue = p }
-                        ))
-                        Spacer(minLength: 0)
-                        HStack {
-                            Button {
-                                repositioner.sendTest(as: appName)
-                            } label: {
-                                Image(systemName: "paperplane.fill")
-                            }
-                            .buttonStyle(.borderless)
-                            .font(.caption2)
-                            .help("Send a test notification as \(appName)")
-                            Spacer()
-                            Button("Reset") {
-                                var p = placementBinding.wrappedValue
-                                p.xOffset = 0; p.yOffset = 0
-                                placementBinding.wrappedValue = p
-                            }
-                            .buttonStyle(.borderless)
-                            .font(.caption2)
-                            .disabled(placementBinding.wrappedValue.xOffset == 0
-                                      && placementBinding.wrappedValue.yOffset == 0)
-                        }
-                    }
-                }
-                .padding(.bottom, 2)
-                .transition(.opacity)
-            }
-        }
-        .padding(.vertical, 2)
-    }
-
-    private func appOffsetField(_ label: String, value: Binding<Double>) -> some View {
-        HStack(spacing: 4) {
-            Text(label)
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-                .frame(width: 10, alignment: .leading)
-            TextField("0", value: value, format: .number.precision(.fractionLength(0)))
-                .textFieldStyle(.roundedBorder)
-                .controlSize(.mini)
-                .multilineTextAlignment(.trailing)
-                .frame(width: 52)
-                .font(.caption2.monospacedDigit())
-            Text("px")
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-        }
-    }
-}
-
-// MARK: - 3×3 position grid
-
-private struct PositionGrid: View {
-    @Binding var selection: NotificationPosition
-
-    private static let rows: [[NotificationPosition]] = [
-        [.topLeft,    .topCenter,    .topRight],
-        [.middleLeft, .middleCenter, .middleRight],
-        [.bottomLeft, .bottomCenter, .bottomRight],
-    ]
-
-    var body: some View {
-        VStack(spacing: 3) {
-            ForEach(Array(Self.rows.enumerated()), id: \.offset) { _, row in
-                HStack(spacing: 3) {
-                    ForEach(row) { pos in
-                        Button {
-                            selection = pos
-                        } label: {
-                            RoundedRectangle(cornerRadius: 3, style: .continuous)
-                                .fill(selection == pos
-                                      ? Color.nannyAccent
-                                      : Color.secondary.opacity(0.15))
-                                .frame(width: 28, height: 18)
-                        }
-                        .buttonStyle(.borderless)
-                        .help(pos.label)
-                    }
-                }
             }
         }
     }
@@ -493,7 +260,6 @@ private struct DraggableScreenTile: View {
         let scale = tileWidth / visible.width
         let bannerWidth = max(36, Self.realBannerSize.width * scale)
         let bannerHeight = max(14, Self.realBannerSize.height * scale)
-
         let bannerCenterReal = bannerCenterInVisibleCoords(visible: visible)
         let bannerCenterTile = CGPoint(
             x: (bannerCenterReal.x - visible.minX) * scale,
@@ -507,33 +273,27 @@ private struct DraggableScreenTile: View {
                     RoundedRectangle(cornerRadius: 8, style: .continuous)
                         .stroke(Color.secondary.opacity(0.25), lineWidth: 1)
                 )
-
             Rectangle()
                 .fill(Color.secondary.opacity(0.12))
                 .frame(height: 6)
                 .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-
             BannerChip(width: bannerWidth, height: bannerHeight)
                 .position(x: bannerCenterTile.x, y: bannerCenterTile.y)
                 .gesture(
                     DragGesture(minimumDistance: 0, coordinateSpace: .local)
                         .onChanged { value in
-                            updatePlacement(
-                                fromTilePoint: value.location,
-                                tileSize: CGSize(width: tileWidth, height: tileHeight),
-                                visible: visible
-                            )
+                            updatePlacement(fromTilePoint: value.location,
+                                            tileSize: CGSize(width: tileWidth, height: tileHeight),
+                                            visible: visible)
                         }
                 )
         }
         .frame(width: tileWidth, height: tileHeight)
         .contentShape(Rectangle())
         .onTapGesture { tap in
-            updatePlacement(
-                fromTilePoint: tap,
-                tileSize: CGSize(width: tileWidth, height: tileHeight),
-                visible: visible
-            )
+            updatePlacement(fromTilePoint: tap,
+                            tileSize: CGSize(width: tileWidth, height: tileHeight),
+                            visible: visible)
         }
     }
 
@@ -542,34 +302,25 @@ private struct DraggableScreenTile: View {
         let inset: CGFloat = 8
         let x: CGFloat
         switch placement.position {
-        case .topLeft, .middleLeft, .bottomLeft:
-            x = inset
-        case .topCenter, .middleCenter, .bottomCenter:
-            x = (visible.width - banner.width) / 2
-        case .topRight, .middleRight, .bottomRight:
-            x = visible.width - banner.width - inset
+        case .topLeft, .middleLeft, .bottomLeft:        x = inset
+        case .topCenter, .middleCenter, .bottomCenter:  x = (visible.width - banner.width) / 2
+        case .topRight, .middleRight, .bottomRight:     x = visible.width - banner.width - inset
         }
         let y: CGFloat
         switch placement.position {
-        case .topLeft, .topCenter, .topRight:
-            y = inset
-        case .middleLeft, .middleCenter, .middleRight:
-            y = (visible.height - banner.height) / 2
-        case .bottomLeft, .bottomCenter, .bottomRight:
-            y = visible.height - banner.height - inset
+        case .topLeft, .topCenter, .topRight:           y = inset
+        case .middleLeft, .middleCenter, .middleRight:  y = (visible.height - banner.height) / 2
+        case .bottomLeft, .bottomCenter, .bottomRight:  y = visible.height - banner.height - inset
         }
         let cx = visible.minX + x + banner.width / 2 + CGFloat(placement.xOffset)
         let cy = visible.minY + y + banner.height / 2 + CGFloat(placement.yOffset)
         return CGPoint(x: cx, y: cy)
     }
 
-    private func updatePlacement(fromTilePoint point: CGPoint,
-                                 tileSize: CGSize,
-                                 visible: CGRect) {
+    private func updatePlacement(fromTilePoint point: CGPoint, tileSize: CGSize, visible: CGRect) {
         let scale = tileSize.width / visible.width
         let banner = Self.realBannerSize
         let inset: CGFloat = 8
-
         let centreX = max(inset + banner.width / 2,
                           min(visible.width - inset - banner.width / 2, point.x / scale))
         let centreY = max(inset + banner.height / 2,
@@ -588,8 +339,7 @@ private struct DraggableScreenTile: View {
         default: bandY = .middle
         }
 
-        let anchor = position(for: bandX, bandY)
-
+        let anchor = anchorPosition(for: bandX, bandY)
         let refX: CGFloat
         switch bandX {
         case .start:  refX = inset + banner.width / 2
@@ -604,13 +354,13 @@ private struct DraggableScreenTile: View {
         }
 
         placement.position = anchor
-        placement.xOffset = Double(centreX - refX)
-        placement.yOffset = Double(centreY - refY)
+        placement.xOffset  = Double(centreX - refX)
+        placement.yOffset  = Double(centreY - refY)
     }
 
     private enum AnchorBand { case start, middle, end }
 
-    private func position(for x: AnchorBand, _ y: AnchorBand) -> NotificationPosition {
+    private func anchorPosition(for x: AnchorBand, _ y: AnchorBand) -> NotificationPosition {
         switch (y, x) {
         case (.start,  .start):  return .topLeft
         case (.start,  .middle): return .topCenter
