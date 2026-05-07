@@ -4,7 +4,7 @@ A macOS menu-bar app that lets you reposition notification banners to any locati
 
 I work full time, but I'm happy to look at any issues that come up. Feel free to open one!
 
-<img width="386" height="589" alt="image" src="https://github.com/user-attachments/assets/ef94a220-d0e6-41cd-b4a3-69222d3b72f2" />
+<img width="499" height="761" alt="image" src="https://github.com/user-attachments/assets/341d5e27-7691-4e68-916e-df554b0e4aaa" />
 
 
 
