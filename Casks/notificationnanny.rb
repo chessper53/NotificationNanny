@@ -9,7 +9,7 @@ cask "notificationnanny" do
 
   depends_on macos: ">= :ventura"
 
-  app "NotificationNanny.app"
+  app "NotificationNanny.app", disable_quarantine: true
 
   zap trash: [
     "~/Library/Preferences/com.notificationnanny.app.plist",
