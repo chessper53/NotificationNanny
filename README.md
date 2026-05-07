@@ -23,6 +23,10 @@ A bell icon appears in your menu bar. On first launch, click **Grant Accessibili
 
 Click the menu bar bell to open the panel. Drag the purple chip around the screen tile to set your preferred position, or use the horizontal and vertical sliders for pixel-perfect placement. Hit **Send Test Notification** to fire a banner and see exactly where it lands. Settings are remembered per display, so you can have different positions on different screens.
 
+The **Per-app positions** section lets you route each app's notifications to a different spot. Add any running app with the + button and expand its row to pick a position and fine-tune the offset. Use the paperplane button to send a test notification routed as that specific app.
+
+Enable **Auto-dismiss** to have banners slide off-screen automatically after a chosen number of seconds.
+
 ---
 
 ## How it works
@@ -52,3 +56,29 @@ cd NotificationNanny
 ## Privacy
 
 NotificationNanny does not collect, transmit, or store any personal data. The Accessibility permission is used solely to reposition notification windows on your local machine.
+
+---
+
+<details>
+<summary>Full feature list &amp; tags</summary>
+
+### Features
+
+- Drag-to-position tile: place notification banners anywhere on screen with a miniature display preview
+- Pixel-perfect fine-tuning with horizontal and vertical offset sliders
+- Multi-display support: independent position settings per physical screen
+- Per-app positions: set a different location for each app's notifications, with custom X/Y offsets
+- Auto-dismiss: automatically slide banners off-screen after a configurable number of seconds
+- Test notification button: fire a sample banner instantly to verify placement
+- Per-app test button: send a test notification routed as a specific app to verify its custom position
+- Add any running app manually to the per-app list without waiting for a notification
+- Launch at login support via SMAppService
+- Enable/disable toggle to suspend all repositioning without changing any settings
+- Automatic Accessibility permission reset on binary update so Homebrew upgrades prompt cleanly
+- Works on macOS 13 Ventura and later, including macOS 26 Tahoe
+
+### Tags
+
+`macos` `menu-bar` `notifications` `notification-banner` `accessibility` `swiftui` `swift` `macos-app` `productivity` `menubar-app` `notification-manager` `ax-api` `notificationcenter` `swift-package-manager` `no-xcode`
+
+</details>

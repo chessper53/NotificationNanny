@@ -21,13 +21,42 @@ struct NotificationNannyApp: App {
 /// observation starts immediately, not the first time the user opens the popover.
 @MainActor
 final class AppCoordinator: ObservableObject {
-    let settings = AppSettings()
-    let repositioner = NotificationRepositioner()
-    let launchAtLogin = LaunchAtLogin()
+    let settings: AppSettings
+    let repositioner: NotificationRepositioner
+    let launchAtLogin: LaunchAtLogin
 
     init() {
+        settings = AppSettings()
+        launchAtLogin = LaunchAtLogin()
+        // Must run before NotificationRepositioner.init(), which calls AXIsProcessTrusted().
+        AppCoordinator.resetTCCIfBinaryChanged()
+        repositioner = NotificationRepositioner()
         repositioner.bind(to: settings)
         autoEnableLoginItemIfNeeded()
+    }
+
+    /// If the binary has been replaced (e.g. a Homebrew upgrade), the old TCC
+    /// grant is tied to the previous signature and will silently fail. Detect
+    /// the change by comparing the executable's modification date and reset the
+    /// Accessibility entry so the new binary can request a fresh grant.
+    private static func resetTCCIfBinaryChanged() {
+        guard let execURL = Bundle.main.executableURL,
+              let attrs = try? FileManager.default.attributesOfItem(atPath: execURL.path),
+              let mtime = attrs[.modificationDate] as? Date else { return }
+
+        let key = "lastBinaryMtime"
+        let stored = UserDefaults.standard.object(forKey: key) as? Date
+        guard mtime != stored else { return }
+
+        UserDefaults.standard.set(mtime, forKey: key)
+
+        let task = Process()
+        task.launchPath = "/usr/bin/tccutil"
+        task.arguments = ["reset", "Accessibility", "com.notificationnanny.app"]
+        task.standardOutput = Pipe()
+        task.standardError = Pipe()
+        try? task.run()
+        task.waitUntilExit()
     }
 
     /// First time we're launched from /Applications, opt the user in to
