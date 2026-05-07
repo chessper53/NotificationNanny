@@ -11,6 +11,7 @@ final class AppSettings: ObservableObject {
         static let placements    = "placementsByDisplayID"
         static let autoDismiss   = "autoDismissSeconds"
         static let targetDisplay = "targetDisplayID"
+        static let presets       = "presets"
     }
 
     @Published var isEnabled: Bool {
@@ -30,6 +31,10 @@ final class AppSettings: ObservableObject {
         didSet { savePlacements() }
     }
 
+    @Published var presets: [Preset] {
+        didSet { savePresets() }
+    }
+
     init() {
         self.isEnabled          = (defaults.object(forKey: Key.isEnabled) as? Bool) ?? true
         self.autoDismissSeconds = defaults.double(forKey: Key.autoDismiss)
@@ -40,6 +45,13 @@ final class AppSettings: ObservableObject {
             self.placements = decoded
         } else {
             self.placements = [:]
+        }
+
+        if let data = defaults.data(forKey: Key.presets),
+           let decoded = try? JSONDecoder().decode([Preset].self, from: data) {
+            self.presets = decoded
+        } else {
+            self.presets = []
         }
     }
 
@@ -60,9 +72,31 @@ final class AppSettings: ObservableObject {
         )
     }
 
+    // MARK: - Presets
+
+    func saveCurrentAsPreset(name: String) {
+        let preset = Preset(name: name, placements: placements,
+                            targetDisplayID: targetDisplayID, autoDismissSeconds: autoDismissSeconds)
+        presets.append(preset)
+    }
+
+    func applyPreset(_ preset: Preset) {
+        placements = preset.placements
+        targetDisplayID = preset.targetDisplayID
+        autoDismissSeconds = preset.autoDismissSeconds
+    }
+
+    func deletePreset(_ preset: Preset) {
+        presets.removeAll { $0.id == preset.id }
+    }
+
     // MARK: - Persistence
 
     private func savePlacements() {
         if let data = try? JSONEncoder().encode(placements) { defaults.set(data, forKey: Key.placements) }
+    }
+
+    private func savePresets() {
+        if let data = try? JSONEncoder().encode(presets) { defaults.set(data, forKey: Key.presets) }
     }
 }

@@ -24,10 +24,12 @@ final class AppCoordinator: ObservableObject {
     let settings: AppSettings
     let repositioner: NotificationRepositioner
     let launchAtLogin: LaunchAtLogin
+    let hotkeyManager: HotkeyManager
 
     init() {
         settings = AppSettings()
         launchAtLogin = LaunchAtLogin()
+        hotkeyManager = HotkeyManager(settings: settings)
         // Must run before NotificationRepositioner.init(), which calls AXIsProcessTrusted().
         AppCoordinator.resetTCCIfBinaryChanged()
         repositioner = NotificationRepositioner()
