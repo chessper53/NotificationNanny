@@ -12,7 +12,18 @@ final class AppSettings: ObservableObject {
         static let autoDismiss   = "autoDismissSeconds"
         static let targetDisplay = "targetDisplayID"
         static let presets       = "presets"
+        static let appGroups     = "appGroups"
+        static let knownApps     = "knownAppNames"
     }
+
+    /// ~/Library/Application Support/NotificationNanny/known_apps.json
+    /// Survives reinstalls and UserDefaults resets.
+    private static let knownAppsFileURL: URL = {
+        let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        let dir = support.appendingPathComponent("NotificationNanny", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir.appendingPathComponent("known_apps.json")
+    }()
 
     @Published var isEnabled: Bool {
         didSet { defaults.set(isEnabled, forKey: Key.isEnabled) }
@@ -35,6 +46,15 @@ final class AppSettings: ObservableObject {
         didSet { savePresets() }
     }
 
+    @Published var appGroups: [AppGroup] {
+        didSet { saveAppGroups() }
+    }
+
+    /// Sorted unique list of app names that have sent at least one notification.
+    @Published private(set) var knownAppNames: [String] {
+        didSet { saveKnownApps() }
+    }
+
     init() {
         self.isEnabled          = (defaults.object(forKey: Key.isEnabled) as? Bool) ?? true
         self.autoDismissSeconds = defaults.double(forKey: Key.autoDismiss)
@@ -53,6 +73,23 @@ final class AppSettings: ObservableObject {
         } else {
             self.presets = []
         }
+
+        if let data = defaults.data(forKey: Key.appGroups),
+           let decoded = try? JSONDecoder().decode([AppGroup].self, from: data) {
+            self.appGroups = decoded
+        } else {
+            self.appGroups = []
+        }
+
+        // Load known app names from file (survives reinstalls), fall back to UserDefaults.
+        if let data = try? Data(contentsOf: Self.knownAppsFileURL),
+           let names = try? JSONDecoder().decode([String].self, from: data) {
+            self.knownAppNames = names
+        } else if let stored = defaults.stringArray(forKey: Key.knownApps) {
+            self.knownAppNames = stored
+        } else {
+            self.knownAppNames = []
+        }
     }
 
     // MARK: - Per-screen placement
@@ -70,6 +107,66 @@ final class AppSettings: ObservableObject {
             get: { [weak self] in self?.placement(for: screen) ?? .default },
             set: { [weak self] in self?.setPlacement($0, for: screen) }
         )
+    }
+
+    // MARK: - App groups
+
+    func group(for appName: String) -> AppGroup? {
+        appGroups.first { $0.appNames.contains(appName) }
+    }
+
+    /// Returns the group placement if the app has a rule, else the per-screen default.
+    func placement(for appName: String?, screen: NSScreen) -> ScreenPlacement {
+        if let appName, let g = group(for: appName) { return g.placement }
+        return placement(for: screen)
+    }
+
+    func placementBinding(for groupID: UUID) -> Binding<ScreenPlacement> {
+        Binding(
+            get: { [weak self] in
+                self?.appGroups.first(where: { $0.id == groupID })?.placement ?? .default
+            },
+            set: { [weak self] newVal in
+                guard let self, let i = self.appGroups.firstIndex(where: { $0.id == groupID }) else { return }
+                self.appGroups[i].placement = newVal
+            }
+        )
+    }
+
+    @discardableResult
+    func addGroup(name: String) -> UUID {
+        let g = AppGroup(name: name)
+        appGroups.append(g)
+        return g.id
+    }
+
+    func deleteGroup(_ id: UUID) {
+        appGroups.removeAll { $0.id == id }
+    }
+
+    func renameGroup(_ id: UUID, to name: String) {
+        guard let i = appGroups.firstIndex(where: { $0.id == id }) else { return }
+        appGroups[i].name = name
+    }
+
+    /// Assigns `appName` to `groupID`, removing it from any other group first.
+    func addApp(_ appName: String, toGroup groupID: UUID) {
+        for i in appGroups.indices { appGroups[i].appNames.removeAll { $0 == appName } }
+        guard let i = appGroups.firstIndex(where: { $0.id == groupID }) else { return }
+        appGroups[i].appNames.append(appName)
+        appGroups[i].appNames.sort()
+    }
+
+    func removeApp(_ appName: String, fromGroup groupID: UUID) {
+        guard let i = appGroups.firstIndex(where: { $0.id == groupID }) else { return }
+        appGroups[i].appNames.removeAll { $0 == appName }
+    }
+
+    /// Adds to the known-apps list if not already present. Safe to call repeatedly.
+    func recordAppName(_ name: String) {
+        guard !name.isEmpty, !knownAppNames.contains(name) else { return }
+        knownAppNames.append(name)
+        knownAppNames.sort()
     }
 
     // MARK: - Presets
@@ -98,5 +195,16 @@ final class AppSettings: ObservableObject {
 
     private func savePresets() {
         if let data = try? JSONEncoder().encode(presets) { defaults.set(data, forKey: Key.presets) }
+    }
+
+    private func saveAppGroups() {
+        if let data = try? JSONEncoder().encode(appGroups) { defaults.set(data, forKey: Key.appGroups) }
+    }
+
+    private func saveKnownApps() {
+        defaults.set(knownAppNames, forKey: Key.knownApps)
+        if let data = try? JSONEncoder().encode(knownAppNames) {
+            try? data.write(to: Self.knownAppsFileURL, options: .atomic)
+        }
     }
 }

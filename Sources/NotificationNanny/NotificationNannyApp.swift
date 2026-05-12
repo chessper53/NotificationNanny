@@ -32,7 +32,7 @@ final class AppCoordinator: ObservableObject {
         AppCoordinator.resetTCCIfBinaryChanged()
         repositioner = NotificationRepositioner()
         repositioner.bind(to: settings)
-        autoEnableLoginItemIfNeeded()
+        Task { @MainActor [weak self] in self?.autoEnableLoginItemIfNeeded() }
     }
 
     /// If the binary has been replaced (e.g. a Homebrew upgrade), the old TCC
@@ -50,13 +50,15 @@ final class AppCoordinator: ObservableObject {
 
         UserDefaults.standard.set(mtime, forKey: key)
 
-        let task = Process()
-        task.launchPath = "/usr/bin/tccutil"
-        task.arguments = ["reset", "Accessibility", "com.notificationnanny.app"]
-        task.standardOutput = Pipe()
-        task.standardError = Pipe()
-        try? task.run()
-        task.waitUntilExit()
+        DispatchQueue.global(qos: .utility).async {
+            let task = Process()
+            task.launchPath = "/usr/bin/tccutil"
+            task.arguments = ["reset", "Accessibility", "com.notificationnanny.app"]
+            task.standardOutput = Pipe()
+            task.standardError = Pipe()
+            try? task.run()
+            task.waitUntilExit()
+        }
     }
 
     /// First time we're launched from /Applications, opt the user in to

@@ -10,10 +10,14 @@ struct MenuBarContent: View {
     @EnvironmentObject var repositioner: NotificationRepositioner
     @EnvironmentObject var launchAtLogin: LaunchAtLogin
 
-    @State private var isAddingPreset  = false
-    @State private var newPresetName   = ""
+    @State private var isAddingPreset   = false
+    @State private var newPresetName    = ""
     @State private var editingPresetID: UUID? = nil
-    @State private var editingName     = ""
+    @State private var editingName      = ""
+
+    @State private var selectedGroupID: UUID? = nil
+    @State private var isAddingGroup    = false
+    @State private var newGroupName     = ""
 
     private var screens: [NSScreen] { NSScreen.screens }
 
@@ -21,6 +25,14 @@ struct MenuBarContent: View {
         if settings.targetDisplayID != 0,
            let s = screens.first(where: { $0.displayID == settings.targetDisplayID }) { return s }
         return NSScreen.main ?? screens[0]
+    }
+
+    /// The placement binding that the drag tile and sliders edit — either a group's or the screen default.
+    private var activePlacementBinding: Binding<ScreenPlacement> {
+        if let id = selectedGroupID, settings.appGroups.contains(where: { $0.id == id }) {
+            return settings.placementBinding(for: id)
+        }
+        return settings.placementBinding(for: selectedScreen)
     }
 
     var body: some View {
@@ -31,6 +43,8 @@ struct MenuBarContent: View {
                 screenPickerSection
                 Divider()
             }
+            rulesSection
+            Divider()
             positionSection
             Divider()
             offsetSection
@@ -48,6 +62,11 @@ struct MenuBarContent: View {
             repositioner.refreshAccessibilityStatus()
             if repositioner.hasAccessibilityPermission, !repositioner.isObserving {
                 repositioner.startObserving()
+            }
+        }
+        .onChange(of: settings.appGroups) { groups in
+            if let id = selectedGroupID, !groups.contains(where: { $0.id == id }) {
+                selectedGroupID = nil
             }
         }
     }
@@ -106,15 +125,172 @@ struct MenuBarContent: View {
         }
     }
 
+    // MARK: - Rules
+
+    private var rulesSection: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text("App Rules")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Spacer()
+                if isAddingGroup {
+                    HStack(spacing: 6) {
+                        TextField("Name", text: $newGroupName)
+                            .textFieldStyle(.roundedBorder)
+                            .controlSize(.mini)
+                            .font(.caption)
+                            .frame(width: 100)
+                            .onSubmit { commitNewGroup() }
+                        Button("Create", action: commitNewGroup)
+                            .buttonStyle(.borderedProminent)
+                            .controlSize(.mini)
+                            .disabled(newGroupName.trimmingCharacters(in: .whitespaces).isEmpty)
+                        Button("Cancel") { newGroupName = ""; isAddingGroup = false }
+                            .buttonStyle(.borderless)
+                            .controlSize(.mini)
+                    }
+                } else {
+                    Button {
+                        isAddingGroup = true
+                    } label: {
+                        Image(systemName: "plus")
+                            .font(.caption)
+                    }
+                    .buttonStyle(.borderless)
+                }
+            }
+
+            // Chip bar
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 6) {
+                    ruleChip(title: "Default", isSelected: selectedGroupID == nil) {
+                        selectedGroupID = nil
+                    }
+                    ForEach(settings.appGroups) { group in
+                        ruleChip(
+                            title: group.name,
+                            isSelected: selectedGroupID == group.id,
+                            onDelete: { settings.deleteGroup(group.id) }
+                        ) {
+                            selectedGroupID = group.id
+                        }
+                    }
+                }
+                .padding(.vertical, 1)
+            }
+
+            // App assignment row for selected group
+            if let id = selectedGroupID {
+                if let group = settings.appGroups.first(where: { $0.id == id }) {
+                    appAssignmentRow(for: group)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func appAssignmentRow(for group: AppGroup) -> some View {
+        ScrollView(showsIndicators: true) {
+            VStack(alignment: .leading, spacing: 1) {
+                if settings.knownAppNames.isEmpty {
+                    Text("No apps seen yet — receive a notification from any app and it will appear here.")
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 6)
+                } else {
+                    ForEach(settings.knownAppNames, id: \.self) { appName in
+                        let inThisGroup = group.appNames.contains(appName)
+                        Toggle(isOn: Binding(
+                            get: { inThisGroup },
+                            set: { on in
+                                if on { settings.addApp(appName, toGroup: group.id) }
+                                else  { settings.removeApp(appName, fromGroup: group.id) }
+                            }
+                        )) {
+                            Text(appName).font(.caption).lineLimit(1)
+                        }
+                        .toggleStyle(.checkbox)
+                        .controlSize(.small)
+                        .padding(.vertical, 2)
+                        .padding(.horizontal, 6)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(
+                            inThisGroup ? Color.nannyAccent.opacity(0.08) : Color.clear,
+                            in: RoundedRectangle(cornerRadius: 4)
+                        )
+                    }
+                }
+            }
+            .padding(.vertical, 4)
+        }
+        .frame(minHeight: 60, maxHeight: 120)
+        .background(Color.secondary.opacity(0.06), in: RoundedRectangle(cornerRadius: 6))
+        .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.secondary.opacity(0.15), lineWidth: 1))
+        .padding(.top, 2)
+    }
+
+    @ViewBuilder
+    private func ruleChip(title: String, isSelected: Bool,
+                          onDelete: (() -> Void)? = nil,
+                          action: @escaping () -> Void) -> some View {
+        HStack(spacing: 0) {
+            Button(action: action) {
+                Text(title)
+                    .font(.caption)
+                    .lineLimit(1)
+                    .padding(.leading, 9)
+                    .padding(.trailing, onDelete == nil ? 9 : 5)
+                    .padding(.vertical, 4)
+            }
+            .buttonStyle(.plain)
+
+            if let onDelete {
+                Button(action: onDelete) {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 7, weight: .bold))
+                        .padding(.trailing, 7)
+                        .padding(.vertical, 4)
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(isSelected ? Color.white.opacity(0.7) : Color.secondary)
+            }
+        }
+        .background(isSelected ? Color.nannyAccent : Color.clear)
+        .foregroundStyle(isSelected ? Color.white : Color.primary)
+        .clipShape(Capsule())
+        .overlay(Capsule().stroke(
+            isSelected ? Color.clear : Color.secondary.opacity(0.35),
+            lineWidth: 1)
+        )
+    }
+
+    private func commitNewGroup() {
+        let name = newGroupName.trimmingCharacters(in: .whitespaces)
+        guard !name.isEmpty else { return }
+        let id = settings.addGroup(name: name)
+        selectedGroupID = id
+        newGroupName = ""
+        isAddingGroup = false
+    }
+
     // MARK: - Position tile
 
     private var positionSection: some View {
         let visible = selectedScreen.visibleFrame
+        let groupName = selectedGroupID.flatMap { id in settings.appGroups.first(where: { $0.id == id })?.name }
         return VStack(alignment: .leading, spacing: 6) {
             HStack {
-                Text("Position")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                if let groupName {
+                    Text("Position · \(groupName)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } else {
+                    Text("Position")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
                 Spacer()
                 Text("\(Int(visible.width)) × \(Int(visible.height))")
                     .font(.caption2.monospacedDigit())
@@ -127,7 +303,7 @@ struct MenuBarContent: View {
             }
             DraggableScreenTile(
                 screen: selectedScreen,
-                placement: settings.placementBinding(for: selectedScreen)
+                placement: activePlacementBinding
             )
         }
     }
@@ -135,7 +311,7 @@ struct MenuBarContent: View {
     // MARK: - Offset sliders
 
     private var offsetSection: some View {
-        let placement = settings.placementBinding(for: selectedScreen)
+        let placement = activePlacementBinding
         let visible = selectedScreen.visibleFrame
         return VStack(alignment: .leading, spacing: 8) {
             HStack {
@@ -347,9 +523,13 @@ struct MenuBarContent: View {
     private var actionSection: some View {
         VStack(spacing: 8) {
             Button {
-                TestNotification.send()
+                repositioner.sendTestNotification(placement: activePlacementBinding.wrappedValue)
             } label: {
-                Label("Send Test Notification", systemImage: "paperplane.fill")
+                let groupName = selectedGroupID.flatMap { id in
+                    settings.appGroups.first(where: { $0.id == id })?.name
+                }
+                Label(groupName.map { "Test \"\($0)\" Position" } ?? "Send Test Notification",
+                      systemImage: "paperplane.fill")
                     .frame(maxWidth: .infinity)
             }
             .buttonStyle(.borderedProminent)

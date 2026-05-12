@@ -18,6 +18,7 @@ cask "notificationnanny" do
 
   zap trash: [
     "~/Library/Preferences/com.notificationnanny.app.plist",
+    "~/Library/Application Support/NotificationNanny",
     "~/Library/Application Support/com.notificationnanny.app",
     "~/Library/Containers/com.notificationnanny.app",
   ]
