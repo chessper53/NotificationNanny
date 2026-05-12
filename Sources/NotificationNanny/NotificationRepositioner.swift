@@ -134,6 +134,52 @@ final class NotificationRepositioner: ObservableObject {
         }
         observer = nil; ncApp = nil; ncPid = 0
         isObserving = false; detectedBannerInfo = nil
+        windowAppNameCache.removeAll()
+    }
+
+    // MARK: - App name extraction
+
+    private static let bannerSubroles: Set<String> = [
+        "AXNotificationCenterBanner",
+        "AXNotificationCenterBannerStack",
+    ]
+
+    private func findBannerElement(in el: AXUIElement, depth: Int = 0) -> AXUIElement? {
+        guard depth < 7 else { return nil }
+        var srRef: CFTypeRef?
+        if AXUIElementCopyAttributeValue(el, kAXSubroleAttribute as CFString, &srRef) == .success,
+           let sr = srRef as? String, Self.bannerSubroles.contains(sr) { return el }
+        var cRef: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(el, kAXChildrenAttribute as CFString, &cRef) == .success,
+              let children = cRef as? [AXUIElement] else { return nil }
+        for child in children {
+            if let found = findBannerElement(in: child, depth: depth + 1) { return found }
+        }
+        return nil
+    }
+
+    private func appNameFromElement(_ el: AXUIElement) -> String? {
+        var ref: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(el, "AXAttributedDescription" as CFString, &ref) == .success,
+              let val = ref, CFGetTypeID(val) == CFAttributedStringGetTypeID() else { return nil }
+        let str = CFAttributedStringGetString(val as! CFAttributedString) as String
+        guard let first = str.components(separatedBy: ", ").first, !first.isEmpty else { return nil }
+        // Strip directional Unicode marks (e.g. U+200E prepended by WhatsApp)
+        let cleaned = first
+            .unicodeScalars
+            .filter { !$0.properties.isDefaultIgnorableCodePoint }
+            .reduce(into: "") { $0.append(Character($1)) }
+            .trimmingCharacters(in: .whitespaces)
+        return cleaned.isEmpty ? nil : cleaned
+    }
+
+    private func appName(for window: AXUIElement) -> String? {
+        let key = CFHash(window)
+        if let cached = windowAppNameCache[key] { return cached }
+        let el = findBannerElement(in: window) ?? window
+        guard let name = appNameFromElement(el) else { return nil }
+        windowAppNameCache[key] = name
+        return name
     }
 
     // MARK: - Event handling
@@ -188,6 +234,16 @@ final class NotificationRepositioner: ObservableObject {
     private static let stackGap: CGFloat = 8
     private var animationGeneration = 0
     private var lastSelfSetPosition: CGPoint = .zero
+    private var windowAppNameCache: [CFHashCode: String] = [:]
+    private var testPlacementOverride: ScreenPlacement? = nil
+
+    func sendTestNotification(placement: ScreenPlacement) {
+        testPlacementOverride = placement
+        TestNotification.send()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 5) { [weak self] in
+            self?.testPlacementOverride = nil
+        }
+    }
 
     private struct BannerInfo {
         let offsetInWindow: CGPoint
@@ -254,7 +310,14 @@ final class NotificationRepositioner: ObservableObject {
             screen = s
         }
 
-        let placement = settings.placement(for: screen)
+        let placement: ScreenPlacement
+        if let override = testPlacementOverride {
+            placement = override
+        } else {
+            let appNameStr = appName(for: window)
+            if let appNameStr { settings.recordAppName(appNameStr) }
+            placement = settings.placement(for: appNameStr, screen: screen)
+        }
 
         let isOverlay = size.width > 700 || size.height > 400
         let bannerOffset: CGPoint
@@ -301,21 +364,21 @@ final class NotificationRepositioner: ObservableObject {
 
         animationGeneration &+= 1
         let gen = animationGeneration
-        let target = info.windowOrigin
 
-        setWindowPosition(window, to: target)
-        scheduleHolds(window: window, target: target, generation: gen)
+        setWindowPosition(window, to: info.windowOrigin)
+        // Re-evaluate target on each hold — app name lookup may race with banner rendering.
+        scheduleHolds(window: window, stackIndex: stackIndex, generation: gen)
 
         if settings.autoDismissSeconds > 0 {
             scheduleAutoDismiss(window: window, info: info, generation: gen)
         }
     }
 
-    private func scheduleHolds(window: AXUIElement, target: CGPoint, generation: Int) {
+    private func scheduleHolds(window: AXUIElement, stackIndex: Int, generation: Int) {
         for delay in [0.1, 0.5, 1.0, 2.0] as [Double] {
             DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
-                guard self?.animationGeneration == generation else { return }
-                self?.setWindowPosition(window, to: target)
+                guard let self, self.animationGeneration == generation else { return }
+                self.snapWindow(window, stackIndex: stackIndex)
             }
         }
     }

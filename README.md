@@ -12,6 +12,25 @@ I work full time, but I'm happy to look at any issues that come up. Feel free to
 
 ---
 
+## 🆕 What's New in v6.1
+
+### Per-app positioning rules
+
+Notifications from different apps can now go to different positions. Create named groups, assign apps to them, and each group gets its own drag-to-position tile and fine-tune sliders.
+
+**Example setup:**
+- *Priority Messages* → Microsoft Teams + WhatsApp → bottom-left
+- *Calendar* → Calendar + Reminders → top-center  
+- Everything else → top-right (Default)
+
+Apps are detected automatically as notifications arrive and remembered permanently, so you only need to assign them once. The **Test** button is context-aware: while editing a group it fires a test notification using that group's exact placement so you can see exactly where it lands.
+
+### Other improvements in v6.1
+- App names persist across reinstalls in `~/Library/Application Support/NotificationNanny/known_apps.json`
+- Notification positioning now re-evaluates on each animation hold, fixing a race where the group placement could be ignored if the banner wasn't fully rendered at the moment it appeared
+
+---
+
 ## Installation
 
 ```sh
@@ -42,6 +61,8 @@ A bell icon appears in your menu bar. On first launch, click **Grant Accessibili
 Click the menu bar bell to open the panel. Drag the purple chip around the screen tile to set your preferred position, or use the horizontal and vertical sliders for pixel-perfect placement. Hit **Send Test Notification** to fire a banner and see exactly where it lands. Settings are remembered per display, so you can have different positions on different screens.
 
 **Screen selector** (multi-display only): Force all banners onto a specific display, or leave it on Auto to follow macOS.
+
+**App Rules**: Create named groups and assign specific apps to each — every group gets its own drag-to-position tile and fine-tune sliders. For example, create a "Work" group for Microsoft Teams and position it bottom-left, and a "Social" group for WhatsApp and Messages at top-center. Apps not assigned to any group use the Default position. NotificationNanny learns which apps have sent notifications automatically, so they appear in the "Add app" menu as soon as you receive one.
 
 **Auto-dismiss**: Enable this to have banners slide off-screen automatically after a chosen number of seconds.
 
@@ -82,11 +103,13 @@ NotificationNanny does not collect, transmit, or store any personal data. The Ac
 
 ### Features
 
+- **Per-app rules**: assign apps to named groups, each with its own position — e.g. Teams bottom-left, Calendar top-center, everything else top-right
 - Drag-to-position tile: place notification banners anywhere on screen with a miniature display preview
 - Pixel-perfect fine-tuning with horizontal and vertical offset sliders
 - Multi-display support: independent position settings per physical screen, with a screen-force override
 - Auto-dismiss: automatically slide banners off-screen after a configurable number of seconds
-- Test notification button: fire a sample banner instantly to verify placement
+- Context-aware test notification: fires a sample banner using the currently selected rule's placement
+- App name memory: known apps saved to disk and survive reinstalls
 - Launch at login support via SMAppService
 - Enable/disable toggle to suspend all repositioning without changing any settings
 - Automatic Accessibility permission reset on binary update so Homebrew upgrades prompt cleanly
