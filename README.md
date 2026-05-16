@@ -13,7 +13,7 @@ I work full time, but I'm happy to look at any issues that come up. Feel free to
 
 ---
 
-## 🆕 What's New in v6.1
+## What's New in v6.1
 
 ### Per-app positioning rules
 
