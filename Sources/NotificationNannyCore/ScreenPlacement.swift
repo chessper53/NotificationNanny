@@ -2,12 +2,12 @@ import AppKit
 import CoreGraphics
 
 /// Per-screen notification placement: which corner + a fine-tune nudge.
-struct ScreenPlacement: Codable, Equatable {
-    var position: NotificationPosition
-    var xOffset: Double
-    var yOffset: Double
+package struct ScreenPlacement: Codable, Equatable {
+    package var position: NotificationPosition
+    package var xOffset: Double
+    package var yOffset: Double
 
-    static let `default` = ScreenPlacement(position: .topRight, xOffset: 0, yOffset: 0)
+    package static let `default` = ScreenPlacement(position: .topRight, xOffset: 0, yOffset: 0)
 }
 
 extension NSScreen {

@@ -7,20 +7,23 @@ private let log = Logger(subsystem: "com.notificationnanny", category: "repositi
 
 @MainActor
 package final class NotificationRepositioner: ObservableObject {
-    @Published private(set) var hasAccessibilityPermission: Bool = false
+    @Published private(set) var hasAccessibilityPermission: Bool
     @Published private(set) var isObserving: Bool = false
 
-    private var settings: AppSettings?
+    private let permissionMonitor = AccessibilityPermissionMonitor()
+    private var settings: (any NotificationSettingsProviding)?
     private var cancellables = Set<AnyCancellable>()
 
     private var observer: AXObserver?
     private var ncApp: AXUIElement?
     private var ncPid: pid_t = 0
-    private var permissionPollTimer: Timer?
 
     package init() {
-        refreshAccessibilityStatus()
-        startPermissionPollIfNeeded()
+        hasAccessibilityPermission = permissionMonitor.hasPermission
+        permissionMonitor.startPollingIfNeeded { [weak self] in
+            self?.hasAccessibilityPermission = true
+            self?.startObserving()
+        }
         NSWorkspace.shared.notificationCenter.addObserver(
             forName: NSWorkspace.didLaunchApplicationNotification,
             object: nil,
@@ -32,12 +35,19 @@ package final class NotificationRepositioner: ObservableObject {
         }
     }
 
-    package func bind(to settings: AppSettings) {
+    deinit {
+        // Remove the run loop source so the C callback can't fire on a dangling pointer.
+        if let observer {
+            CFRunLoopRemoveSource(CFRunLoopGetMain(), AXObserverGetRunLoopSource(observer), .defaultMode)
+        }
+    }
+
+    package func bind(to settings: any NotificationSettingsProviding) {
         guard self.settings == nil else { return }
         self.settings = settings
-        settings.objectWillChange
+        settings.settingsDidChange
             .throttle(for: .milliseconds(16), scheduler: DispatchQueue.main, latest: true)
-            .sink { [weak self] _ in self?.burstReposition() }
+            .sink { [weak self] in self?.burstReposition() }
             .store(in: &cancellables)
         startObserving()
     }
@@ -45,28 +55,16 @@ package final class NotificationRepositioner: ObservableObject {
     // MARK: - Accessibility permission
 
     func refreshAccessibilityStatus() {
-        hasAccessibilityPermission = AXIsProcessTrusted()
+        permissionMonitor.refresh()
+        hasAccessibilityPermission = permissionMonitor.hasPermission
     }
 
     func requestAccessibilityPermission() {
-        let key = kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String
-        _ = AXIsProcessTrustedWithOptions([key: true] as CFDictionary)
-        refreshAccessibilityStatus()
-        startPermissionPollIfNeeded()
-    }
-
-    private func startPermissionPollIfNeeded() {
-        guard permissionPollTimer == nil, !hasAccessibilityPermission else { return }
-        permissionPollTimer = Timer.scheduledTimer(withTimeInterval: 1.5, repeats: true) { [weak self] timer in
-            Task { @MainActor [weak self] in
-                guard let self else { return }
-                self.refreshAccessibilityStatus()
-                if self.hasAccessibilityPermission {
-                    timer.invalidate()
-                    self.permissionPollTimer = nil
-                    self.startObserving()
-                }
-            }
+        permissionMonitor.request()
+        hasAccessibilityPermission = permissionMonitor.hasPermission
+        permissionMonitor.startPollingIfNeeded { [weak self] in
+            self?.hasAccessibilityPermission = true
+            self?.startObserving()
         }
     }
 
@@ -74,7 +72,10 @@ package final class NotificationRepositioner: ObservableObject {
 
     func startObserving() {
         guard hasAccessibilityPermission else {
-            startPermissionPollIfNeeded()
+            permissionMonitor.startPollingIfNeeded { [weak self] in
+                self?.hasAccessibilityPermission = true
+                self?.startObserving()
+            }
             return
         }
         teardownObserver()
