@@ -10,14 +10,15 @@ package struct MenuBarContent: View {
     @EnvironmentObject var repositioner: NotificationRepositioner
     @EnvironmentObject var launchAtLogin: LaunchAtLogin
 
-    @State private var isAddingPreset   = false
-    @State private var newPresetName    = ""
-    @State private var editingPresetID: UUID? = nil
-    @State private var editingName      = ""
+    private enum PresetMode: Equatable { case idle, adding, renaming(UUID) }
+    private enum GroupMode: Equatable  { case browsing, adding }
+
+    @State private var presetMode: PresetMode = .idle
+    @State private var pendingName = ""
 
     @State private var selectedGroupID: UUID? = nil
-    @State private var isAddingGroup    = false
-    @State private var newGroupName     = ""
+    @State private var groupMode: GroupMode = .browsing
+    @State private var newGroupName = ""
 
     package init() {}
 
@@ -136,7 +137,7 @@ package struct MenuBarContent: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 Spacer()
-                if isAddingGroup {
+                if groupMode == .adding {
                     HStack(spacing: 6) {
                         TextField("Name", text: $newGroupName)
                             .textFieldStyle(.roundedBorder)
@@ -148,13 +149,13 @@ package struct MenuBarContent: View {
                             .buttonStyle(.borderedProminent)
                             .controlSize(.mini)
                             .disabled(newGroupName.trimmingCharacters(in: .whitespaces).isEmpty)
-                        Button("Cancel") { newGroupName = ""; isAddingGroup = false }
+                        Button("Cancel") { newGroupName = ""; groupMode = .browsing }
                             .buttonStyle(.borderless)
                             .controlSize(.mini)
                     }
                 } else {
                     Button {
-                        isAddingGroup = true
+                        groupMode = .adding
                     } label: {
                         Image(systemName: "plus")
                             .font(.caption)
@@ -272,7 +273,7 @@ package struct MenuBarContent: View {
         let id = settings.addGroup(name: name)
         selectedGroupID = id
         newGroupName = ""
-        isAddingGroup = false
+        groupMode = .browsing
     }
 
     // MARK: - Position tile
@@ -388,7 +389,7 @@ package struct MenuBarContent: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
 
-            if settings.presets.isEmpty && !isAddingPreset {
+            if settings.presets.isEmpty, presetMode == .idle {
                 Text("No presets yet")
                     .font(.caption2)
                     .foregroundStyle(.tertiary)
@@ -398,9 +399,9 @@ package struct MenuBarContent: View {
                 presetRow(preset, index: index)
             }
 
-            if isAddingPreset {
+            if presetMode == .adding {
                 HStack(spacing: 6) {
-                    TextField("Name", text: $newPresetName)
+                    TextField("Name", text: $pendingName)
                         .textFieldStyle(.roundedBorder)
                         .controlSize(.mini)
                         .font(.caption)
@@ -408,13 +409,13 @@ package struct MenuBarContent: View {
                     Button("Save", action: commitPreset)
                         .buttonStyle(.borderedProminent)
                         .controlSize(.mini)
-                        .disabled(newPresetName.trimmingCharacters(in: .whitespaces).isEmpty)
-                    Button("Cancel") { newPresetName = ""; isAddingPreset = false }
+                        .disabled(pendingName.trimmingCharacters(in: .whitespaces).isEmpty)
+                    Button("Cancel") { pendingName = ""; presetMode = .idle }
                         .buttonStyle(.borderless)
                         .controlSize(.mini)
                 }
             } else if settings.presets.count < 5 {
-                Button { isAddingPreset = true } label: {
+                Button { pendingName = ""; presetMode = .adding } label: {
                     Label("Save current as preset", systemImage: "plus")
                 }
                 .buttonStyle(.borderless)
@@ -429,9 +430,9 @@ package struct MenuBarContent: View {
 
     @ViewBuilder
     private func presetRow(_ preset: Preset, index: Int) -> some View {
-        if editingPresetID == preset.id {
+        if presetMode == .renaming(preset.id) {
             HStack(spacing: 6) {
-                TextField("", text: $editingName)
+                TextField("", text: $pendingName)
                     .textFieldStyle(.roundedBorder)
                     .controlSize(.mini)
                     .font(.caption)
@@ -439,7 +440,7 @@ package struct MenuBarContent: View {
                 Button("Done") { commitRename(preset) }
                     .buttonStyle(.borderedProminent)
                     .controlSize(.mini)
-                    .disabled(editingName.trimmingCharacters(in: .whitespaces).isEmpty)
+                    .disabled(pendingName.trimmingCharacters(in: .whitespaces).isEmpty)
                 Button { cancelRename() } label: {
                     Image(systemName: "xmark").font(.caption2)
                 }
@@ -488,12 +489,12 @@ package struct MenuBarContent: View {
     }
 
     private func beginRename(_ preset: Preset) {
-        editingPresetID = preset.id
-        editingName = preset.name
+        presetMode = .renaming(preset.id)
+        pendingName = preset.name
     }
 
     private func commitRename(_ preset: Preset) {
-        let trimmed = editingName.trimmingCharacters(in: .whitespaces)
+        let trimmed = pendingName.trimmingCharacters(in: .whitespaces)
         guard !trimmed.isEmpty,
               let i = settings.presets.firstIndex(where: { $0.id == preset.id }) else {
             cancelRename(); return
@@ -501,21 +502,21 @@ package struct MenuBarContent: View {
         var updated = settings.presets
         updated[i].name = trimmed
         settings.presets = updated
-        editingPresetID = nil
-        editingName = ""
+        presetMode = .idle
+        pendingName = ""
     }
 
     private func cancelRename() {
-        editingPresetID = nil
-        editingName = ""
+        presetMode = .idle
+        pendingName = ""
     }
 
     private func commitPreset() {
-        let name = newPresetName.trimmingCharacters(in: .whitespaces)
+        let name = pendingName.trimmingCharacters(in: .whitespaces)
         guard !name.isEmpty else { return }
         settings.saveCurrentAsPreset(name: name)
-        newPresetName = ""
-        isAddingPreset = false
+        pendingName = ""
+        presetMode = .idle
     }
 
     // MARK: - Actions

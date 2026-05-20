@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import Foundation
 import SwiftUI
 
@@ -27,16 +28,16 @@ package final class AppSettings: ObservableObject {
 
     private let knownAppsFileURL: URL
 
-    @Published var isEnabled: Bool {
+    @Published package var isEnabled: Bool {
         didSet { defaults.set(isEnabled, forKey: Key.isEnabled) }
     }
 
-    @Published var autoDismissSeconds: Double {
+    @Published package var autoDismissSeconds: Double {
         didSet { defaults.set(autoDismissSeconds, forKey: Key.autoDismiss) }
     }
 
     /// 0 = auto (follow macOS), non-zero = force to this display.
-    @Published var targetDisplayID: CGDirectDisplayID {
+    @Published package var targetDisplayID: CGDirectDisplayID {
         didSet { defaults.set(Int(targetDisplayID), forKey: Key.targetDisplay) }
     }
 
@@ -120,7 +121,7 @@ package final class AppSettings: ObservableObject {
     }
 
     /// Returns the group placement if the app has a rule, else the per-screen default.
-    func placement(for appName: String?, screen: NSScreen) -> ScreenPlacement {
+    package func placement(for appName: String?, screen: NSScreen) -> ScreenPlacement {
         if let appName, let g = group(for: appName) { return g.placement }
         return placement(for: screen)
     }
@@ -167,7 +168,7 @@ package final class AppSettings: ObservableObject {
     }
 
     /// Adds to the known-apps list if not already present. Safe to call repeatedly.
-    func recordAppName(_ name: String) {
+    package func recordAppName(_ name: String) {
         guard !name.isEmpty, !knownAppNames.contains(name) else { return }
         knownAppNames.append(name)
         knownAppNames.sort()
@@ -210,5 +211,11 @@ package final class AppSettings: ObservableObject {
         if let data = try? JSONEncoder().encode(knownAppNames) {
             try? data.write(to: self.knownAppsFileURL, options: .atomic)
         }
+    }
+}
+
+extension AppSettings: NotificationSettingsProviding {
+    package var settingsDidChange: AnyPublisher<Void, Never> {
+        objectWillChange.map { _ in () }.eraseToAnyPublisher()
     }
 }
