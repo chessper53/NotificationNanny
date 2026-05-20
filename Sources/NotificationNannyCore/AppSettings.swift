@@ -3,8 +3,8 @@ import Foundation
 import SwiftUI
 
 @MainActor
-final class AppSettings: ObservableObject {
-    private let defaults = UserDefaults.standard
+package final class AppSettings: ObservableObject {
+    private let defaults: UserDefaults
 
     private enum Key {
         static let isEnabled     = "isEnabled"
@@ -55,7 +55,8 @@ final class AppSettings: ObservableObject {
         didSet { saveKnownApps() }
     }
 
-    init() {
+    package init(defaults: UserDefaults = .standard) {
+        self.defaults           = defaults
         self.isEnabled          = (defaults.object(forKey: Key.isEnabled) as? Bool) ?? true
         self.autoDismissSeconds = defaults.double(forKey: Key.autoDismiss)
         self.targetDisplayID    = CGDirectDisplayID(max(0, defaults.integer(forKey: Key.targetDisplay)))

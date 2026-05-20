@@ -18,7 +18,6 @@ enum NotificationProbe {
 
         log.info("[\(tag, privacy: .public)] === \(info.count) on-screen windows ===")
 
-        // Group by owning process so we can see at a glance who has windows.
         var byOwner: [String: Int] = [:]
         var candidates: [String] = []
 
