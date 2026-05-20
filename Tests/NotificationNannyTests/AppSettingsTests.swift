@@ -10,7 +10,8 @@ struct AppSettingsTests {
     private func makeSettings() -> (AppSettings, String) {
         let name = "NotificationNannyTests_\(UUID().uuidString)"
         let ud = UserDefaults(suiteName: name)!
-        return (AppSettings(defaults: ud), name)
+        let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent("\(name).json")
+        return (AppSettings(defaults: ud, knownAppsFileURL: tempURL), name)
     }
 
     // MARK: - Group CRUD

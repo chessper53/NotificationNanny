@@ -18,12 +18,14 @@ package final class AppSettings: ObservableObject {
 
     /// ~/Library/Application Support/NotificationNanny/known_apps.json
     /// Survives reinstalls and UserDefaults resets.
-    private static let knownAppsFileURL: URL = {
+    private static let defaultKnownAppsFileURL: URL = {
         let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
         let dir = support.appendingPathComponent("NotificationNanny", isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         return dir.appendingPathComponent("known_apps.json")
     }()
+
+    private let knownAppsFileURL: URL
 
     @Published var isEnabled: Bool {
         didSet { defaults.set(isEnabled, forKey: Key.isEnabled) }
@@ -55,8 +57,9 @@ package final class AppSettings: ObservableObject {
         didSet { saveKnownApps() }
     }
 
-    package init(defaults: UserDefaults = .standard) {
+    package init(defaults: UserDefaults = .standard, knownAppsFileURL: URL? = nil) {
         self.defaults           = defaults
+        self.knownAppsFileURL   = knownAppsFileURL ?? Self.defaultKnownAppsFileURL
         self.isEnabled          = (defaults.object(forKey: Key.isEnabled) as? Bool) ?? true
         self.autoDismissSeconds = defaults.double(forKey: Key.autoDismiss)
         self.targetDisplayID    = CGDirectDisplayID(max(0, defaults.integer(forKey: Key.targetDisplay)))
@@ -83,7 +86,7 @@ package final class AppSettings: ObservableObject {
         }
 
         // Load known app names from file (survives reinstalls), fall back to UserDefaults.
-        if let data = try? Data(contentsOf: Self.knownAppsFileURL),
+        if let data = try? Data(contentsOf: self.knownAppsFileURL),
            let names = try? JSONDecoder().decode([String].self, from: data) {
             self.knownAppNames = names
         } else if let stored = defaults.stringArray(forKey: Key.knownApps) {
@@ -205,7 +208,7 @@ package final class AppSettings: ObservableObject {
     private func saveKnownApps() {
         defaults.set(knownAppNames, forKey: Key.knownApps)
         if let data = try? JSONEncoder().encode(knownAppNames) {
-            try? data.write(to: Self.knownAppsFileURL, options: .atomic)
+            try? data.write(to: self.knownAppsFileURL, options: .atomic)
         }
     }
 }
