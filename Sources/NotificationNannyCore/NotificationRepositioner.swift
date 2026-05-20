@@ -6,7 +6,7 @@ import os
 private let log = Logger(subsystem: "com.notificationnanny", category: "repositioner")
 
 @MainActor
-final class NotificationRepositioner: ObservableObject {
+package final class NotificationRepositioner: ObservableObject {
     @Published private(set) var hasAccessibilityPermission: Bool = false
     @Published private(set) var isObserving: Bool = false
 
@@ -18,7 +18,7 @@ final class NotificationRepositioner: ObservableObject {
     private var ncPid: pid_t = 0
     private var permissionPollTimer: Timer?
 
-    init() {
+    package init() {
         refreshAccessibilityStatus()
         startPermissionPollIfNeeded()
         NSWorkspace.shared.notificationCenter.addObserver(
@@ -32,7 +32,7 @@ final class NotificationRepositioner: ObservableObject {
         }
     }
 
-    func bind(to settings: AppSettings) {
+    package func bind(to settings: AppSettings) {
         guard self.settings == nil else { return }
         self.settings = settings
         settings.objectWillChange

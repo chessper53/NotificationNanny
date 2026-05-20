@@ -7,15 +7,15 @@ import ServiceManagement
 /// launched from, so this only behaves predictably when the app lives in
 /// a stable location like `/Applications`.
 @MainActor
-final class LaunchAtLogin: ObservableObject {
+package final class LaunchAtLogin: ObservableObject {
     @Published private(set) var isEnabled: Bool = false
     @Published private(set) var lastError: String?
 
-    init() {
+    package init() {
         refresh()
     }
 
-    func refresh() {
+    package func refresh() {
         guard #available(macOS 13, *) else {
             isEnabled = false
             return
@@ -23,7 +23,7 @@ final class LaunchAtLogin: ObservableObject {
         isEnabled = SMAppService.mainApp.status == .enabled
     }
 
-    func setEnabled(_ enabled: Bool) {
+    package func setEnabled(_ enabled: Bool) {
         guard #available(macOS 13, *) else {
             lastError = "Requires macOS 13 or later"
             return
