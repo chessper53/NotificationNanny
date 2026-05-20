@@ -2,12 +2,12 @@ import AppKit
 import CoreGraphics
 import SwiftUI
 
-enum NotificationPosition: String, CaseIterable, Identifiable, Codable {
+package enum NotificationPosition: String, CaseIterable, Identifiable, Codable {
     case topLeft, topCenter, topRight
     case middleLeft, middleCenter, middleRight
     case bottomLeft, bottomCenter, bottomRight
 
-    var id: String { rawValue }
+    package var id: String { rawValue }
 
     var label: String {
         switch self {
