@@ -1,3 +1,4 @@
+import NotificationNannyCore
 import SwiftUI
 
 @main

@@ -14,14 +14,12 @@ func makeIcon(size: CGFloat) -> NSImage {
     image.lockFocus()
     defer { image.unlockFocus() }
 
-    // Rounded square background.
     let radius = size * 0.22
     let bg = NSBezierPath(roundedRect: NSRect(x: 0, y: 0, width: size, height: size),
                           xRadius: radius, yRadius: radius)
     brandPurple.setFill()
     bg.fill()
 
-    // Bell symbol on top.
     let symbolPointSize = size * 0.55
     let cfg = NSImage.SymbolConfiguration(pointSize: symbolPointSize, weight: .semibold)
         .applying(.init(paletteColors: [.white]))
@@ -50,7 +48,6 @@ let iconsetDir = here.appendingPathComponent("build/AppIcon.iconset")
 try? FileManager.default.removeItem(at: iconsetDir)
 try FileManager.default.createDirectory(at: iconsetDir, withIntermediateDirectories: true)
 
-// Standard macOS icon sizes (pt × scale).
 let sizes: [(pt: Int, scale: Int)] = [
     (16, 1), (16, 2),
     (32, 1), (32, 2),
@@ -68,7 +65,6 @@ for (pt, scale) in sizes {
     print("wrote \(name) (\(Int(pixels))×\(Int(pixels)))")
 }
 
-// Convert iconset → icns via iconutil.
 let icnsURL = here.appendingPathComponent("Resources/AppIcon.icns")
 try? FileManager.default.createDirectory(
     at: icnsURL.deletingLastPathComponent(), withIntermediateDirectories: true

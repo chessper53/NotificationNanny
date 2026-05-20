@@ -5,7 +5,7 @@ extension Color {
     static let nannyAccent = Color(red: 0x89 / 255, green: 0x5C / 255, blue: 0x9B / 255)
 }
 
-struct MenuBarContent: View {
+package struct MenuBarContent: View {
     @EnvironmentObject var settings: AppSettings
     @EnvironmentObject var repositioner: NotificationRepositioner
     @EnvironmentObject var launchAtLogin: LaunchAtLogin
@@ -18,6 +18,8 @@ struct MenuBarContent: View {
     @State private var selectedGroupID: UUID? = nil
     @State private var isAddingGroup    = false
     @State private var newGroupName     = ""
+
+    package init() {}
 
     private var screens: [NSScreen] { NSScreen.screens }
 
@@ -35,7 +37,7 @@ struct MenuBarContent: View {
         return settings.placementBinding(for: selectedScreen)
     }
 
-    var body: some View {
+    package var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             header
             Divider()
@@ -161,7 +163,6 @@ struct MenuBarContent: View {
                 }
             }
 
-            // Chip bar
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 6) {
                     ruleChip(title: "Default", isSelected: selectedGroupID == nil) {
@@ -180,7 +181,6 @@ struct MenuBarContent: View {
                 .padding(.vertical, 1)
             }
 
-            // App assignment row for selected group
             if let id = selectedGroupID {
                 if let group = settings.appGroups.first(where: { $0.id == id }) {
                     appAssignmentRow(for: group)
