@@ -1,6 +1,6 @@
 # NotificationNanny
 
-A macOS menu-bar app that moves notification banners wherever you want them, to any corner on any of your displays.
+A macOS menu-bar app that moves notification banners wherever you want them, to any custom position on any of your displays.
 
 ![macOS 14+](https://img.shields.io/badge/macOS-14%2B-blue) ![Swift](https://img.shields.io/badge/Swift-5.9-orange)
 
