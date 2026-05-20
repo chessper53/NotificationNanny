@@ -1,22 +1,18 @@
 # NotificationNanny
 
-A macOS menu-bar app that moves notification banners wherever you want them — any corner, any display.
+A macOS menu-bar app that moves notification banners wherever you want them, to any corner on any of your displays.
 
 ![macOS 14+](https://img.shields.io/badge/macOS-14%2B-blue) ![Swift](https://img.shields.io/badge/Swift-5.9-orange)
 
 <img width="366" alt="NotificationNanny panel" src="https://github.com/user-attachments/assets/8e315785-589c-4a41-9714-325dc6d42dd9" />
 
----
-
 ## Features
 
-- **Drag-to-position** — move the purple chip around the screen tile, or use the sliders for pixel-perfect placement
-- **Per-app rules** — different position for different apps (e.g. Teams bottom-left, Calendar top-center, everything else top-right)
-- **Multi-display** — independent settings per screen, with an option to force all banners to one display
-- **Auto-dismiss** — slide banners off-screen after a configurable number of seconds
-- **Presets** — save and switch between named configurations
-
----
+- **Drag-to-position.** Move the purple chip around the screen tile, or use the sliders for pixel-perfect placement.
+- **Per-app rules.** Different position for different apps, e.g. Teams bottom-left, Calendar top-center, everything else top-right.
+- **Multi-display.** Independent settings per screen, with an option to force all banners to one display.
+- **Auto-dismiss.** Slide banners off-screen automatically after a configurable number of seconds.
+- **Presets.** Save and switch between named configurations.
 
 ## Installation
 
@@ -31,21 +27,13 @@ brew upgrade --cask notificationnanny   # to update
 
 After installing, click the bell in your menu bar and hit **Grant Accessibility Permission** to get started.
 
----
+## Issues and feature requests
 
-## Issues & feature requests
-
-**Open an issue — I read them and act on them.**
-
-If something is broken, behaving unexpectedly, or you want a feature that isn't there, [open an issue](https://github.com/chessper53/NotificationNanny/issues). I work on this in my spare time but I do pick things up.
-
----
+Open an issue. I read them and act on them. If something is broken, behaving unexpectedly, or you want a feature that isn't there, [open an issue](https://github.com/chessper53/NotificationNanny/issues) and I'll pick it up.
 
 ## How it works
 
-NotificationNanny uses the macOS Accessibility API (`AXUIElement`) to attach to the notification center process and set the position of banner windows as they appear. This relies on undocumented internals — Apple can break it in any OS update without notice. The app sandbox is disabled because cross-process Accessibility access requires it.
-
----
+NotificationNanny uses the macOS Accessibility API to attach to the notification center process and reposition banner windows as they appear. This relies on undocumented internals, so Apple can break it in any OS update without notice. The app sandbox is disabled because cross-process Accessibility access requires it.
 
 ## Privacy
 
@@ -73,6 +61,6 @@ No data is collected, transmitted, or stored. The Accessibility permission is us
 
 ### Tags
 
-`macos` `menu-bar` `notifications` `notification-banner` `accessibility` `swiftui` `swift` `macos-app` `productivity` `menubar-app` `notification-manager` `ax-api` `notificationcenter` `swift-package-manager`
+`macos` `menu-bar` `menubar-app` `status-bar` `tray-app` `notifications` `notification-banner` `notification-center` `notification-manager` `notification-position` `notification-placement` `accessibility` `ax-api` `axuielement` `ax-observer` `swiftui` `swift` `swift-package-manager` `appkit` `combine` `macos-app` `mac-utility` `macos-utility` `productivity` `utility` `customization` `window-management` `multi-monitor` `multiple-displays` `open-source` `no-telemetry` `no-subscription` `lightweight` `native` `homebrew` `homebrew-cask` `macos-14` `macos-15` `macos-26` `sonoma` `sequoia` `tahoe`
 
 </details>
