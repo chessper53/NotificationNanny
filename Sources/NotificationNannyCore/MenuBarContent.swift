@@ -67,7 +67,7 @@ package struct MenuBarContent: View {
                 repositioner.startObserving()
             }
         }
-        .onChange(of: settings.appGroups) { groups in
+        .onChange(of: settings.appGroups) { _, groups in
             if let id = selectedGroupID, !groups.contains(where: { $0.id == id }) {
                 selectedGroupID = nil
             }
@@ -314,6 +314,13 @@ package struct MenuBarContent: View {
     private var offsetSection: some View {
         let placement = activePlacementBinding
         let visible = selectedScreen.visibleFrame
+        let opacityPct = Binding<Double>(
+            get: { settings.notificationOpacity * 100 },
+            set: { settings.notificationOpacity = max(0.1, min(1.0, $0 / 100)) }
+        )
+        let isDefault = placement.wrappedValue.xOffset == 0
+                     && placement.wrappedValue.yOffset == 0
+                     && settings.notificationOpacity == 1.0
         return VStack(alignment: .leading, spacing: 8) {
             HStack {
                 Text("Fine-tune")
@@ -323,20 +330,22 @@ package struct MenuBarContent: View {
                 Button("Reset") {
                     placement.wrappedValue.xOffset = 0
                     placement.wrappedValue.yOffset = 0
+                    settings.notificationOpacity = 1.0
                 }
                 .buttonStyle(.borderless)
                 .font(.caption2)
-                .disabled(placement.wrappedValue.xOffset == 0 && placement.wrappedValue.yOffset == 0)
+                .disabled(isDefault)
             }
             sliderRow(title: "Horizontal", value: placement.xOffset,
                       range: -Double(visible.width)...Double(visible.width))
             sliderRow(title: "Vertical",   value: placement.yOffset,
                       range: -Double(visible.height)...Double(visible.height))
+            sliderRow(title: "Opacity", value: opacityPct, range: 10...100, suffix: "%")
         }
     }
 
     private func sliderRow(title: String, value: Binding<Double>,
-                           range: ClosedRange<Double>) -> some View {
+                           range: ClosedRange<Double>, suffix: String = "px") -> some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(title).font(.caption2).foregroundStyle(.secondary)
             HStack(spacing: 8) {
@@ -347,7 +356,7 @@ package struct MenuBarContent: View {
                     .multilineTextAlignment(.trailing)
                     .frame(width: 56)
                     .font(.caption2.monospacedDigit())
-                Text("px").font(.caption2).foregroundStyle(.secondary)
+                Text(suffix).font(.caption2).foregroundStyle(.secondary)
             }
         }
     }
@@ -524,7 +533,7 @@ package struct MenuBarContent: View {
     private var actionSection: some View {
         VStack(spacing: 8) {
             Button {
-                repositioner.sendTestNotification(placement: activePlacementBinding.wrappedValue)
+                repositioner.sendTestNotification(groupID: selectedGroupID)
             } label: {
                 let groupName = selectedGroupID.flatMap { id in
                     settings.appGroups.first(where: { $0.id == id })?.name

@@ -8,13 +8,14 @@ package final class AppSettings: ObservableObject {
     private let defaults: UserDefaults
 
     private enum Key {
-        static let isEnabled     = "isEnabled"
-        static let placements    = "placementsByDisplayID"
-        static let autoDismiss   = "autoDismissSeconds"
-        static let targetDisplay = "targetDisplayID"
-        static let presets       = "presets"
-        static let appGroups     = "appGroups"
-        static let knownApps     = "knownAppNames"
+        static let isEnabled            = "isEnabled"
+        static let placements           = "placementsByDisplayID"
+        static let autoDismiss          = "autoDismissSeconds"
+        static let targetDisplay        = "targetDisplayID"
+        static let presets              = "presets"
+        static let appGroups            = "appGroups"
+        static let knownApps            = "knownAppNames"
+        static let notificationOpacity  = "notificationOpacity"
     }
 
     /// ~/Library/Application Support/NotificationNanny/known_apps.json
@@ -30,6 +31,11 @@ package final class AppSettings: ObservableObject {
 
     @Published package var isEnabled: Bool {
         didSet { defaults.set(isEnabled, forKey: Key.isEnabled) }
+    }
+
+    /// 1.0 = fully opaque, 0.1 = nearly transparent.
+    @Published package var notificationOpacity: Double {
+        didSet { defaults.set(notificationOpacity, forKey: Key.notificationOpacity) }
     }
 
     @Published package var autoDismissSeconds: Double {
@@ -61,8 +67,9 @@ package final class AppSettings: ObservableObject {
     package init(defaults: UserDefaults = .standard, knownAppsFileURL: URL? = nil) {
         self.defaults           = defaults
         self.knownAppsFileURL   = knownAppsFileURL ?? Self.defaultKnownAppsFileURL
-        self.isEnabled          = (defaults.object(forKey: Key.isEnabled) as? Bool) ?? true
-        self.autoDismissSeconds = defaults.double(forKey: Key.autoDismiss)
+        self.isEnabled             = (defaults.object(forKey: Key.isEnabled) as? Bool) ?? true
+        self.notificationOpacity   = (defaults.object(forKey: Key.notificationOpacity) as? Double) ?? 1.0
+        self.autoDismissSeconds    = defaults.double(forKey: Key.autoDismiss)
         self.targetDisplayID    = CGDirectDisplayID(max(0, defaults.integer(forKey: Key.targetDisplay)))
 
         if let data = defaults.data(forKey: Key.placements),
@@ -123,6 +130,11 @@ package final class AppSettings: ObservableObject {
     /// Returns the group placement if the app has a rule, else the per-screen default.
     package func placement(for appName: String?, screen: NSScreen) -> ScreenPlacement {
         if let appName, let g = group(for: appName) { return g.placement }
+        return placement(for: screen)
+    }
+
+    package func placement(forGroupID groupID: UUID?, screen: NSScreen) -> ScreenPlacement {
+        if let groupID, let g = appGroups.first(where: { $0.id == groupID }) { return g.placement }
         return placement(for: screen)
     }
 
