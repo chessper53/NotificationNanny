@@ -3,6 +3,24 @@ import ApplicationServices
 import Combine
 import os
 
+// MARK: - Private WindowServer APIs
+
+private typealias CGSConnectionID = UInt32
+
+@_silgen_name("CGSMainConnectionID")
+private func CGSMainConnectionID() -> CGSConnectionID
+
+@_silgen_name("CGSSetWindowAlpha")
+private func CGSSetWindowAlpha(_ cid: CGSConnectionID, _ wid: CGWindowID, _ alpha: Float) -> Int32
+
+@_silgen_name("CGSGetWindowOwner")
+private func CGSGetWindowOwner(_ cid: CGSConnectionID, _ wid: CGWindowID,
+                                _ ownerOut: UnsafeMutablePointer<CGSConnectionID>) -> Int32
+
+@_silgen_name("_AXUIElementGetWindow")
+private func _AXUIElementGetWindow(_ element: AXUIElement,
+                                   _ windowID: UnsafeMutablePointer<CGWindowID>) -> AXError
+
 private let log = Logger(subsystem: "com.notificationnanny", category: "repositioner")
 
 @MainActor
@@ -48,6 +66,15 @@ package final class NotificationRepositioner: ObservableObject {
         settings.settingsDidChange
             .throttle(for: .milliseconds(16), scheduler: DispatchQueue.main, latest: true)
             .sink { [weak self] in self?.burstReposition() }
+            .store(in: &cancellables)
+        // Fast path for live test-banner drag — snaps the stored element directly
+        // rather than querying the ncApp window list, which can be stale.
+        settings.settingsDidChange
+            .throttle(for: .milliseconds(8), scheduler: DispatchQueue.main, latest: true)
+            .sink { [weak self] in
+                guard let self, self.testGroupID != nil, let win = self.testBannerWindow else { return }
+                self.snapWindow(win, stackIndex: 0)
+            }
             .store(in: &cancellables)
         startObserving()
     }
@@ -163,7 +190,7 @@ package final class NotificationRepositioner: ObservableObject {
         var ref: CFTypeRef?
         guard AXUIElementCopyAttributeValue(el, "AXAttributedDescription" as CFString, &ref) == .success,
               let val = ref, CFGetTypeID(val) == CFAttributedStringGetTypeID() else { return nil }
-        let str = CFAttributedStringGetString(val as! CFAttributedString) as String
+        let str = CFAttributedStringGetString((val as! CFAttributedString)) as String
         guard let first = str.components(separatedBy: ", ").first, !first.isEmpty else { return nil }
         // Strip directional Unicode marks (e.g. U+200E prepended by WhatsApp)
         let cleaned = first
@@ -236,13 +263,17 @@ package final class NotificationRepositioner: ObservableObject {
     private var animationGeneration = 0
     private var lastSelfSetPosition: CGPoint = .zero
     private var windowAppNameCache: [CFHashCode: String] = [:]
-    private var testPlacementOverride: ScreenPlacement? = nil
+    // nil = not in test mode; .some(nil) = test active, screen default; .some(.some(id)) = test active, group
+    private var testGroupID: UUID?? = nil
+    private var testBannerWindow: AXUIElement? = nil
 
-    func sendTestNotification(placement: ScreenPlacement) {
-        testPlacementOverride = placement
+    func sendTestNotification(groupID: UUID?) {
+        testGroupID = .some(groupID)
+        testBannerWindow = nil
         TestNotification.send()
         DispatchQueue.main.asyncAfter(deadline: .now() + 5) { [weak self] in
-            self?.testPlacementOverride = nil
+            self?.testGroupID = nil
+            self?.testBannerWindow = nil
         }
     }
 
@@ -312,8 +343,8 @@ package final class NotificationRepositioner: ObservableObject {
         }
 
         let placement: ScreenPlacement
-        if let override = testPlacementOverride {
-            placement = override
+        if let testGroup = testGroupID {
+            placement = settings.placement(forGroupID: testGroup, screen: screen)
         } else {
             let appNameStr = appName(for: window)
             if let appNameStr { settings.recordAppName(appNameStr) }
@@ -354,9 +385,23 @@ package final class NotificationRepositioner: ObservableObject {
 
     private func snapWindow(_ window: AXUIElement, stackIndex: Int = 0) {
         guard let t = targetOrigin(for: window, stackIndex: stackIndex) else { return }
+        if testGroupID != nil { testBannerWindow = window }
         var origin = t.windowOrigin
         guard let v = AXValueCreate(.cgPoint, &origin) else { return }
         AXUIElementSetAttributeValue(window, kAXPositionAttribute as CFString, v)
+        applyAlpha(to: window)
+    }
+
+    private func applyAlpha(to window: AXUIElement) {
+        guard let settings else { return }
+        let alpha = Float(settings.notificationOpacity)
+        guard alpha < 0.999 else { return }
+        var windowID: CGWindowID = 0
+        guard _AXUIElementGetWindow(window, &windowID) == .success else { return }
+        let myCID = CGSMainConnectionID()
+        var ownerCID: CGSConnectionID = 0
+        _ = CGSGetWindowOwner(myCID, windowID, &ownerCID)
+        _ = CGSSetWindowAlpha(ownerCID != 0 ? ownerCID : myCID, windowID, alpha)
     }
 
     private func repositionWindow(_ window: AXUIElement) {
