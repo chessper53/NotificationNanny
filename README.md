@@ -14,6 +14,10 @@ A macOS menu-bar app that moves notification banners wherever you want them, to 
 - **Auto-dismiss.** Slide banners off-screen automatically after a configurable number of seconds.
 - **Presets.** Save and switch between named configurations.
 
+## Issues and feature requests
+
+Open an issue. I read them and act on them. If something is broken, behaving unexpectedly, or you want a feature that isn't there, [open an issue](https://github.com/chessper53/NotificationNanny/issues) and I'll pick it up.
+
 ## Installation
 
 ```sh
@@ -26,10 +30,6 @@ brew upgrade --cask notificationnanny   # to update
 ```
 
 After installing, click the bell in your menu bar and hit **Grant Accessibility Permission** to get started.
-
-## Issues and feature requests
-
-Open an issue. I read them and act on them. If something is broken, behaving unexpectedly, or you want a feature that isn't there, [open an issue](https://github.com/chessper53/NotificationNanny/issues) and I'll pick it up.
 
 ## How it works
 
