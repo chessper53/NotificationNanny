@@ -314,13 +314,8 @@ package struct MenuBarContent: View {
     private var offsetSection: some View {
         let placement = activePlacementBinding
         let visible = selectedScreen.visibleFrame
-        let opacityPct = Binding<Double>(
-            get: { settings.notificationOpacity * 100 },
-            set: { settings.notificationOpacity = max(0.1, min(1.0, $0 / 100)) }
-        )
         let isDefault = placement.wrappedValue.xOffset == 0
                      && placement.wrappedValue.yOffset == 0
-                     && settings.notificationOpacity == 1.0
         return VStack(alignment: .leading, spacing: 8) {
             HStack {
                 Text("Fine-tune")
@@ -330,7 +325,6 @@ package struct MenuBarContent: View {
                 Button("Reset") {
                     placement.wrappedValue.xOffset = 0
                     placement.wrappedValue.yOffset = 0
-                    settings.notificationOpacity = 1.0
                 }
                 .buttonStyle(.borderless)
                 .font(.caption2)
@@ -340,12 +334,11 @@ package struct MenuBarContent: View {
                       range: -Double(visible.width)...Double(visible.width))
             sliderRow(title: "Vertical",   value: placement.yOffset,
                       range: -Double(visible.height)...Double(visible.height))
-            sliderRow(title: "Opacity", value: opacityPct, range: 10...100, suffix: "%")
         }
     }
 
     private func sliderRow(title: String, value: Binding<Double>,
-                           range: ClosedRange<Double>, suffix: String = "px") -> some View {
+                           range: ClosedRange<Double>) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(title).font(.caption2).foregroundStyle(.secondary)
             HStack(spacing: 8) {
@@ -356,7 +349,7 @@ package struct MenuBarContent: View {
                     .multilineTextAlignment(.trailing)
                     .frame(width: 56)
                     .font(.caption2.monospacedDigit())
-                Text(suffix).font(.caption2).foregroundStyle(.secondary)
+                Text("px").font(.caption2).foregroundStyle(.secondary)
             }
         }
     }

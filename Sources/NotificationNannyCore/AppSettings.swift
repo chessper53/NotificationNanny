@@ -15,7 +15,6 @@ package final class AppSettings: ObservableObject {
         static let presets              = "presets"
         static let appGroups            = "appGroups"
         static let knownApps            = "knownAppNames"
-        static let notificationOpacity  = "notificationOpacity"
     }
 
     /// ~/Library/Application Support/NotificationNanny/known_apps.json
@@ -31,11 +30,6 @@ package final class AppSettings: ObservableObject {
 
     @Published package var isEnabled: Bool {
         didSet { defaults.set(isEnabled, forKey: Key.isEnabled) }
-    }
-
-    /// 1.0 = fully opaque, 0.1 = nearly transparent.
-    @Published package var notificationOpacity: Double {
-        didSet { defaults.set(notificationOpacity, forKey: Key.notificationOpacity) }
     }
 
     @Published package var autoDismissSeconds: Double {
@@ -68,7 +62,6 @@ package final class AppSettings: ObservableObject {
         self.defaults           = defaults
         self.knownAppsFileURL   = knownAppsFileURL ?? Self.defaultKnownAppsFileURL
         self.isEnabled             = (defaults.object(forKey: Key.isEnabled) as? Bool) ?? true
-        self.notificationOpacity   = (defaults.object(forKey: Key.notificationOpacity) as? Double) ?? 1.0
         self.autoDismissSeconds    = defaults.double(forKey: Key.autoDismiss)
         self.targetDisplayID    = CGDirectDisplayID(max(0, defaults.integer(forKey: Key.targetDisplay)))
 
