@@ -569,6 +569,14 @@ package struct MenuBarContent: View {
             }
 
             HStack {
+                Button {
+                    NSWorkspace.shared.open(URL(string: "https://github.com/chessper53/NotificationNanny/issues/new")!)
+                } label: {
+                    Text("Got any feedback?")
+                }
+                .buttonStyle(.borderless)
+                .font(.caption)
+                .foregroundStyle(.secondary)
                 Spacer()
                 Button("Quit") { NSApplication.shared.terminate(nil) }
                     .keyboardShortcut("q")
