@@ -3,24 +3,6 @@ import ApplicationServices
 import Combine
 import os
 
-// MARK: - Private WindowServer APIs
-
-private typealias CGSConnectionID = UInt32
-
-@_silgen_name("CGSMainConnectionID")
-private func CGSMainConnectionID() -> CGSConnectionID
-
-@_silgen_name("CGSSetWindowAlpha")
-private func CGSSetWindowAlpha(_ cid: CGSConnectionID, _ wid: CGWindowID, _ alpha: Float) -> Int32
-
-@_silgen_name("CGSGetWindowOwner")
-private func CGSGetWindowOwner(_ cid: CGSConnectionID, _ wid: CGWindowID,
-                                _ ownerOut: UnsafeMutablePointer<CGSConnectionID>) -> Int32
-
-@_silgen_name("_AXUIElementGetWindow")
-private func _AXUIElementGetWindow(_ element: AXUIElement,
-                                   _ windowID: UnsafeMutablePointer<CGWindowID>) -> AXError
-
 private let log = Logger(subsystem: "com.notificationnanny", category: "repositioner")
 
 @MainActor
@@ -389,19 +371,6 @@ package final class NotificationRepositioner: ObservableObject {
         var origin = t.windowOrigin
         guard let v = AXValueCreate(.cgPoint, &origin) else { return }
         AXUIElementSetAttributeValue(window, kAXPositionAttribute as CFString, v)
-        applyAlpha(to: window)
-    }
-
-    private func applyAlpha(to window: AXUIElement) {
-        guard let settings else { return }
-        let alpha = Float(settings.notificationOpacity)
-        guard alpha < 0.999 else { return }
-        var windowID: CGWindowID = 0
-        guard _AXUIElementGetWindow(window, &windowID) == .success else { return }
-        let myCID = CGSMainConnectionID()
-        var ownerCID: CGSConnectionID = 0
-        _ = CGSGetWindowOwner(myCID, windowID, &ownerCID)
-        _ = CGSSetWindowAlpha(ownerCID != 0 ? ownerCID : myCID, windowID, alpha)
     }
 
     private func repositionWindow(_ window: AXUIElement) {
