@@ -1,5 +1,5 @@
 import AppKit
-import ApplicationServices
+@preconcurrency import ApplicationServices
 import Combine
 import os
 
@@ -14,7 +14,7 @@ package final class NotificationRepositioner: ObservableObject {
     private var settings: (any NotificationSettingsProviding)?
     private var cancellables = Set<AnyCancellable>()
 
-    private var observer: AXObserver?
+    nonisolated(unsafe) private var observer: AXObserver?
     private var ncApp: AXUIElement?
     private var ncPid: pid_t = 0
 
@@ -314,9 +314,25 @@ package final class NotificationRepositioner: ObservableObject {
             AXValueGetValue(v as! AXValue, .cgPoint, &oldPos)
         }
 
-        // Honour the user's target screen; fall back to wherever macOS placed the banner.
+        // Resolve app name first — needed for both screen and placement lookup.
+        let appNameStr: String?
+        if testGroupID == nil {
+            appNameStr = appName(for: window)
+            if let appNameStr { settings.recordAppName(appNameStr) }
+        } else {
+            appNameStr = nil
+        }
+
+        // Screen priority: exception override > global override > banner's current screen.
+        let groupDisplayID = testGroupID != nil
+            ? settings.targetDisplay(forGroupID: testGroupID!)
+            : settings.targetDisplay(for: appNameStr)
+
         let screen: NSScreen
-        if settings.targetDisplayID != 0,
+        if groupDisplayID != 0,
+           let forced = NSScreen.screens.first(where: { $0.displayID == groupDisplayID }) {
+            screen = forced
+        } else if settings.targetDisplayID != 0,
            let forced = NSScreen.screens.first(where: { $0.displayID == settings.targetDisplayID }) {
             screen = forced
         } else {
@@ -328,8 +344,6 @@ package final class NotificationRepositioner: ObservableObject {
         if let testGroup = testGroupID {
             placement = settings.placement(forGroupID: testGroup, screen: screen)
         } else {
-            let appNameStr = appName(for: window)
-            if let appNameStr { settings.recordAppName(appNameStr) }
             placement = settings.placement(for: appNameStr, screen: screen)
         }
 
