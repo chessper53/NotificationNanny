@@ -25,6 +25,11 @@ package struct MenuBarContent: View {
     private var screens: [NSScreen] { NSScreen.screens }
 
     private var selectedScreen: NSScreen {
+        // Exception's screen override takes priority over the global setting.
+        if let id = selectedGroupID,
+           let group = settings.appGroups.first(where: { $0.id == id }),
+           group.targetDisplayID != 0,
+           let s = screens.first(where: { $0.displayID == group.targetDisplayID }) { return s }
         if settings.targetDisplayID != 0,
            let s = screens.first(where: { $0.displayID == settings.targetDisplayID }) { return s }
         return NSScreen.main ?? screens[0]
@@ -128,12 +133,12 @@ package struct MenuBarContent: View {
         }
     }
 
-    // MARK: - Rules
+    // MARK: - Exceptions
 
     private var rulesSection: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
-                Text("App Rules")
+                Text("Exceptions")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 Spacer()
@@ -164,30 +169,62 @@ package struct MenuBarContent: View {
                 }
             }
 
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 6) {
-                    ruleChip(title: "Default", isSelected: selectedGroupID == nil) {
-                        selectedGroupID = nil
-                    }
-                    ForEach(settings.appGroups) { group in
-                        ruleChip(
-                            title: group.name,
-                            isSelected: selectedGroupID == group.id,
-                            onDelete: { settings.deleteGroup(group.id) }
-                        ) {
-                            selectedGroupID = group.id
+            if settings.appGroups.isEmpty && groupMode != .adding {
+                Text("No exceptions yet. Add one to override position for specific apps.")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+            } else {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 6) {
+                        ForEach(settings.appGroups) { group in
+                            ruleChip(
+                                title: group.name,
+                                isSelected: selectedGroupID == group.id,
+                                onDelete: { settings.deleteGroup(group.id) }
+                            ) {
+                                selectedGroupID = selectedGroupID == group.id ? nil : group.id
+                            }
                         }
                     }
+                    .padding(.vertical, 1)
                 }
-                .padding(.vertical, 1)
             }
 
-            if let id = selectedGroupID {
-                if let group = settings.appGroups.first(where: { $0.id == id }) {
-                    appAssignmentRow(for: group)
+            if let id = selectedGroupID, let group = settings.appGroups.first(where: { $0.id == id }) {
+                if screens.count > 1 {
+                    exceptionScreenPicker(for: group)
                 }
+                appAssignmentRow(for: group)
             }
         }
+    }
+
+    private func exceptionScreenPicker(for group: AppGroup) -> some View {
+        let binding = Binding<CGDirectDisplayID>(
+            get: {
+                settings.appGroups.first(where: { $0.id == group.id })?.targetDisplayID ?? 0
+            },
+            set: { newVal in
+                guard let i = settings.appGroups.firstIndex(where: { $0.id == group.id }) else { return }
+                settings.appGroups[i].targetDisplayID = newVal
+            }
+        )
+        return HStack(spacing: 8) {
+            Text("Show on")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+            Picker("", selection: binding) {
+                Text("Default").tag(CGDirectDisplayID(0))
+                ForEach(screens, id: \.displayID) { screen in
+                    Text(screen.nannyDisplayName).tag(screen.displayID)
+                }
+            }
+            .labelsHidden()
+            .pickerStyle(.menu)
+            .controlSize(.mini)
+            Spacer()
+        }
+        .padding(.top, 2)
     }
 
     @ViewBuilder
@@ -284,11 +321,11 @@ package struct MenuBarContent: View {
         return VStack(alignment: .leading, spacing: 6) {
             HStack {
                 if let groupName {
-                    Text("Position · \(groupName)")
+                    Text("Exception · \(groupName)")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 } else {
-                    Text("Position")
+                    Text("Default Position")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
