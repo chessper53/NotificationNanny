@@ -4,9 +4,10 @@ A macOS menu-bar app that moves notification banners wherever you want them, to 
 
 ![macOS 14+](https://img.shields.io/badge/macOS-14%2B-blue) ![Swift](https://img.shields.io/badge/Swift-5.9-orange)
 
-<img width="722" height="984" alt="image" src="https://github.com/user-attachments/assets/65a9d5d5-24df-4e58-a657-389299c95ca2" />
-<img width="511" height="1093" alt="image" src="https://github.com/user-attachments/assets/9652aecb-5616-47ea-9078-bcde3c407052" />
-
+<div align="center">
+  <img width="340" alt="NotificationNanny popup" src="https://github.com/user-attachments/assets/65a9d5d5-24df-4e58-a657-389299c95ca2" />
+  <img width="240" alt="NotificationNanny per-app rules" src="https://github.com/user-attachments/assets/9652aecb-5616-47ea-9078-bcde3c407052" />
+</div>
 
 ## Features
 
