@@ -1,9 +1,9 @@
-import ApplicationServices
+@preconcurrency import ApplicationServices
 
 @MainActor
 package final class AccessibilityPermissionMonitor {
     package private(set) var hasPermission: Bool
-    private var pollTimer: Timer?
+    nonisolated(unsafe) private var pollTimer: Timer?
 
     package init() {
         hasPermission = AXIsProcessTrusted()
