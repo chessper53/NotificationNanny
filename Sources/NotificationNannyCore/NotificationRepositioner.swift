@@ -90,8 +90,7 @@ package final class NotificationRepositioner: ObservableObject {
         teardownObserver()
 
         let pid = findNotificationProcessPid()
-        guard pid > 0 else { log.error("startObserving: no notification process found"); return }
-        log.info("startObserving: pid \(pid)")
+        guard pid > 0 else { return }
         let app = AXUIElementCreateApplication(pid)
 
         var newObserver: AXObserver?
@@ -195,7 +194,7 @@ package final class NotificationRepositioner: ObservableObject {
     // MARK: - Event handling
 
     fileprivate func handleAXEvent(element: AXUIElement, notification: String) {
-        log.info("AX event: \(notification, privacy: .public)")
+        log.debug("AX event: \(notification, privacy: .public)")
         if notification == kAXUIElementDestroyedNotification as String {
             repositionVisibleWindows()
             return
@@ -207,6 +206,19 @@ package final class NotificationRepositioner: ObservableObject {
                 AXValueGetValue(v as! AXValue, .cgPoint, &cur)
             }
             guard hypot(cur.x - lastSelfSetPosition.x, cur.y - lastSelfSetPosition.y) > 4 else { return }
+        }
+        // Focus/main-window changes fire when the user opens the NC panel (clicking the clock).
+        // Skip large overlay windows on these events — AXWindowCreated handles new banners,
+        // and we don't want to reposition the NC panel when the user explicitly opens it.
+        if notification == kAXFocusedWindowChangedNotification as String ||
+           notification == kAXMainWindowChangedNotification as String {
+            var sRef: CFTypeRef?
+            if AXUIElementCopyAttributeValue(element, kAXSizeAttribute as CFString, &sRef) == .success,
+               let v = sRef, CFGetTypeID(v) == AXValueGetTypeID() {
+                var sz = CGSize.zero
+                AXValueGetValue(v as! AXValue, .cgSize, &sz)
+                if sz.width > 700 || sz.height > 400 { return }
+            }
         }
         repositionWindow(element)
     }
@@ -318,7 +330,6 @@ package final class NotificationRepositioner: ObservableObject {
             AXValueGetValue(sv as! AXValue, .cgSize, &size)
             guard size.width >= 200, size.width <= 700, size.height >= 40, size.height <= 250 else { continue }
             let offset = CGPoint(x: pos.x - windowPos.x, y: pos.y - windowPos.y)
-            log.info("Banner: \(size.width)x\(size.height) offset=(\(offset.x),\(offset.y))")
             return BannerInfo(offsetInWindow: offset, size: size)
         }
         return nil
@@ -327,8 +338,14 @@ package final class NotificationRepositioner: ObservableObject {
     // MARK: - Repositioning
 
     private func targetOrigin(for window: AXUIElement, stackIndex: Int = 0) -> RepositionTarget? {
-        guard let settings, settings.isEnabled else { return nil }
-        if settings.pauseWhileStreaming, Self.isCapturing() { return nil }
+        guard let settings, settings.isEnabled else {
+            log.debug("targetOrigin: skipped — disabled")
+            return nil
+        }
+        if settings.pauseWhileStreaming, Self.isCapturing() {
+            log.debug("targetOrigin: skipped — capturing")
+            return nil
+        }
 
         var size = CGSize.zero
         var sRef: CFTypeRef?
@@ -343,6 +360,8 @@ package final class NotificationRepositioner: ObservableObject {
            let v = pRef, CFGetTypeID(v) == AXValueGetTypeID() {
             AXValueGetValue(v as! AXValue, .cgPoint, &oldPos)
         }
+
+        log.debug("targetOrigin: window size=\(size.width, format: .fixed(precision: 0))×\(size.height, format: .fixed(precision: 0)) pos=(\(oldPos.x, format: .fixed(precision: 0)),\(oldPos.y, format: .fixed(precision: 0)))")
 
         // Resolve app name first — needed for both screen and placement lookup.
         let appNameStr: String?
@@ -382,18 +401,45 @@ package final class NotificationRepositioner: ObservableObject {
         let bannerSz: CGSize
 
         if isOverlay {
-            let info: BannerInfo
-            if let cached = detectedBannerInfo {
-                info = cached
-            } else if let detected = detectBannerInfo(in: window, windowPos: oldPos) {
-                detectedBannerInfo = detected; info = detected
-            } else {
-                info = BannerInfo(
-                    offsetInWindow: CGPoint(x: size.width - Self.bannerInsetFromTopRight.x - Self.bannerSize.width,
-                                           y: Self.bannerInsetFromTopRight.y),
-                    size: Self.bannerSize)
+            // Large window — could be an NC overlay containing a banner (macOS 26+)
+            // or the NC panel / widget shelf (opened by clicking the clock). Only proceed
+            // if the AX tree contains an actual notification banner element.
+            guard let bannerEl = findBannerElement(in: window) else {
+                log.info("targetOrigin: skipped — large window, no banner child (NC panel/widget)")
+                return nil
             }
-            bannerOffset = info.offsetInWindow; bannerSz = info.size
+            // The NC panel (opened by clicking the clock) immediately becomes the app's
+            // focused window. System-delivered notification banners don't take focus.
+            // Skip repositioning if this window is already the NC process's focused window.
+            if settings.avoidNCPanel, let app = ncApp {
+                var focusRef: CFTypeRef?
+                if AXUIElementCopyAttributeValue(app, kAXFocusedWindowAttribute as CFString, &focusRef) == .success,
+                   let fw = focusRef, CFEqual(fw, window) {
+                    return nil
+                }
+            }
+            // Size from AX — reliable, doesn't change during animation.
+            var bSRef: CFTypeRef?
+            var bSz = Self.bannerSize
+            if AXUIElementCopyAttributeValue(bannerEl, kAXSizeAttribute as CFString, &bSRef) == .success,
+               let sv = bSRef, CFGetTypeID(sv) == AXValueGetTypeID() {
+                AXValueGetValue(sv as! AXValue, .cgSize, &bSz)
+            }
+            // x: the banner slides in from the right during its entrance animation, so
+            // its screen-x is unstable until animation ends. Derive analytically instead:
+            // the banner always sits bannerInsetFromTopRight.x px from the window's right edge.
+            let offsetX = size.width - bSz.width - Self.bannerInsetFromTopRight.x
+            // y: banner animates horizontally only, so screen-y is stable — read from AX.
+            var offsetY = Self.bannerInsetFromTopRight.y
+            var bPRef: CFTypeRef?
+            if AXUIElementCopyAttributeValue(bannerEl, kAXPositionAttribute as CFString, &bPRef) == .success,
+               let pv = bPRef, CFGetTypeID(pv) == AXValueGetTypeID() {
+                var bPos = CGPoint.zero
+                AXValueGetValue(pv as! AXValue, .cgPoint, &bPos)
+                offsetY = bPos.y - oldPos.y
+            }
+            bannerOffset = CGPoint(x: offsetX, y: offsetY)
+            bannerSz = bSz
         } else {
             bannerOffset = .zero; bannerSz = size
         }
@@ -405,6 +451,7 @@ package final class NotificationRepositioner: ObservableObject {
             xOffset: CGFloat(placement.xOffset), yOffset: CGFloat(placement.yOffset) + stackYOffset)
         let origin = CGPoint(x: bannerTarget.x - bannerOffset.x, y: bannerTarget.y - bannerOffset.y)
 
+        log.debug("targetOrigin: → (\(origin.x, format: .fixed(precision: 0)),\(origin.y, format: .fixed(precision: 0))) \(placement.position.rawValue, privacy: .public) screen=\(screen.displayID, privacy: .public)")
         return RepositionTarget(windowOrigin: origin, placement: placement, screen: screen,
                                 bannerOffsetInWindow: bannerOffset, bannerSize: bannerSz)
     }

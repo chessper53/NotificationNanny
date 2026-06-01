@@ -5,6 +5,7 @@ import Combine
 package protocol NotificationSettingsProviding: AnyObject {
     var isEnabled: Bool { get }
     var pauseWhileStreaming: Bool { get }
+    var avoidNCPanel: Bool { get }
     var targetDisplayID: CGDirectDisplayID { get }
     var autoDismissSeconds: Double { get }
     /// Fires (on the main actor) whenever any setting changes.
