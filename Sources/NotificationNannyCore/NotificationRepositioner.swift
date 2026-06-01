@@ -226,15 +226,44 @@ package final class NotificationRepositioner: ObservableObject {
         var value: CFTypeRef?
         guard AXUIElementCopyAttributeValue(ncApp, kAXWindowsAttribute as CFString, &value) == .success,
               let windows = value as? [AXUIElement] else { return }
-        for (index, window) in windows.enumerated() { snapWindow(window, stackIndex: index) }
+        // Two-pass: resolve each window's anchor first, then stack only within same-anchor groups.
+        let baseTargets: [(AXUIElement, RepositionTarget)] = windows.compactMap { w in
+            guard let t = targetOrigin(for: w, stackIndex: 0) else { return nil }
+            return (w, t)
+        }
+        for (i, (window, base)) in baseTargets.enumerated() {
+            let idx = baseTargets[..<i].filter { sameAnchor($0.1, base) }.count
+            snapWindow(window, stackIndex: idx)
+        }
     }
 
-    private func currentStackIndex(for window: AXUIElement) -> Int {
+    private func stackIndex(for window: AXUIElement, baseTarget: RepositionTarget) -> Int {
         guard let ncApp else { return 0 }
         var value: CFTypeRef?
         guard AXUIElementCopyAttributeValue(ncApp, kAXWindowsAttribute as CFString, &value) == .success,
               let windows = value as? [AXUIElement] else { return 0 }
-        return windows.firstIndex(where: { CFEqual($0, window) }) ?? 0
+        var count = 0
+        for other in windows {
+            guard !CFEqual(other, window) else { break }
+            guard let t = targetOrigin(for: other, stackIndex: 0) else { continue }
+            if sameAnchor(t, baseTarget) { count += 1 }
+        }
+        return count
+    }
+
+    private func sameAnchor(_ a: RepositionTarget, _ b: RepositionTarget) -> Bool {
+        a.screen.displayID == b.screen.displayID && a.placement.position == b.placement.position
+    }
+
+    // Detects common screen-sharing/recording scenarios. Called only when the setting is on.
+    // Covers built-in macOS screen sharing; third-party apps (Zoom, Teams) suppress
+    // notifications themselves in most cases.
+    private static func isCapturing() -> Bool {
+        if !NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.screensharing.agent").isEmpty {
+            return true
+        }
+        let windows = CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID) as? [[String: Any]] ?? []
+        return windows.contains { ($0[kCGWindowOwnerName as String] as? String) == "screensharing" }
     }
 
     // MARK: - Banner geometry
@@ -299,6 +328,7 @@ package final class NotificationRepositioner: ObservableObject {
 
     private func targetOrigin(for window: AXUIElement, stackIndex: Int = 0) -> RepositionTarget? {
         guard let settings, settings.isEnabled else { return nil }
+        if settings.pauseWhileStreaming, Self.isCapturing() { return nil }
 
         var size = CGSize.zero
         var sRef: CFTypeRef?
@@ -388,8 +418,9 @@ package final class NotificationRepositioner: ObservableObject {
     }
 
     private func repositionWindow(_ window: AXUIElement) {
-        let stackIndex = currentStackIndex(for: window)
-        guard let info = targetOrigin(for: window, stackIndex: stackIndex), let settings else { return }
+        guard let baseInfo = targetOrigin(for: window, stackIndex: 0), let settings else { return }
+        let stackIndex = stackIndex(for: window, baseTarget: baseInfo)
+        guard let info = targetOrigin(for: window, stackIndex: stackIndex) else { return }
 
         animationGeneration &+= 1
         let gen = animationGeneration

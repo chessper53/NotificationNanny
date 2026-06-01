@@ -15,6 +15,7 @@ package final class AppSettings: ObservableObject {
         static let presets              = "presets"
         static let appGroups            = "appGroups"
         static let knownApps            = "knownAppNames"
+        static let pauseWhileStreaming  = "pauseWhileStreaming"
     }
 
     /// ~/Library/Application Support/NotificationNanny/known_apps.json
@@ -30,6 +31,10 @@ package final class AppSettings: ObservableObject {
 
     @Published package var isEnabled: Bool {
         didSet { defaults.set(isEnabled, forKey: Key.isEnabled) }
+    }
+
+    @Published package var pauseWhileStreaming: Bool {
+        didSet { defaults.set(pauseWhileStreaming, forKey: Key.pauseWhileStreaming) }
     }
 
     @Published package var autoDismissSeconds: Double {
@@ -62,6 +67,7 @@ package final class AppSettings: ObservableObject {
         self.defaults           = defaults
         self.knownAppsFileURL   = knownAppsFileURL ?? Self.defaultKnownAppsFileURL
         self.isEnabled             = (defaults.object(forKey: Key.isEnabled) as? Bool) ?? true
+        self.pauseWhileStreaming    = (defaults.object(forKey: Key.pauseWhileStreaming) as? Bool) ?? false
         self.autoDismissSeconds    = defaults.double(forKey: Key.autoDismiss)
         self.targetDisplayID    = CGDirectDisplayID(max(0, defaults.integer(forKey: Key.targetDisplay)))
 
@@ -205,6 +211,15 @@ package final class AppSettings: ObservableObject {
 
     func deletePreset(_ preset: Preset) {
         presets.removeAll { $0.id == preset.id }
+    }
+
+    package func resetAllSettings() {
+        isEnabled = true
+        autoDismissSeconds = 0
+        targetDisplayID = 0
+        placements = [:]
+        presets = []
+        appGroups = []
     }
 
     // MARK: - Persistence

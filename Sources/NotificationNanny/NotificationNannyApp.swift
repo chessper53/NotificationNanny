@@ -15,6 +15,15 @@ struct NotificationNannyApp: App {
             Image(systemName: "bell.badge.fill")
         }
         .menuBarExtraStyle(.window)
+
+        Window("NotificationNanny Settings", id: "settings") {
+            SettingsView()
+                .environmentObject(coordinator.settings)
+                .environmentObject(coordinator.repositioner)
+                .environmentObject(coordinator.launchAtLogin)
+        }
+        .windowResizability(.contentSize)
+        .defaultSize(width: 400, height: 560)
     }
 }
 
