@@ -510,6 +510,11 @@ package struct SettingsView: View {
                 .controlSize(.small)
                 .font(.caption)
 
+            Toggle("Don't move Notification Center", isOn: $settings.avoidNCPanel)
+                .toggleStyle(.checkbox)
+                .controlSize(.small)
+                .font(.caption)
+
             if let error = launchAtLogin.lastError {
                 Text(error).font(.caption2).foregroundStyle(.red)
             }

@@ -16,6 +16,7 @@ package final class AppSettings: ObservableObject {
         static let appGroups            = "appGroups"
         static let knownApps            = "knownAppNames"
         static let pauseWhileStreaming  = "pauseWhileStreaming"
+        static let avoidNCPanel         = "avoidNCPanel"
     }
 
     /// ~/Library/Application Support/NotificationNanny/known_apps.json
@@ -35,6 +36,10 @@ package final class AppSettings: ObservableObject {
 
     @Published package var pauseWhileStreaming: Bool {
         didSet { defaults.set(pauseWhileStreaming, forKey: Key.pauseWhileStreaming) }
+    }
+
+    @Published package var avoidNCPanel: Bool {
+        didSet { defaults.set(avoidNCPanel, forKey: Key.avoidNCPanel) }
     }
 
     @Published package var autoDismissSeconds: Double {
@@ -68,6 +73,7 @@ package final class AppSettings: ObservableObject {
         self.knownAppsFileURL   = knownAppsFileURL ?? Self.defaultKnownAppsFileURL
         self.isEnabled             = (defaults.object(forKey: Key.isEnabled) as? Bool) ?? true
         self.pauseWhileStreaming    = (defaults.object(forKey: Key.pauseWhileStreaming) as? Bool) ?? false
+        self.avoidNCPanel          = (defaults.object(forKey: Key.avoidNCPanel) as? Bool) ?? true
         self.autoDismissSeconds    = defaults.double(forKey: Key.autoDismiss)
         self.targetDisplayID    = CGDirectDisplayID(max(0, defaults.integer(forKey: Key.targetDisplay)))
 
