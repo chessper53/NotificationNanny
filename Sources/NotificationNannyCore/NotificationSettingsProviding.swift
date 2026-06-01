@@ -10,5 +10,8 @@ package protocol NotificationSettingsProviding: AnyObject {
     var settingsDidChange: AnyPublisher<Void, Never> { get }
     func placement(for appName: String?, screen: NSScreen) -> ScreenPlacement
     func placement(forGroupID groupID: UUID?, screen: NSScreen) -> ScreenPlacement
+    /// Returns the group-level screen override, or 0 if none.
+    func targetDisplay(for appName: String?) -> CGDirectDisplayID
+    func targetDisplay(forGroupID groupID: UUID?) -> CGDirectDisplayID
     func recordAppName(_ name: String)
 }

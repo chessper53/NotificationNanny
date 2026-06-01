@@ -131,6 +131,16 @@ package final class AppSettings: ObservableObject {
         return placement(for: screen)
     }
 
+    package func targetDisplay(for appName: String?) -> CGDirectDisplayID {
+        if let appName, let g = group(for: appName) { return g.targetDisplayID }
+        return 0
+    }
+
+    package func targetDisplay(forGroupID groupID: UUID?) -> CGDirectDisplayID {
+        if let groupID, let g = appGroups.first(where: { $0.id == groupID }) { return g.targetDisplayID }
+        return 0
+    }
+
     func placementBinding(for groupID: UUID) -> Binding<ScreenPlacement> {
         Binding(
             get: { [weak self] in
