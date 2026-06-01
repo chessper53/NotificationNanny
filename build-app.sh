@@ -14,7 +14,7 @@ cd "$(dirname "$0")"
 
 APP_NAME="NotificationNanny"
 BUNDLE_ID="com.notificationnanny.app"
-VERSION="${VERSION:-dev}"
+VERSION="${VERSION:-$(cat VERSION 2>/dev/null | tr -d '[:space:]' || echo dev)}"
 BUILD_DIR="build"
 APP_DIR="${BUILD_DIR}/${APP_NAME}.app"
 CONTENTS="${APP_DIR}/Contents"
