@@ -29,6 +29,6 @@
     <key>NSHumanReadableCopyright</key>
     <string>NotificationNanny</string>
     <key>NSAppleEventsUsageDescription</key>
-    <string>NotificationNanny needs Accessibility access to reposition notification banners.</string>
+    <string>NotificationNanny needs Accessibility access to manage and customize your notification banners.</string>
 </dict>
 </plist>

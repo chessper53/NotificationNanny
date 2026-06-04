@@ -68,6 +68,7 @@ package final class NotificationRepositioner: ObservableObject {
             self?.hasAccessibilityPermission = true
             self?.startObserving()
         }
+        registerSleepWakeObservers()
         NSWorkspace.shared.notificationCenter.addObserver(
             forName: NSWorkspace.didLaunchApplicationNotification,
             object: nil,
@@ -283,9 +284,6 @@ package final class NotificationRepositioner: ObservableObject {
     }
 
     private func burstReposition() {
-        if abs((settings?.bannerScale ?? 1.0) - 1.0) < 0.001 {
-            customBannerManager.dismissAll()
-        }
         animationGeneration &+= 1
         repositionVisibleWindows()
         for delay in [0.03, 0.06, 0.1, 0.2, 0.4, 0.8, 1.5, 2.5] as [Double] {
@@ -362,6 +360,56 @@ package final class NotificationRepositioner: ObservableObject {
     private var testBannerWindow: AXUIElement? = nil
 
     private let customBannerManager = CustomBannerManager()
+
+    // MARK: - Display sleep / wake
+
+    private var isDisplaySleeping = false
+    private var pendingWakeWindows: [AXUIElement] = []
+
+    private func registerSleepWakeObservers() {
+        NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.screensDidSleepNotification,
+            object: nil, queue: .main
+        ) { [weak self] _ in Task { @MainActor [weak self] in self?.handleDisplaySleep() } }
+
+        NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.screensDidWakeNotification,
+            object: nil, queue: .main
+        ) { [weak self] _ in Task { @MainActor [weak self] in self?.handleDisplayWake() } }
+    }
+
+    private func handleDisplaySleep() {
+        guard settings?.holdWhileAsleep == true else { return }
+        isDisplaySleeping = true
+        // Move all currently-visible NC banners offscreen so they don't flicker
+        // to wrong positions briefly when the display wakes.
+        guard let ncApp else { return }
+        var value: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(ncApp, kAXWindowsAttribute as CFString, &value) == .success,
+              let windows = value as? [AXUIElement] else { return }
+        for window in windows {
+            setWindowPosition(window, to: CGPoint(x: -9999, y: 0))
+            if !pendingWakeWindows.contains(where: { CFEqual($0, window) }) {
+                pendingWakeWindows.append(window)
+            }
+        }
+    }
+
+    private func handleDisplayWake() {
+        isDisplaySleeping = false
+        guard !pendingWakeWindows.isEmpty else { return }
+        let queued = pendingWakeWindows
+        pendingWakeWindows = []
+        // Brief delay to let the display fully initialise before repositioning.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in
+            guard let self else { return }
+            for window in queued { self.repositionWindow(window) }
+            // Restart dismiss timers so banners that slept get their full display time.
+            if let secs = self.settings?.autoDismissSeconds {
+                self.customBannerManager.resetDismissTimers(autoDismissSeconds: secs)
+            }
+        }
+    }
 
     // High-frequency AX size hammering: the NC process resets the banner size each layout
     // pass (~60fps). We fight it by writing the target size at the same rate.
@@ -544,27 +592,43 @@ package final class NotificationRepositioner: ObservableObject {
         }
         if testGroupID != nil { testBannerWindow = window }
 
-        let scale = settings?.bannerScale ?? 1.0
+        let shouldKeepCustom: Bool
+        if let testGroup = testGroupID {
+            shouldKeepCustom = settings?.shouldUseCustomBanner(forGroupID: testGroup) ?? false
+        } else {
+            shouldKeepCustom = settings?.shouldUseCustomBanner(for: appName(for: window)) ?? false
+        }
+        let scale: Double
+        if let testGroup = testGroupID {
+            scale = settings?.effectiveBannerScale(forGroupID: testGroup) ?? 1.0
+        } else {
+            scale = settings?.effectiveBannerScale(for: appName(for: window)) ?? 1.0
+        }
+
         if customBannerManager.isActive(key: CFHash(window)) {
-            // Custom overlay is showing — keep the real NC banner off-screen and move our panel.
-            setWindowPosition(window, to: CGPoint(x: t.windowOrigin.x, y: -9999))
-            let bannerAXOrigin = CGPoint(
-                x: t.windowOrigin.x + t.bannerOffsetInWindow.x,
-                y: t.windowOrigin.y + t.bannerOffsetInWindow.y
-            )
-            let scaledWidth = t.bannerSize.width * (1.0 + (scale - 1.0) * 0.75)
-            let widthDelta = scaledWidth - t.bannerSize.width
-            let anchoredX: CGFloat
-            switch t.placement.position {
-            case .topRight, .middleRight, .bottomRight:   anchoredX = bannerAXOrigin.x - widthDelta
-            case .topCenter, .middleCenter, .bottomCenter: anchoredX = bannerAXOrigin.x - widthDelta / 2
-            default:                                       anchoredX = bannerAXOrigin.x
+            if !shouldKeepCustom {
+                // Mode/scale changed to native — dismiss overlay, fall through to native path.
+                customBannerManager.dismiss(key: CFHash(window))
+            } else {
+                // Custom overlay is showing — keep the real NC banner off-screen and move our panel.
+                setWindowPosition(window, to: CGPoint(x: t.windowOrigin.x, y: -9999))
+                let bannerAXOrigin = CGPoint(
+                    x: t.windowOrigin.x + t.bannerOffsetInWindow.x,
+                    y: t.windowOrigin.y + t.bannerOffsetInWindow.y
+                )
+                let scaledWidth = t.bannerSize.width * (1.0 + (scale - 1.0) * 0.75)
+                let widthDelta = scaledWidth - t.bannerSize.width
+                let anchoredX: CGFloat
+                switch t.placement.position {
+                case .topRight, .middleRight, .bottomRight:    anchoredX = bannerAXOrigin.x - widthDelta
+                case .topCenter, .middleCenter, .bottomCenter: anchoredX = bannerAXOrigin.x - widthDelta / 2
+                default:                                        anchoredX = bannerAXOrigin.x
+                }
+                customBannerManager.move(key: CFHash(window),
+                                         axTopLeft: CGPoint(x: anchoredX, y: bannerAXOrigin.y),
+                                         width: scaledWidth)
+                return
             }
-            customBannerManager.move(key: CFHash(window),
-                                     axTopLeft: CGPoint(x: anchoredX, y: bannerAXOrigin.y),
-                                     width: scaledWidth)
-            customBannerManager.updateOpacity(key: CFHash(window), opacity: settings?.bannerOpacity ?? 1.0)
-            return
         }
 
         // -- Position --
@@ -576,9 +640,6 @@ package final class NotificationRepositioner: ObservableObject {
         }
         let posResult = AXUIElementSetAttributeValue(window, kAXPositionAttribute as CFString, posValue)
         log.debug("snapWindow: AXUIElementSetAttributeValue(position) → \(posResult.rawValue)")
-
-        // -- Scale --
-        applyScale(to: window, bannerOffset: t.bannerOffsetInWindow, bannerSize: t.bannerSize, windowSize: t.windowSize)
     }
 
     // MARK: - Scale: high-frequency AX hammer
@@ -716,6 +777,15 @@ package final class NotificationRepositioner: ObservableObject {
             log.debug("repositionWindow: no base target or no settings — bailing")
             return
         }
+
+        if settings.holdWhileAsleep, isDisplaySleeping {
+            log.debug("repositionWindow: display sleeping — queuing window")
+            setWindowPosition(window, to: CGPoint(x: -9999, y: 0))
+            if !pendingWakeWindows.contains(where: { CFEqual($0, window) }) {
+                pendingWakeWindows.append(window)
+            }
+            return
+        }
         let stackIndex = stackIndex(for: window, baseTarget: baseInfo)
         log.debug("repositionWindow: resolved stackIndex=\(stackIndex)")
         guard let info = targetOrigin(for: window, stackIndex: stackIndex) else {
@@ -727,14 +797,17 @@ package final class NotificationRepositioner: ObservableObject {
         let gen = animationGeneration
         log.debug("repositionWindow: animationGeneration=\(gen) target=(\(info.windowOrigin.x, format: .fixed(precision: 1)),\(info.windowOrigin.y, format: .fixed(precision: 1))) bannerSize=\(info.bannerSize.width, format: .fixed(precision: 0))×\(info.bannerSize.height, format: .fixed(precision: 0))")
 
-        let isTest = testGroupID != nil
         let scale: Double
+        let useCustomBanner: Bool
         if let testGroup = testGroupID {
             scale = settings.effectiveBannerScale(forGroupID: testGroup)
+            useCustomBanner = settings.shouldUseCustomBanner(forGroupID: testGroup)
         } else {
-            scale = settings.effectiveBannerScale(for: appName(for: window))
+            let name = appName(for: window)
+            scale = settings.effectiveBannerScale(for: name)
+            useCustomBanner = settings.shouldUseCustomBanner(for: name)
         }
-        if abs(scale - 1.0) > 0.001 || isTest {
+        if useCustomBanner {
             // Custom overlay path: suppress the real NC banner, show our own at the configured scale.
             let bannerEl = findBannerElement(in: window) ?? window
             // In test mode, hardcode the content so the osascript comma-separated AX
@@ -783,7 +856,6 @@ package final class NotificationRepositioner: ObservableObject {
                     axTopLeft: finalAXOrigin,
                     width: scaledWidth,
                     scale: scale,
-                    opacity: settings.bannerOpacity,
                     autoDismissSeconds: settings.autoDismissSeconds,
                     onOpen: { [weak self] in self?.handleBannerTap(appName: capturedName, bannerElement: capturedEl) },
                     key: key
@@ -796,7 +868,6 @@ package final class NotificationRepositioner: ObservableObject {
         }
 
         setWindowPosition(window, to: info.windowOrigin)
-        applyScale(to: window, bannerOffset: info.bannerOffsetInWindow, bannerSize: info.bannerSize, windowSize: info.windowSize)
 
         // Re-evaluate target on each hold — app name lookup may race with banner rendering.
         scheduleHolds(window: window, stackIndex: stackIndex, generation: gen)
@@ -832,8 +903,23 @@ package final class NotificationRepositioner: ObservableObject {
         }
 
         let lines = textPart.components(separatedBy: "\n").filter { !$0.isEmpty }
-        let title = lines.first ?? textPart
-        let body = lines.dropFirst().joined(separator: "\n")
+        let title: String
+        let body: String
+        if lines.count > 1 {
+            title = lines.first ?? textPart
+            body = lines.dropFirst().joined(separator: "\n")
+        } else {
+            // No newline separator — split on the last ", " so e.g. "Sender Name, message"
+            // renders as a proper title + body rather than one long wrapping title line.
+            let singleLine = lines.first ?? textPart
+            if let lastComma = singleLine.range(of: ", ", options: .backwards) {
+                title = String(singleLine[singleLine.startIndex..<lastComma.lowerBound])
+                body  = String(singleLine[lastComma.upperBound...])
+            } else {
+                title = singleLine
+                body  = ""
+            }
+        }
         let appName = knownAppName ?? parsedAppName
         return BannerContent(appName: appName, title: title, body: body, appIcon: lookupIcon(for: appName))
     }

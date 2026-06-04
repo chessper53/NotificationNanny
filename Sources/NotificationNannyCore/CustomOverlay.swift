@@ -30,45 +30,44 @@ struct CustomBannerView: View {
 
     var body: some View {
         ZStack {
-            // Main content row — tappable
-            HStack(alignment: .top, spacing: 8) {
+            HStack(alignment: .top, spacing: 12) {
                 if let icon = content.appIcon {
                     Image(nsImage: icon)
                         .resizable()
                         .frame(width: iconSize, height: iconSize)
-                        .padding(.top, 2)
+                        .padding(.top, 1)
                 }
 
                 VStack(alignment: .leading, spacing: 2) {
-                    HStack(alignment: .firstTextBaseline, spacing: 4) {
+                    HStack(alignment: .firstTextBaseline) {
                         Text(content.appName)
                             .font(.system(size: 11 * scale, weight: .medium))
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(.white.opacity(0.55))
                             .lineLimit(1)
-                            .frame(maxWidth: .infinity, alignment: .leading)
+                        Spacer(minLength: 4)
                         Text(timestampText)
                             .font(.system(size: 11 * scale))
-                            .foregroundStyle(.tertiary)
+                            .foregroundStyle(.white.opacity(0.45))
                     }
                     if !content.title.isEmpty {
                         Text(content.title)
                             .font(.system(size: 13 * scale, weight: .semibold))
-                            .foregroundStyle(.primary)
+                            .foregroundStyle(.white.opacity(0.95))
                             .lineLimit(2)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                     if !content.body.isEmpty {
                         Text(content.body)
                             .font(.system(size: 12 * scale))
-                            .foregroundStyle(.primary.opacity(0.85))
+                            .foregroundStyle(.white.opacity(0.55))
                             .lineLimit(2)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 12)
+            .padding(.horizontal, 10 * CGFloat(scale))
+            .padding(.vertical, 7 * CGFloat(scale))
             .frame(maxWidth: .infinity)
             .contentShape(Rectangle())
             .onTapGesture { onOpen() }
@@ -82,13 +81,13 @@ struct CustomBannerView: View {
             Button { onDismiss() } label: {
                 Image(systemName: "xmark")
                     .font(.system(size: 7, weight: .bold))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(.white.opacity(0.7))
                     .frame(width: 16, height: 16)
-                    .background(.secondary.opacity(0.25), in: Circle())
+                    .background(.white.opacity(0.15), in: Circle())
             }
             .buttonStyle(.plain)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .padding(5)
+            .padding(6)
             .opacity(isHovering ? 1 : 0)
             .animation(.easeInOut(duration: 0.12), value: isHovering)
 
@@ -96,19 +95,29 @@ struct CustomBannerView: View {
             Button { onOpen() } label: {
                 Text("Show")
                     .font(.system(size: max(9, 10 * scale), weight: .semibold))
-                    .foregroundStyle(Color(white: 0.1))
+                    .foregroundStyle(.black.opacity(0.8))
                     .padding(.horizontal, 10)
                     .padding(.vertical, 4)
-                    .background(Color(white: 0.78), in: RoundedRectangle(cornerRadius: 6))
+                    .background(.white.opacity(0.85), in: RoundedRectangle(cornerRadius: 6))
             }
             .buttonStyle(.plain)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
-            .padding(7)
+            .padding(8)
             .opacity(isHovering ? 1 : 0)
             .animation(.easeInOut(duration: 0.12), value: isHovering)
         }
+        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: max(8, 14 * CGFloat(scale)), style: .continuous))
+        .background(
+            RoundedRectangle(cornerRadius: max(8, 14 * CGFloat(scale)), style: .continuous)
+                .fill(Color.black.opacity(0.88))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: max(8, 14 * CGFloat(scale)), style: .continuous)
+                .strokeBorder(Color.white.opacity(0.06), lineWidth: 0.5)
+        )
         .frame(maxWidth: .infinity)
         .onHover { isHovering = $0 }
+        .preferredColorScheme(.dark)
     }
 }
 
@@ -129,7 +138,6 @@ final class CustomBannerManager {
         axTopLeft: CGPoint,
         width: CGFloat,
         scale: Double,
-        opacity: Double,
         autoDismissSeconds: Double,
         onOpen: @escaping () -> Void,
         key: CFHashCode
@@ -146,10 +154,9 @@ final class CustomBannerManager {
             onOpen: openAndDismiss
         ))
         // App name + up-to-2-line title + optional body, plus vertical padding.
-        let height = max(73, (11 + 13 * 2 + 12) * scale * 1.3 + 22)
+        let height = max(50 * scale, (11 + 13 * 2 + 12) * scale * 1.3 + 14 * scale)
         let frame = Self.axRect(axOrigin: axTopLeft, size: CGSize(width: width, height: height))
         let panel = makePanel(frame: frame, hostingView: hostingView)
-        panel.alphaValue = CGFloat(max(0.1, min(1.0, opacity)))
         panel.orderFront(nil)
 
         var entry = Entry(panel: panel)
@@ -174,8 +181,18 @@ final class CustomBannerManager {
 
     func isActive(key: CFHashCode) -> Bool { active[key] != nil }
 
-    func updateOpacity(key: CFHashCode, opacity: Double) {
-        active[key]?.panel.alphaValue = CGFloat(max(0.1, min(1.0, opacity)))
+    /// Restarts every active dismiss timer with a fresh countdown. Call on display wake so
+    /// banners that arrived during sleep get their full display time from the moment of wake.
+    func resetDismissTimers(autoDismissSeconds: Double) {
+        let timeout = autoDismissSeconds > 0 ? autoDismissSeconds : 8
+        for key in Array(active.keys) {
+            active[key]?.dismissTimer?.cancel()
+            let timer = DispatchSource.makeTimerSource(queue: .main)
+            timer.schedule(deadline: .now() + timeout)
+            timer.setEventHandler { [weak self] in self?.dismiss(key: key) }
+            timer.resume()
+            active[key]?.dismissTimer = timer
+        }
     }
 
     func move(key: CFHashCode, axTopLeft: CGPoint, width: CGFloat) {
@@ -200,30 +217,9 @@ final class CustomBannerManager {
         panel.isReleasedWhenClosed = false
         panel.becomesKeyOnlyIfNeeded = true
 
-        // NSVisualEffectView with popover material + forced dark appearance matches the
-        // system notification banner's frosted glass look.
-        let blur = NSVisualEffectView(frame: NSRect(origin: .zero, size: frame.size))
-        blur.material = .popover
-        blur.blendingMode = .behindWindow
-        blur.state = .active
-        blur.appearance = NSAppearance(named: .darkAqua)
-        blur.wantsLayer = true
-        blur.layer?.cornerRadius = 14
-        blur.layer?.masksToBounds = true
-
-        // Subtle edge highlight matching the system banner's depth cue.
-        let border = CALayer()
-        border.frame = blur.bounds
-        border.borderColor = NSColor.white.withAlphaComponent(0.1).cgColor
-        border.borderWidth = 0.5
-        border.cornerRadius = 14
-        border.autoresizingMask = [.layerWidthSizable, .layerHeightSizable]
-        blur.layer?.addSublayer(border)
-
-        hostingView.frame = blur.bounds
+        hostingView.frame = NSRect(origin: .zero, size: frame.size)
         hostingView.autoresizingMask = [.width, .height]
-        blur.addSubview(hostingView)
-        panel.contentView = blur
+        panel.contentView = hostingView
         return panel
     }
 
