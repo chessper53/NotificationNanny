@@ -18,7 +18,7 @@ package final class AppSettings: ObservableObject {
         static let pauseWhileStreaming  = "pauseWhileStreaming"
         static let avoidNCPanel         = "avoidNCPanel"
         static let bannerScale          = "bannerScale"
-        static let bannerOpacity        = "bannerOpacity"
+        static let holdWhileAsleep      = "holdWhileAsleep"
     }
 
     /// ~/Library/Application Support/NotificationNanny/known_apps.json
@@ -44,16 +44,16 @@ package final class AppSettings: ObservableObject {
         didSet { defaults.set(avoidNCPanel, forKey: Key.avoidNCPanel) }
     }
 
+    @Published package var holdWhileAsleep: Bool {
+        didSet { defaults.set(holdWhileAsleep, forKey: Key.holdWhileAsleep) }
+    }
+
     @Published package var autoDismissSeconds: Double {
         didSet { defaults.set(autoDismissSeconds, forKey: Key.autoDismiss) }
     }
 
     @Published package var bannerScale: Double {
         didSet { defaults.set(bannerScale, forKey: Key.bannerScale) }
-    }
-
-    @Published package var bannerOpacity: Double {
-        didSet { defaults.set(bannerOpacity, forKey: Key.bannerOpacity) }
     }
 
     /// 0 = auto (follow macOS), non-zero = force to this display.
@@ -84,11 +84,10 @@ package final class AppSettings: ObservableObject {
         self.isEnabled             = (defaults.object(forKey: Key.isEnabled) as? Bool) ?? true
         self.pauseWhileStreaming    = (defaults.object(forKey: Key.pauseWhileStreaming) as? Bool) ?? false
         self.avoidNCPanel          = (defaults.object(forKey: Key.avoidNCPanel) as? Bool) ?? true
+        self.holdWhileAsleep       = (defaults.object(forKey: Key.holdWhileAsleep) as? Bool) ?? false
         self.autoDismissSeconds    = defaults.double(forKey: Key.autoDismiss)
         let storedScale = defaults.double(forKey: Key.bannerScale)
         self.bannerScale = storedScale == 0 ? 1.0 : storedScale
-        let storedOpacity = defaults.double(forKey: Key.bannerOpacity)
-        self.bannerOpacity = storedOpacity == 0 ? 0.85 : storedOpacity
         self.targetDisplayID    = CGDirectDisplayID(max(0, defaults.integer(forKey: Key.targetDisplay)))
 
         if let data = defaults.data(forKey: Key.placements),
@@ -218,6 +217,32 @@ package final class AppSettings: ObservableObject {
         return bannerScale
     }
 
+    package func effectiveBannerMode(for appName: String?) -> BannerMode? {
+        if let appName, let g = group(for: appName) { return g.bannerMode }
+        return nil
+    }
+
+    package func effectiveBannerMode(forGroupID groupID: UUID?) -> BannerMode? {
+        if let groupID, let g = appGroups.first(where: { $0.id == groupID }) { return g.bannerMode }
+        return nil
+    }
+
+    package func shouldUseCustomBanner(for appName: String?) -> Bool {
+        switch effectiveBannerMode(for: appName) {
+        case .native: return false
+        case .custom: return true
+        case nil: return abs(effectiveBannerScale(for: appName) - 1.0) > 0.001
+        }
+    }
+
+    package func shouldUseCustomBanner(forGroupID groupID: UUID?) -> Bool {
+        switch effectiveBannerMode(forGroupID: groupID) {
+        case .native: return false
+        case .custom: return true
+        case nil: return abs(effectiveBannerScale(forGroupID: groupID) - 1.0) > 0.001
+        }
+    }
+
     /// Adds to the known-apps list if not already present. Safe to call repeatedly.
     package func recordAppName(_ name: String) {
         guard !name.isEmpty, !knownAppNames.contains(name) else { return }
@@ -295,7 +320,7 @@ package final class AppSettings: ObservableObject {
         presets = []
         appGroups = []
         bannerScale = 1.0
-        bannerOpacity = 0.85
+        holdWhileAsleep = false
     }
 
     // MARK: - Persistence
