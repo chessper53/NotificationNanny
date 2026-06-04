@@ -155,12 +155,15 @@ struct BannerChip: View {
 enum TestNotification {
     static func send() {
         let stamp = Int(Date().timeIntervalSince1970) % 100000
-        let script = """
-        display notification "Thank you for using NotificationNanny!" with title "NotificationNanny" subtitle "Test #\(stamp)"
-        """
+        // osascript is used because UNUserNotificationCenter requires granted permission
+        // which resets on every rebuild. The notification content is formatted without a
+        // subtitle so the AX description splits cleanly into title + body.
+        let script = "display notification \"Thank you for using NotificationNanny!\" with title \"Test #\(stamp)\""
         let task = Process()
         task.launchPath = "/usr/bin/osascript"
         task.arguments = ["-e", script]
+        task.standardOutput = Pipe()
+        task.standardError = Pipe()
         try? task.run()
     }
 }

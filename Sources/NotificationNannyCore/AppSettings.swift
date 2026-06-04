@@ -17,6 +17,8 @@ package final class AppSettings: ObservableObject {
         static let knownApps            = "knownAppNames"
         static let pauseWhileStreaming  = "pauseWhileStreaming"
         static let avoidNCPanel         = "avoidNCPanel"
+        static let bannerScale          = "bannerScale"
+        static let bannerOpacity        = "bannerOpacity"
     }
 
     /// ~/Library/Application Support/NotificationNanny/known_apps.json
@@ -44,6 +46,14 @@ package final class AppSettings: ObservableObject {
 
     @Published package var autoDismissSeconds: Double {
         didSet { defaults.set(autoDismissSeconds, forKey: Key.autoDismiss) }
+    }
+
+    @Published package var bannerScale: Double {
+        didSet { defaults.set(bannerScale, forKey: Key.bannerScale) }
+    }
+
+    @Published package var bannerOpacity: Double {
+        didSet { defaults.set(bannerOpacity, forKey: Key.bannerOpacity) }
     }
 
     /// 0 = auto (follow macOS), non-zero = force to this display.
@@ -75,6 +85,10 @@ package final class AppSettings: ObservableObject {
         self.pauseWhileStreaming    = (defaults.object(forKey: Key.pauseWhileStreaming) as? Bool) ?? false
         self.avoidNCPanel          = (defaults.object(forKey: Key.avoidNCPanel) as? Bool) ?? true
         self.autoDismissSeconds    = defaults.double(forKey: Key.autoDismiss)
+        let storedScale = defaults.double(forKey: Key.bannerScale)
+        self.bannerScale = storedScale == 0 ? 1.0 : storedScale
+        let storedOpacity = defaults.double(forKey: Key.bannerOpacity)
+        self.bannerOpacity = storedOpacity == 0 ? 0.85 : storedOpacity
         self.targetDisplayID    = CGDirectDisplayID(max(0, defaults.integer(forKey: Key.targetDisplay)))
 
         if let data = defaults.data(forKey: Key.placements),
@@ -194,6 +208,16 @@ package final class AppSettings: ObservableObject {
         appGroups[i].appNames.removeAll { $0 == appName }
     }
 
+    package func effectiveBannerScale(for appName: String?) -> Double {
+        if let appName, let g = group(for: appName), let scale = g.bannerScale { return scale }
+        return bannerScale
+    }
+
+    package func effectiveBannerScale(forGroupID groupID: UUID?) -> Double {
+        if let groupID, let g = appGroups.first(where: { $0.id == groupID }), let scale = g.bannerScale { return scale }
+        return bannerScale
+    }
+
     /// Adds to the known-apps list if not already present. Safe to call repeatedly.
     package func recordAppName(_ name: String) {
         guard !name.isEmpty, !knownAppNames.contains(name) else { return }
@@ -201,11 +225,54 @@ package final class AppSettings: ObservableObject {
         knownAppNames.sort()
     }
 
+    // MARK: - Import / Export
+
+    struct SettingsExport: Codable {
+        var placements: [String: ScreenPlacement]
+        var targetDisplayID: CGDirectDisplayID
+        var autoDismissSeconds: Double
+        var bannerScale: Double
+        var pauseWhileStreaming: Bool
+        var avoidNCPanel: Bool
+        var appGroups: [AppGroup]
+        var presets: [Preset]
+    }
+
+    func exportData() throws -> Data {
+        let export = SettingsExport(
+            placements: placements,
+            targetDisplayID: targetDisplayID,
+            autoDismissSeconds: autoDismissSeconds,
+            bannerScale: bannerScale,
+            pauseWhileStreaming: pauseWhileStreaming,
+            avoidNCPanel: avoidNCPanel,
+            appGroups: appGroups,
+            presets: presets
+        )
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        return try encoder.encode(export)
+    }
+
+    func importData(_ data: Data) throws {
+        let imported = try JSONDecoder().decode(SettingsExport.self, from: data)
+        placements          = imported.placements
+        targetDisplayID     = imported.targetDisplayID
+        autoDismissSeconds  = imported.autoDismissSeconds
+        bannerScale         = imported.bannerScale
+        pauseWhileStreaming  = imported.pauseWhileStreaming
+        avoidNCPanel        = imported.avoidNCPanel
+        appGroups           = imported.appGroups
+        presets             = imported.presets
+    }
+
     // MARK: - Presets
 
     func saveCurrentAsPreset(name: String) {
         let preset = Preset(name: name, placements: placements,
-                            targetDisplayID: targetDisplayID, autoDismissSeconds: autoDismissSeconds)
+                            targetDisplayID: targetDisplayID,
+                            autoDismissSeconds: autoDismissSeconds,
+                            bannerScale: bannerScale)
         presets.append(preset)
     }
 
@@ -213,6 +280,7 @@ package final class AppSettings: ObservableObject {
         placements = preset.placements
         targetDisplayID = preset.targetDisplayID
         autoDismissSeconds = preset.autoDismissSeconds
+        bannerScale = preset.bannerScale
     }
 
     func deletePreset(_ preset: Preset) {
@@ -226,6 +294,8 @@ package final class AppSettings: ObservableObject {
         placements = [:]
         presets = []
         appGroups = []
+        bannerScale = 1.0
+        bannerOpacity = 0.85
     }
 
     // MARK: - Persistence

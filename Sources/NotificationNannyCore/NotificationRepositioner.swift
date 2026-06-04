@@ -3,7 +3,51 @@ import AppKit
 import Combine
 import os
 
-private let log = Logger(subsystem: "com.notificationnanny", category: "repositioner")
+private let log        = Logger(subsystem: "com.notificationnanny", category: "repositioner")
+private let scaleLog   = Logger(subsystem: "com.notificationnanny", category: "scale")
+private let axLog      = Logger(subsystem: "com.notificationnanny", category: "ax")
+private let cgsLog     = Logger(subsystem: "com.notificationnanny", category: "cgs")
+
+// MARK: - Private API declarations
+
+/// Extracts the CGWindowID from an AXUIElement. Private SPI, widely used by accessibility tools.
+@_silgen_name("_AXUIElementGetWindow")
+func _AXUIElementGetWindow(_ element: AXUIElement, _ windowID: UnsafeMutablePointer<CGWindowID>) -> AXError
+
+/// Returns the current process's CoreGraphics server connection ID.
+@_silgen_name("CGSMainConnectionID")
+func CGSMainConnectionID() -> Int32
+
+/// Applies a 2D affine transform to a window at the compositor level (scales/rotates the entire
+/// rendered window texture, including text). Scale origin is the window's top-left corner.
+@_silgen_name("CGSSetWindowTransform")
+@discardableResult
+func CGSSetWindowTransform(_ connection: Int32, _ windowID: CGWindowID, _ transform: CGAffineTransform) -> Int32
+
+/// Sets the alpha (opacity) of a window at the compositor level. Returns 0 on success.
+@_silgen_name("CGSSetWindowAlpha")
+@discardableResult
+func CGSSetWindowAlpha(_ connection: Int32, _ windowID: CGWindowID, _ alpha: Float) -> Int32
+
+// SkyLight is a private framework — look up symbols at runtime to avoid linker errors.
+private let _skyLight: UnsafeMutableRawPointer? = dlopen(
+    "/System/Library/PrivateFrameworks/SkyLight.framework/SkyLight", RTLD_LAZY
+)
+
+private func slsMainConnectionID() -> Int32 {
+    guard let fn = _skyLight.flatMap({ dlsym($0, "SLSMainConnectionID") }) else { return 0 }
+    return unsafeBitCast(fn, to: (@convention(c) () -> Int32).self)()
+}
+
+private func slsSetWindowTransform(_ conn: Int32, _ wid: CGWindowID, _ t: CGAffineTransform) -> Int32 {
+    guard let fn = _skyLight.flatMap({ dlsym($0, "SLSSetWindowTransform") }) else { return -1 }
+    return unsafeBitCast(fn, to: (@convention(c) (Int32, CGWindowID, CGAffineTransform) -> Int32).self)(conn, wid, t)
+}
+
+private func slsSetWindowAlpha(_ conn: Int32, _ wid: CGWindowID, _ alpha: Float) -> Int32 {
+    guard let fn = _skyLight.flatMap({ dlsym($0, "SLSSetWindowAlpha") }) else { return -1 }
+    return unsafeBitCast(fn, to: (@convention(c) (Int32, CGWindowID, Float) -> Int32).self)(conn, wid, alpha)
+}
 
 @MainActor
 package final class NotificationRepositioner: ObservableObject {
@@ -144,6 +188,7 @@ package final class NotificationRepositioner: ObservableObject {
         observer = nil; ncApp = nil; ncPid = 0
         isObserving = false; detectedBannerInfo = nil
         windowAppNameCache.removeAll()
+        customBannerManager.dismissAll()
     }
 
     // MARK: - App name extraction
@@ -194,22 +239,30 @@ package final class NotificationRepositioner: ObservableObject {
     // MARK: - Event handling
 
     fileprivate func handleAXEvent(element: AXUIElement, notification: String) {
-        log.debug("AX event: \(notification, privacy: .public)")
+        axLog.debug("── AX event: \(notification, privacy: .public)")
+
         if notification == kAXUIElementDestroyedNotification as String {
+            axLog.debug("handleAXEvent: element destroyed → stop scale hammer + dismiss custom banner + repositionVisibleWindows")
+            stopScaleHammer()
+            customBannerManager.dismiss(key: CFHash(element))
             repositionVisibleWindows()
             return
         }
+
         if notification == kAXWindowMovedNotification as String {
             var cur = CGPoint.zero; var ref: CFTypeRef?
             if AXUIElementCopyAttributeValue(element, kAXPositionAttribute as CFString, &ref) == .success,
                let v = ref, CFGetTypeID(v) == AXValueGetTypeID() {
                 AXValueGetValue(v as! AXValue, .cgPoint, &cur)
             }
-            guard hypot(cur.x - lastSelfSetPosition.x, cur.y - lastSelfSetPosition.y) > 4 else { return }
+            let drift = hypot(cur.x - lastSelfSetPosition.x, cur.y - lastSelfSetPosition.y)
+            axLog.debug("handleAXEvent: windowMoved — cur=(\(cur.x, format: .fixed(precision: 1)),\(cur.y, format: .fixed(precision: 1))) lastSelf=(\(self.lastSelfSetPosition.x, format: .fixed(precision: 1)),\(self.lastSelfSetPosition.y, format: .fixed(precision: 1))) drift=\(drift, format: .fixed(precision: 1))")
+            guard drift > 4 else {
+                axLog.debug("handleAXEvent: drift ≤4, ignoring (self-induced move)")
+                return
+            }
         }
-        // Focus/main-window changes fire when the user opens the NC panel (clicking the clock).
-        // Skip large overlay windows on these events — AXWindowCreated handles new banners,
-        // and we don't want to reposition the NC panel when the user explicitly opens it.
+
         if notification == kAXFocusedWindowChangedNotification as String ||
            notification == kAXMainWindowChangedNotification as String {
             var sRef: CFTypeRef?
@@ -217,13 +270,22 @@ package final class NotificationRepositioner: ObservableObject {
                let v = sRef, CFGetTypeID(v) == AXValueGetTypeID() {
                 var sz = CGSize.zero
                 AXValueGetValue(v as! AXValue, .cgSize, &sz)
-                if sz.width > 700 || sz.height > 400 { return }
+                axLog.debug("handleAXEvent: focus/mainWindow event — window size \(sz.width, format: .fixed(precision: 0))×\(sz.height, format: .fixed(precision: 0))")
+                if sz.width > 700 || sz.height > 400 {
+                    axLog.debug("handleAXEvent: large window on focus event, skipping (likely NC panel)")
+                    return
+                }
             }
         }
+
+        axLog.debug("handleAXEvent: proceeding to repositionWindow")
         repositionWindow(element)
     }
 
     private func burstReposition() {
+        if abs((settings?.bannerScale ?? 1.0) - 1.0) < 0.001 {
+            customBannerManager.dismissAll()
+        }
         animationGeneration &+= 1
         repositionVisibleWindows()
         for delay in [0.03, 0.06, 0.1, 0.2, 0.4, 0.8, 1.5, 2.5] as [Double] {
@@ -234,17 +296,26 @@ package final class NotificationRepositioner: ObservableObject {
     }
 
     private func repositionVisibleWindows() {
-        guard let ncApp else { return }
+        guard let ncApp else {
+            log.debug("repositionVisibleWindows: ncApp is nil, skipping")
+            return
+        }
         var value: CFTypeRef?
         guard AXUIElementCopyAttributeValue(ncApp, kAXWindowsAttribute as CFString, &value) == .success,
-              let windows = value as? [AXUIElement] else { return }
+              let windows = value as? [AXUIElement] else {
+            log.debug("repositionVisibleWindows: failed to get windows from ncApp")
+            return
+        }
+        log.debug("repositionVisibleWindows: \(windows.count) window(s) from ncApp")
         // Two-pass: resolve each window's anchor first, then stack only within same-anchor groups.
         let baseTargets: [(AXUIElement, RepositionTarget)] = windows.compactMap { w in
             guard let t = targetOrigin(for: w, stackIndex: 0) else { return nil }
             return (w, t)
         }
+        log.debug("repositionVisibleWindows: \(baseTargets.count) repositionable target(s)")
         for (i, (window, base)) in baseTargets.enumerated() {
             let idx = baseTargets[..<i].filter { sameAnchor($0.1, base) }.count
+            log.debug("repositionVisibleWindows: window[\(i)] stackIndex=\(idx) anchor=\(base.placement.position.rawValue, privacy: .public)")
             snapWindow(window, stackIndex: idx)
         }
     }
@@ -290,6 +361,14 @@ package final class NotificationRepositioner: ObservableObject {
     private var testGroupID: UUID?? = nil
     private var testBannerWindow: AXUIElement? = nil
 
+    private let customBannerManager = CustomBannerManager()
+
+    // High-frequency AX size hammering: the NC process resets the banner size each layout
+    // pass (~60fps). We fight it by writing the target size at the same rate.
+    private var scaleTimer: DispatchSourceTimer?
+    private var activeBannerElement: AXUIElement? = nil
+    private var targetBannerSize: CGSize = .zero
+
     func sendTestNotification(groupID: UUID?) {
         testGroupID = .some(groupID)
         testBannerWindow = nil
@@ -308,6 +387,7 @@ package final class NotificationRepositioner: ObservableObject {
 
     private struct RepositionTarget {
         let windowOrigin: CGPoint
+        let windowSize: CGSize
         let placement: ScreenPlacement
         let screen: NSScreen
         let bannerOffsetInWindow: CGPoint
@@ -452,33 +532,334 @@ package final class NotificationRepositioner: ObservableObject {
         let origin = CGPoint(x: bannerTarget.x - bannerOffset.x, y: bannerTarget.y - bannerOffset.y)
 
         log.debug("targetOrigin: → (\(origin.x, format: .fixed(precision: 0)),\(origin.y, format: .fixed(precision: 0))) \(placement.position.rawValue, privacy: .public) screen=\(screen.displayID, privacy: .public)")
-        return RepositionTarget(windowOrigin: origin, placement: placement, screen: screen,
+        return RepositionTarget(windowOrigin: origin, windowSize: size, placement: placement, screen: screen,
                                 bannerOffsetInWindow: bannerOffset, bannerSize: bannerSz)
     }
 
     private func snapWindow(_ window: AXUIElement, stackIndex: Int = 0) {
-        guard let t = targetOrigin(for: window, stackIndex: stackIndex) else { return }
+        log.debug("snapWindow: called stackIndex=\(stackIndex)")
+        guard let t = targetOrigin(for: window, stackIndex: stackIndex) else {
+            log.debug("snapWindow: no target origin, bailing")
+            return
+        }
         if testGroupID != nil { testBannerWindow = window }
+
+        let scale = settings?.bannerScale ?? 1.0
+        if customBannerManager.isActive(key: CFHash(window)) {
+            // Custom overlay is showing — keep the real NC banner off-screen and move our panel.
+            setWindowPosition(window, to: CGPoint(x: t.windowOrigin.x, y: -9999))
+            let bannerAXOrigin = CGPoint(
+                x: t.windowOrigin.x + t.bannerOffsetInWindow.x,
+                y: t.windowOrigin.y + t.bannerOffsetInWindow.y
+            )
+            let scaledWidth = t.bannerSize.width * (1.0 + (scale - 1.0) * 0.75)
+            let widthDelta = scaledWidth - t.bannerSize.width
+            let anchoredX: CGFloat
+            switch t.placement.position {
+            case .topRight, .middleRight, .bottomRight:   anchoredX = bannerAXOrigin.x - widthDelta
+            case .topCenter, .middleCenter, .bottomCenter: anchoredX = bannerAXOrigin.x - widthDelta / 2
+            default:                                       anchoredX = bannerAXOrigin.x
+            }
+            customBannerManager.move(key: CFHash(window),
+                                     axTopLeft: CGPoint(x: anchoredX, y: bannerAXOrigin.y),
+                                     width: scaledWidth)
+            customBannerManager.updateOpacity(key: CFHash(window), opacity: settings?.bannerOpacity ?? 1.0)
+            return
+        }
+
+        // -- Position --
         var origin = t.windowOrigin
-        guard let v = AXValueCreate(.cgPoint, &origin) else { return }
-        AXUIElementSetAttributeValue(window, kAXPositionAttribute as CFString, v)
+        log.debug("snapWindow: setting position → (\(origin.x, format: .fixed(precision: 1)), \(origin.y, format: .fixed(precision: 1)))")
+        guard let posValue = AXValueCreate(.cgPoint, &origin) else {
+            log.error("snapWindow: AXValueCreate(.cgPoint) failed")
+            return
+        }
+        let posResult = AXUIElementSetAttributeValue(window, kAXPositionAttribute as CFString, posValue)
+        log.debug("snapWindow: AXUIElementSetAttributeValue(position) → \(posResult.rawValue)")
+
+        // -- Scale --
+        applyScale(to: window, bannerOffset: t.bannerOffsetInWindow, bannerSize: t.bannerSize, windowSize: t.windowSize)
+    }
+
+    // MARK: - Scale: high-frequency AX hammer
+
+    private func startScaleHammer(bannerElement: AXUIElement, naturalSize: CGSize, scale: Double) {
+        stopScaleHammer()
+        guard abs(scale - 1.0) > 0.001 else { return }
+        let target = CGSize(width: naturalSize.width * scale, height: naturalSize.height * scale)
+        activeBannerElement = bannerElement
+        targetBannerSize = target
+        scaleLog.info("scaleHammer: starting — target=\(target.width, format: .fixed(precision: 0))×\(target.height, format: .fixed(precision: 0)) (scale=\(scale, format: .fixed(precision: 2))× of natural \(naturalSize.width, format: .fixed(precision: 0))×\(naturalSize.height, format: .fixed(precision: 0)))")
+
+        let timer = DispatchSource.makeTimerSource(queue: .main)
+        timer.schedule(deadline: .now(), repeating: .milliseconds(16))  // ~60 fps
+        var writeCount = 0
+        timer.setEventHandler { [weak self] in
+            guard let self, let el = self.activeBannerElement else { return }
+            var sz = self.targetBannerSize
+            guard let v = AXValueCreate(.cgSize, &sz) else { return }
+            let r = AXUIElementSetAttributeValue(el, kAXSizeAttribute as CFString, v)
+            writeCount += 1
+            if writeCount <= 5 || writeCount % 30 == 0 {
+                scaleLog.debug("scaleHammer[#\(writeCount)]: AXSetSize(\(Int(sz.width))×\(Int(sz.height))) → \(r.rawValue)")
+            }
+        }
+        timer.resume()
+        scaleTimer = timer
+    }
+
+    private func stopScaleHammer() {
+        if let t = scaleTimer {
+            t.cancel()
+            scaleTimer = nil
+            scaleLog.info("scaleHammer: stopped")
+        }
+        activeBannerElement = nil
+    }
+
+    // MARK: - Scale: multi-approach gauntlet
+
+    private func applyScale(to window: AXUIElement, bannerOffset: CGPoint, bannerSize: CGSize, windowSize: CGSize) {
+        let scale = settings?.bannerScale ?? 1.0
+        scaleLog.debug("════ attemptScale scale=\(scale, format: .fixed(precision: 3)) ════")
+        scaleLog.debug("  windowSize=\(windowSize.width, format: .fixed(precision: 0))×\(windowSize.height, format: .fixed(precision: 0)) bannerOffset=(\(bannerOffset.x, format: .fixed(precision: 1)),\(bannerOffset.y, format: .fixed(precision: 1))) bannerSize=\(bannerSize.width, format: .fixed(precision: 1))×\(bannerSize.height, format: .fixed(precision: 1))")
+
+        var windowID: CGWindowID = 0
+        let axErr = _AXUIElementGetWindow(window, &windowID)
+        scaleLog.debug("  _AXUIElementGetWindow → err=\(axErr.rawValue) windowID=\(windowID)")
+        let cgsConn = CGSMainConnectionID()
+        let slsConn = slsMainConnectionID()
+        scaleLog.debug("  CGSMainConnectionID=\(cgsConn)  SLSMainConnectionID=\(slsConn)  same=\(cgsConn == slsConn)  SkyLight=\(String(describing: _skyLight), privacy: .public)")
+
+        let identity = abs(scale - 1.0) < 0.001
+
+        // ── Approach 1a: AX write kAXSizeAttribute on the OVERLAY WINDOW ──────────────
+        scaleLog.debug("  [1a] AX kAXSizeAttribute on overlay window:")
+        let newWinSize = CGSize(width: windowSize.width * scale, height: windowSize.height * scale)
+        var newWinSizeMut = newWinSize
+        if let sizeVal = AXValueCreate(.cgSize, &newWinSizeMut) {
+            let r = AXUIElementSetAttributeValue(window, kAXSizeAttribute as CFString, sizeVal)
+            scaleLog.debug("    AXSetAttributeValue(kAXSizeAttribute, \(newWinSize.width, format: .fixed(precision: 0))×\(newWinSize.height, format: .fixed(precision: 0))) → \(r.rawValue) (\(r == .success ? "✓ SUCCESS — window may have resized!" : r == .attributeUnsupported ? "attributeUnsupported" : r == .illegalArgument ? "illegalArgument" : "other"))")
+        }
+
+        // ── Approach 1b: AX write kAXSizeAttribute on the BANNER CHILD ELEMENT ────────
+        scaleLog.debug("  [1b] AX kAXSizeAttribute on banner child element:")
+        if let bannerEl = findBannerElement(in: window) {
+            var curSzRef: CFTypeRef?
+            var curBannerSize = bannerSize
+            if AXUIElementCopyAttributeValue(bannerEl, kAXSizeAttribute as CFString, &curSzRef) == .success,
+               let sv = curSzRef, CFGetTypeID(sv) == AXValueGetTypeID() {
+                AXValueGetValue(sv as! AXValue, .cgSize, &curBannerSize)
+            }
+            scaleLog.debug("    current banner element size=\(curBannerSize.width, format: .fixed(precision: 0))×\(curBannerSize.height, format: .fixed(precision: 0))")
+
+            let targetSize = CGSize(width: curBannerSize.width * scale, height: curBannerSize.height * scale)
+            var targetSizeMut = targetSize
+            if let sv = AXValueCreate(.cgSize, &targetSizeMut) {
+                let r = AXUIElementSetAttributeValue(bannerEl, kAXSizeAttribute as CFString, sv)
+                scaleLog.debug("    AXSetAttributeValue(kAXSizeAttribute, \(targetSize.width, format: .fixed(precision: 0))×\(targetSize.height, format: .fixed(precision: 0))) → \(r.rawValue) (\(r == .success ? "✓ SUCCESS — banner element may have resized!" : r == .attributeUnsupported ? "attributeUnsupported" : r == .illegalArgument ? "illegalArgument" : "other"))")
+            }
+
+            // Also probe what AX attributes are settable on the banner element
+            var settableRef: CFArray?
+            if AXUIElementCopyAttributeNames(bannerEl, &settableRef) == .success,
+               let names = settableRef as? [String] {
+                scaleLog.debug("    banner element AX attributes (\(names.count)): \(names.joined(separator: ", "), privacy: .public)")
+            }
+        } else {
+            scaleLog.debug("    no banner child element found — skipping")
+        }
+
+        guard windowID != 0, axErr == .success else {
+            scaleLog.error("  no valid windowID — skipping CGS/SLS approaches")
+            return
+        }
+
+        // ── Approach 2a: CGSSetWindowAlpha (cross-process CGS sanity check) ───────────
+        let targetAlpha: Float = identity ? 1.0 : 0.85
+        let alphaR = CGSSetWindowAlpha(cgsConn, windowID, targetAlpha)
+        scaleLog.debug("  [2a] CGSSetWindowAlpha(\(targetAlpha, format: .fixed(precision: 2))) → \(alphaR) (\(alphaR == 0 ? "sent — does banner dim?" : "failed"))")
+
+        // ── Approach 2b: SLSSetWindowAlpha ────────────────────────────────────────────
+        let slsAlphaR = slsSetWindowAlpha(slsConn, windowID, targetAlpha)
+        scaleLog.debug("  [2b] SLSSetWindowAlpha(\(targetAlpha, format: .fixed(precision: 2))) → \(slsAlphaR) (\(slsAlphaR == 0 ? "sent — does banner dim?" : "failed/not found"))")
+
+        if identity {
+            let r1 = CGSSetWindowTransform(cgsConn, windowID, .identity)
+            let r2 = slsSetWindowTransform(slsConn, windowID, .identity)
+            scaleLog.debug("  identity reset: CGS→\(r1) SLS→\(r2)")
+            return
+        }
+
+        // Scale center in Quartz coords (y-up from window bottom)
+        let cx = bannerOffset.x + bannerSize.width  / 2
+        let cy = windowSize.height - (bannerOffset.y + bannerSize.height / 2)
+        let transform = CGAffineTransform(translationX: cx, y: cy)
+            .scaledBy(x: scale, y: scale)
+            .translatedBy(x: -cx, y: -cy)
+        scaleLog.debug("  transform(Quartz-y-up center=(\(cx, format: .fixed(precision: 0)),\(cy, format: .fixed(precision: 0)))): a=\(transform.a, format: .fixed(precision: 3)) tx=\(transform.tx, format: .fixed(precision: 1)) ty=\(transform.ty, format: .fixed(precision: 1))")
+
+        // ── Approach 2c: CGSSetWindowTransform ────────────────────────────────────────
+        let cgsR = CGSSetWindowTransform(cgsConn, windowID, transform)
+        scaleLog.debug("  [2c] CGSSetWindowTransform → \(cgsR) (\(cgsR == 0 ? "sent" : "failed"))")
+
+        // ── Approach 2d: SLSSetWindowTransform (SkyLight, lower than CGS) ─────────────
+        let slsR = slsSetWindowTransform(slsConn, windowID, transform)
+        scaleLog.debug("  [2d] SLSSetWindowTransform → \(slsR) (\(slsR == 0 ? "sent — does banner scale?" : "failed/not found"))")
+
+        scaleLog.debug("════ end attemptScale ════")
     }
 
     private func repositionWindow(_ window: AXUIElement) {
-        guard let baseInfo = targetOrigin(for: window, stackIndex: 0), let settings else { return }
+        log.debug("repositionWindow: computing base target (stackIndex=0)")
+        guard let baseInfo = targetOrigin(for: window, stackIndex: 0), let settings else {
+            log.debug("repositionWindow: no base target or no settings — bailing")
+            return
+        }
         let stackIndex = stackIndex(for: window, baseTarget: baseInfo)
-        guard let info = targetOrigin(for: window, stackIndex: stackIndex) else { return }
+        log.debug("repositionWindow: resolved stackIndex=\(stackIndex)")
+        guard let info = targetOrigin(for: window, stackIndex: stackIndex) else {
+            log.debug("repositionWindow: no target for stackIndex=\(stackIndex) — bailing")
+            return
+        }
 
         animationGeneration &+= 1
         let gen = animationGeneration
+        log.debug("repositionWindow: animationGeneration=\(gen) target=(\(info.windowOrigin.x, format: .fixed(precision: 1)),\(info.windowOrigin.y, format: .fixed(precision: 1))) bannerSize=\(info.bannerSize.width, format: .fixed(precision: 0))×\(info.bannerSize.height, format: .fixed(precision: 0))")
+
+        let isTest = testGroupID != nil
+        let scale: Double
+        if let testGroup = testGroupID {
+            scale = settings.effectiveBannerScale(forGroupID: testGroup)
+        } else {
+            scale = settings.effectiveBannerScale(for: appName(for: window))
+        }
+        if abs(scale - 1.0) > 0.001 || isTest {
+            // Custom overlay path: suppress the real NC banner, show our own at the configured scale.
+            let bannerEl = findBannerElement(in: window) ?? window
+            // In test mode, hardcode the content so the osascript comma-separated AX
+            // format doesn't cause parsing issues.
+            let content: BannerContent?
+            if testGroupID != nil {
+                content = BannerContent(
+                    appName: "NotificationNanny",
+                    title: "Test Notification",
+                    body: "Thank you for using NotificationNanny!",
+                    appIcon: NSApp.applicationIconImage
+                )
+            } else {
+                content = extractBannerContent(from: bannerEl, knownAppName: appName(for: window))
+            }
+            if let content {
+                setWindowPosition(window, to: CGPoint(x: info.windowOrigin.x, y: -9999))
+
+                // Width grows modestly with scale so text has room; height is content-driven.
+                let scaledWidth = info.bannerSize.width * (1.0 + (scale - 1.0) * 0.4)
+                let widthDelta = scaledWidth - info.bannerSize.width
+
+                // AX origin of the natural banner (stacking already baked in via targetOrigin).
+                let bannerAXOrigin = CGPoint(
+                    x: info.windowOrigin.x + info.bannerOffsetInWindow.x,
+                    y: info.windowOrigin.y + info.bannerOffsetInWindow.y
+                )
+
+                // Adjust X so the banner stays anchored to the correct edge.
+                let anchoredX: CGFloat
+                switch info.placement.position {
+                case .topRight, .middleRight, .bottomRight:
+                    anchoredX = bannerAXOrigin.x - widthDelta
+                case .topCenter, .middleCenter, .bottomCenter:
+                    anchoredX = bannerAXOrigin.x - widthDelta / 2
+                default:
+                    anchoredX = bannerAXOrigin.x
+                }
+                let finalAXOrigin = CGPoint(x: anchoredX, y: bannerAXOrigin.y)
+
+                let key = CFHash(window)
+                let capturedEl = bannerEl
+                let capturedName = content.appName
+                customBannerManager.showBanner(
+                    content: content,
+                    axTopLeft: finalAXOrigin,
+                    width: scaledWidth,
+                    scale: scale,
+                    opacity: settings.bannerOpacity,
+                    autoDismissSeconds: settings.autoDismissSeconds,
+                    onOpen: { [weak self] in self?.handleBannerTap(appName: capturedName, bannerElement: capturedEl) },
+                    key: key
+                )
+                // Keep holds running so the real banner stays off-screen if NC fights us.
+                scheduleHolds(window: window, stackIndex: stackIndex, generation: gen)
+                return
+            }
+            log.info("repositionWindow: content extraction failed — falling back to real banner")
+        }
 
         setWindowPosition(window, to: info.windowOrigin)
+        applyScale(to: window, bannerOffset: info.bannerOffsetInWindow, bannerSize: info.bannerSize, windowSize: info.windowSize)
+
         // Re-evaluate target on each hold — app name lookup may race with banner rendering.
         scheduleHolds(window: window, stackIndex: stackIndex, generation: gen)
 
         if settings.autoDismissSeconds > 0 {
+            log.debug("repositionWindow: scheduling auto-dismiss after \(settings.autoDismissSeconds, format: .fixed(precision: 1))s")
             scheduleAutoDismiss(window: window, info: info, generation: gen)
         }
+    }
+
+    // MARK: - Custom overlay helpers
+
+    private func extractBannerContent(from element: AXUIElement, knownAppName: String?) -> BannerContent? {
+        var ref: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(element, "AXAttributedDescription" as CFString, &ref) == .success,
+              let val = ref, CFGetTypeID(val) == CFAttributedStringGetTypeID() else { return nil }
+
+        let rawStr = CFAttributedStringGetString((val as! CFAttributedString)) as String
+        let str = rawStr.unicodeScalars
+            .filter { !$0.properties.isDefaultIgnorableCodePoint }
+            .reduce(into: "") { $0.append(Character($1)) }
+            .trimmingCharacters(in: .whitespaces)
+        guard !str.isEmpty else { return nil }
+
+        let parsedAppName: String
+        let textPart: String
+        if let commaRange = str.range(of: ", ") {
+            parsedAppName = String(str[str.startIndex..<commaRange.lowerBound])
+            textPart = String(str[commaRange.upperBound...])
+        } else {
+            parsedAppName = knownAppName ?? str
+            textPart = str
+        }
+
+        let lines = textPart.components(separatedBy: "\n").filter { !$0.isEmpty }
+        let title = lines.first ?? textPart
+        let body = lines.dropFirst().joined(separator: "\n")
+        let appName = knownAppName ?? parsedAppName
+        return BannerContent(appName: appName, title: title, body: body, appIcon: lookupIcon(for: appName))
+    }
+
+    private func lookupIcon(for appName: String) -> NSImage? {
+        let dirs = [
+            "/Applications",
+            NSHomeDirectory() + "/Applications",
+            "/System/Applications",
+            "/System/Applications/Utilities",
+        ]
+        for dir in dirs {
+            let path = "\(dir)/\(appName).app"
+            if FileManager.default.fileExists(atPath: path) {
+                return NSWorkspace.shared.icon(forFile: path)
+            }
+        }
+        return NSWorkspace.shared.runningApplications
+            .first { $0.localizedName == appName }?.icon
+    }
+
+    private func handleBannerTap(appName: String, bannerElement: AXUIElement) {
+        if let app = NSWorkspace.shared.runningApplications.first(where: { $0.localizedName == appName }) {
+            app.activate()
+        }
+        AXUIElementPerformAction(bannerElement, kAXPressAction as CFString)
     }
 
     private func scheduleHolds(window: AXUIElement, stackIndex: Int, generation: Int) {
