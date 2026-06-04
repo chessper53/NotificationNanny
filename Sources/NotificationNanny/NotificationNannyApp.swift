@@ -1,5 +1,6 @@
 import NotificationNannyCore
 import SwiftUI
+import UserNotifications
 
 @main
 struct NotificationNannyApp: App {
@@ -21,9 +22,9 @@ struct NotificationNannyApp: App {
                 .environmentObject(coordinator.settings)
                 .environmentObject(coordinator.repositioner)
                 .environmentObject(coordinator.launchAtLogin)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .windowResizability(.contentSize)
-        .defaultSize(width: 400, height: 560)
+        .defaultSize(width: 570, height: 560)
     }
 }
 
@@ -42,6 +43,8 @@ final class AppCoordinator: ObservableObject {
         AppCoordinator.resetTCCIfBinaryChanged()
         repositioner = NotificationRepositioner()
         repositioner.bind(to: settings)
+        // Allow the app to show its own UNUserNotification banners while running.
+        UNUserNotificationCenter.current().delegate = NotificationDisplayDelegate.shared
         Task { @MainActor [weak self] in self?.autoEnableLoginItemIfNeeded() }
     }
 
@@ -68,6 +71,16 @@ final class AppCoordinator: ObservableObject {
             task.standardError = Pipe()
             try? task.run()
             task.waitUntilExit()
+        }
+    }
+
+    /// Lets UNUserNotification banners display even while the app is running.
+    private final class NotificationDisplayDelegate: NSObject, UNUserNotificationCenterDelegate {
+        static let shared = NotificationDisplayDelegate()
+        func userNotificationCenter(_ center: UNUserNotificationCenter,
+                                    willPresent notification: UNNotification,
+                                    withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
+            completionHandler([.banner, .sound])
         }
     }
 

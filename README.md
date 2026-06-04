@@ -1,6 +1,6 @@
 # NotificationNanny
 
-A macOS menu-bar app that moves notification banners wherever you want them, to any custom position on any of your displays.
+A macOS menu-bar app that repositions notification banners anywhere on your screen and lets you scale them up for large displays.
 
 ![macOS 14+](https://img.shields.io/badge/macOS-14%2B-blue) ![Swift](https://img.shields.io/badge/Swift-5.9-orange)
 
@@ -11,15 +11,17 @@ A macOS menu-bar app that moves notification banners wherever you want them, to 
 
 ## Features
 
-- **Drag-to-position.** Move the purple chip around the screen tile, or use the sliders for pixel-perfect placement.
-- **Per-app rules.** Different position for different apps, e.g. Teams bottom-left, Calendar top-center, everything else top-right.
+- **Drag-to-position.** Move the indicator around the screen preview, or use the sliders for pixel-perfect placement.
+- **Banner scale.** Scale notification text up for large displays. At any value other than 100% NotificationNanny shows its own banner with full size control.
+- **Per-app rules.** Different position and scale for different apps. Teams bottom-left, Calendar top-center, everything else top-right.
 - **Multi-display.** Independent settings per screen, with an option to force all banners to one display.
 - **Auto-dismiss.** Slide banners off-screen automatically after a configurable number of seconds.
-- **Presets.** Save and switch between named configurations.
+- **Presets.** Save and switch between named configurations covering position, scale, and auto-dismiss.
+- **Backup.** Export all settings to a JSON file and import them on another machine.
 
 ## Issues and feature requests
 
-Open an issue. I read them and act on them. If something is broken, behaving unexpectedly, or you want a feature that isn't there, [open an issue](https://github.com/chessper53/NotificationNanny/issues) and I'll pick it up.
+Open an issue. I read them all and work through them when I can. I have a full-time job, so responses may take a little while, but nothing goes unread. [Open an issue here](https://github.com/chessper53/NotificationNanny/issues).
 
 ## Installation
 
@@ -36,26 +38,28 @@ After installing, click the bell in your menu bar and hit **Grant Accessibility 
 
 ## How it works
 
-NotificationNanny uses the macOS Accessibility API to attach to the notification center process and reposition banner windows as they appear. This relies on undocumented internals, so Apple can break it in any OS update without notice. The app sandbox is disabled because cross-process Accessibility access requires it.
+NotificationNanny uses the macOS Accessibility API to attach to the notification center process and reposition banner windows as they appear. For banner scaling, it intercepts the notification and replaces it with a custom window that matches the system banner style at the configured size. This relies on undocumented internals, so Apple can break it in any OS update without notice. The app sandbox is disabled because cross-process Accessibility access requires it.
 
 ## Privacy
 
-No data is collected, transmitted, or stored. The Accessibility permission is used solely to reposition notification windows on your local machine.
+No data is collected, transmitted, or stored. The Accessibility permission is used solely to reposition and resize notification windows on your local machine.
 
 ---
 
 <details>
-<summary>Full feature list &amp; tags</summary>
+<summary>Full feature list and tags</summary>
 
 ### Features
 
 - Drag-to-position tile: place notification banners anywhere on screen with a miniature display preview
 - Pixel-perfect fine-tuning with horizontal and vertical offset sliders
-- Per-app rules: assign apps to named groups, each with its own position — e.g. Teams bottom-left, Calendar top-center, everything else top-right
+- Banner scale: resize notification text up or down using a custom overlay that matches the macOS style
+- Per-app exceptions: assign apps to named groups, each with its own position, screen override, and banner scale
 - Multi-display support: independent position settings per physical screen, with a screen-force override
 - Auto-dismiss: automatically slide banners off-screen after a configurable number of seconds
-- Presets: save and switch between named position configurations
-- Context-aware test notification: fires a sample banner using the currently selected rule's placement
+- Presets: save and switch between named configurations covering position, scale, and auto-dismiss
+- Backup and restore: export all settings to JSON and import on another Mac
+- Context-aware test notification: fires a sample banner using the currently active rule
 - App name memory: known apps saved to disk and survive reinstalls
 - Launch at login support via SMAppService
 - Enable/disable toggle to suspend all repositioning without changing any settings
