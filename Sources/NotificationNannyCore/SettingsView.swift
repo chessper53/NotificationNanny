@@ -127,7 +127,7 @@ package struct SettingsView: View {
         let isDefault = defaultPlacementBinding.wrappedValue.xOffset == 0
                      && defaultPlacementBinding.wrappedValue.yOffset == 0
         return VStack(alignment: .leading, spacing: 14) {
-            Text("Choose where notification banners appear on your screen. Drag the indicator on the preview or use the sliders to fine-tune the position.")
+            Text("Choose where banners appear. Drag the indicator on the preview or use the sliders to fine-tune the position.")
                 .font(.callout)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -226,7 +226,11 @@ package struct SettingsView: View {
                 }
                 HStack(spacing: 8) {
                     Text("A").font(.caption2).foregroundStyle(.secondary)
-                    Slider(value: $settings.bannerScale, in: 0.5...2.5).controlSize(.mini)
+                    Slider(value: $settings.bannerScale, in: 0.5...2.5)
+                        .onChange(of: settings.bannerScale) { _, v in
+                            if abs(v - 1.0) < 0.02 { settings.bannerScale = 1.0 }
+                        }
+                        .controlSize(.mini)
                     Text("A").font(.body.weight(.medium)).foregroundStyle(.secondary)
                     Text("\(Int(settings.bannerScale * 100))%")
                         .font(.caption2.monospacedDigit())
@@ -234,28 +238,6 @@ package struct SettingsView: View {
                         .frame(width: 38, alignment: .trailing)
                 }
 
-                Divider()
-
-                HStack {
-                    Text("Opacity")
-                        .font(.caption.weight(.medium))
-                        .foregroundStyle(.secondary)
-                    Spacer()
-                    Button("Reset") { settings.bannerOpacity = 1.0 }
-                        .buttonStyle(.borderless)
-                        .font(.caption)
-                        .foregroundStyle(Color.nannyAccent)
-                        .disabled(abs(settings.bannerOpacity - 1.0) < 0.01)
-                }
-                HStack(spacing: 8) {
-                    Image(systemName: "circle").font(.caption2).foregroundStyle(.secondary)
-                    Slider(value: $settings.bannerOpacity, in: 0.1...1.0).controlSize(.mini)
-                    Image(systemName: "circle.fill").font(.caption2).foregroundStyle(.secondary)
-                    Text("\(Int(settings.bannerOpacity * 100))%")
-                        .font(.caption2.monospacedDigit())
-                        .foregroundStyle(.secondary)
-                        .frame(width: 38, alignment: .trailing)
-                }
             }
             .padding(12)
             .background(Color.secondary.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
@@ -294,12 +276,21 @@ package struct SettingsView: View {
 
     @ViewBuilder
     private func groupScaleRow(for group: AppGroup) -> some View {
-        let hasCustom = settings.appGroups.first(where: { $0.id == group.id })?.bannerScale != nil
+        let hasCustom = settings.appGroups.first(where: { $0.id == group.id }).map {
+            $0.bannerScale != nil || $0.bannerMode != nil
+        } ?? false
         let scaleBinding = Binding<Double>(
             get: { settings.appGroups.first(where: { $0.id == group.id })?.bannerScale ?? settings.bannerScale },
             set: { newVal in
                 guard let i = settings.appGroups.firstIndex(where: { $0.id == group.id }) else { return }
                 settings.appGroups[i].bannerScale = newVal
+            }
+        )
+        let modeBinding = Binding<BannerMode?>(
+            get: { settings.appGroups.first(where: { $0.id == group.id })?.bannerMode },
+            set: { newVal in
+                guard let i = settings.appGroups.firstIndex(where: { $0.id == group.id }) else { return }
+                settings.appGroups[i].bannerMode = newVal
             }
         )
         VStack(alignment: .leading, spacing: 8) {
@@ -310,6 +301,7 @@ package struct SettingsView: View {
                     Button("Reset") {
                         guard let i = settings.appGroups.firstIndex(where: { $0.id == group.id }) else { return }
                         settings.appGroups[i].bannerScale = nil
+                        settings.appGroups[i].bannerMode = nil
                     }
                     .buttonStyle(.borderless)
                     .font(.caption)
@@ -328,14 +320,34 @@ package struct SettingsView: View {
                 }
             }
             if hasCustom {
+                // Banner type
                 HStack(spacing: 8) {
-                    Text("A").font(.caption2).foregroundStyle(.secondary)
-                    Slider(value: scaleBinding, in: 0.5...2.5).controlSize(.mini)
-                    Text("A").font(.body.weight(.medium)).foregroundStyle(.secondary)
-                    Text("\(Int(scaleBinding.wrappedValue * 100))%")
-                        .font(.caption2.monospacedDigit())
-                        .foregroundStyle(.secondary)
-                        .frame(width: 38, alignment: .trailing)
+                    Text("Type").font(.caption2).foregroundStyle(.secondary).frame(width: 34, alignment: .leading)
+                    Picker("", selection: modeBinding) {
+                        Text("Auto (from scale)").tag(Optional<BannerMode>.none)
+                        Text("Native (system)").tag(Optional<BannerMode>.some(.native))
+                        Text("Custom overlay").tag(Optional<BannerMode>.some(.custom))
+                    }
+                    .labelsHidden()
+                    .pickerStyle(.menu)
+                    .controlSize(.small)
+                }
+
+                // Scale slider — only relevant when type is Auto or Custom
+                if modeBinding.wrappedValue != .native {
+                    HStack(spacing: 8) {
+                        Text("A").font(.caption2).foregroundStyle(.secondary)
+                        Slider(value: scaleBinding, in: 0.5...2.5)
+                            .onChange(of: scaleBinding.wrappedValue) { _, v in
+                                if abs(v - 1.0) < 0.02 { scaleBinding.wrappedValue = 1.0 }
+                            }
+                            .controlSize(.mini)
+                        Text("A").font(.body.weight(.medium)).foregroundStyle(.secondary)
+                        Text("\(Int(scaleBinding.wrappedValue * 100))%")
+                            .font(.caption2.monospacedDigit())
+                            .foregroundStyle(.secondary)
+                            .frame(width: 38, alignment: .trailing)
+                    }
                 }
             }
         }
@@ -347,7 +359,7 @@ package struct SettingsView: View {
 
     private var exceptionsTab: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text("Create groups of apps and give each group its own position and screen. Apps not in any group use the defaults from the Position tab.")
+            Text("Create groups of apps and give each group its own rules: position, screen, banner type, and scale. Apps not in any group use the defaults.")
                 .font(.callout)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -509,7 +521,7 @@ package struct SettingsView: View {
 
     private var generalTab: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text("App-wide settings for startup, auto-dismiss timing, and notification handling. These apply to all notifications and are not affected by presets or exceptions.")
+            Text("App-wide settings for startup, timing, and notification behaviour. These apply globally and are not affected by presets or per-app rules.")
                 .font(.callout)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -525,6 +537,8 @@ package struct SettingsView: View {
                 settingsToggleRow("Pause while screen sharing", isOn: $settings.pauseWhileStreaming)
                 settingsDivider
                 settingsToggleRow("Don't move Notification Center", isOn: $settings.avoidNCPanel)
+                settingsDivider
+                settingsToggleRow("Hold banners while display is asleep", isOn: $settings.holdWhileAsleep)
             }
             .background(Color.secondary.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
             .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.secondary.opacity(0.12), lineWidth: 1))
@@ -817,7 +831,7 @@ package struct SettingsView: View {
 
     private var presetsSection: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Save and switch between position layouts. Each preset captures the position, scale, and auto-dismiss delay. Exception rules and general toggles are shared across all presets.")
+            Text("Save and switch between named layouts. Each preset captures the position, scale, and auto-dismiss delay. Per-app rules and general toggles are shared across all presets.")
                 .font(.callout)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -886,7 +900,7 @@ package struct SettingsView: View {
 
     private var backupTab: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text("Export your settings to a file or import a previously saved backup. Everything is included: positions, scale, exceptions, presets, and general toggles.")
+            Text("Export your settings to a file or import a previously saved backup. Everything is included: positions, scale, per-app rules, presets, and general toggles.")
                 .font(.callout)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
