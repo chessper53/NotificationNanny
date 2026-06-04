@@ -134,7 +134,7 @@ package struct MenuBarContent: View {
     // MARK: - Actions
 
     private var actionSection: some View {
-        VStack(spacing: 8) {
+        VStack(spacing: 6) {
             Button {
                 NSApp.activate(ignoringOtherApps: true)
                 openWindow(id: "settings")
@@ -145,16 +145,15 @@ package struct MenuBarContent: View {
             .buttonStyle(.borderedProminent)
             .controlSize(.regular)
 
-            Divider()
-
             Button {
                 repositioner.sendTestNotification(groupID: nil)
             } label: {
-                Label("Send Test Notification", systemImage: "paperplane.fill")
+                Label("Send Test Notification", systemImage: "paperplane")
                     .frame(maxWidth: .infinity)
             }
-            .buttonStyle(.borderedProminent)
+            .buttonStyle(.bordered)
             .controlSize(.small)
+            .foregroundStyle(.secondary)
 
             if !repositioner.hasAccessibilityPermission {
                 Button {
