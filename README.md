@@ -9,6 +9,21 @@
   <img width="240" alt="NotificationNanny per-app rules" src="https://github.com/user-attachments/assets/9652aecb-5616-47ea-9078-bcde3c407052" />
 </div>
 
+## Settings
+
+<table>
+  <tr>
+    <td align="center"><img src="PLACEHOLDER_POSITION" width="260" alt="Position"/><br/><sub>Position</sub></td>
+    <td align="center"><img src="PLACEHOLDER_BANNER" width="260" alt="Banner"/><br/><sub>Banner</sub></td>
+    <td align="center"><img src="PLACEHOLDER_EXCEPTIONS" width="260" alt="Exceptions"/><br/><sub>Exceptions</sub></td>
+  </tr>
+  <tr>
+    <td align="center"><img src="PLACEHOLDER_PRESETS" width="260" alt="Presets"/><br/><sub>Presets</sub></td>
+    <td align="center"><img src="PLACEHOLDER_GENERAL" width="260" alt="General"/><br/><sub>General</sub></td>
+    <td align="center"><img src="PLACEHOLDER_BACKUP" width="260" alt="Backup"/><br/><sub>Backup</sub></td>
+  </tr>
+</table>
+
 ## What it does
 
 macOS gives you one place for notification banners and no way to change it. NotificationNanny takes that control back.

@@ -1,25 +1,31 @@
 import SwiftUI
 import AppKit
+import UserNotifications
 
 package struct SettingsView: View {
     @EnvironmentObject var settings: AppSettings
     @EnvironmentObject var repositioner: NotificationRepositioner
     @EnvironmentObject var launchAtLogin: LaunchAtLogin
 
-    private enum Tab: Hashable { case position, exceptions, presets, general, banner, backup, help }
+    private enum NavTab: Hashable { case position, exceptions, presets, general, banner, backup, logs, help }
     private enum PresetMode: Equatable { case idle, adding, renaming(UUID) }
     private enum GroupMode: Equatable  { case browsing, adding }
 
-    @State private var activeTab: Tab = .position
+    @State private var activeTab: NavTab = .position
     @State private var selectedGroupID: UUID? = nil
     @State private var groupMode: GroupMode = .browsing
     @State private var newGroupName = ""
     @State private var presetMode: PresetMode = .idle
     @State private var pendingName = ""
     @State private var iconCache: [String: NSImage] = [:]
+    @ObservedObject private var logger = NannyLogger.shared
+    @State private var newerVersion: String? = nil
     @State private var showResetConfirmation = false
     @State private var showImportConfirmation = false
     @State private var pendingImportData: Data? = nil
+    @State private var diagResults: [DiagResult]? = nil
+    @State private var diagCopied = false
+    @State private var permissionJustGranted = false
 
     package init() {}
 
@@ -36,6 +42,28 @@ package struct SettingsView: View {
     }
 
     package var body: some View {
+        VStack(spacing: 0) {
+            VStack(spacing: 0) {
+                if !repositioner.hasAccessibilityPermission || permissionJustGranted {
+                    accessibilityBanner(granted: permissionJustGranted)
+                        .transition(.move(edge: .top).combined(with: .opacity))
+                }
+                if let newer = newerVersion {
+                    updateBanner(version: newer)
+                        .transition(.move(edge: .top).combined(with: .opacity))
+                }
+            }
+            .animation(.easeInOut(duration: 0.35), value: repositioner.hasAccessibilityPermission)
+            .animation(.easeInOut(duration: 0.35), value: newerVersion)
+            .onChange(of: repositioner.hasAccessibilityPermission) { _, granted in
+                guard granted else { return }
+                permissionJustGranted = true
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
+                    withAnimation(.easeInOut(duration: 0.35)) {
+                        permissionJustGranted = false
+                    }
+                }
+            }
         HStack(spacing: 0) {
             // Sidebar
             VStack(alignment: .leading, spacing: 2) {
@@ -46,6 +74,7 @@ package struct SettingsView: View {
                 sidebarItem("General",    systemImage: "gearshape",          tab: .general)
                 sidebarItem("Backup",     systemImage: "tray.and.arrow.up",  tab: .backup)
                 Spacer()
+                sidebarItem("Logs",       systemImage: "doc.text.magnifyingglass", tab: .logs)
                 sidebarItem("Help",       systemImage: "questionmark.circle", tab: .help)
                 Text("v\(appVersion)")
                     .font(.caption2)
@@ -56,7 +85,7 @@ package struct SettingsView: View {
             .padding(8)
             .frame(width: 150)
             .frame(maxHeight: .infinity)
-            .background(Color.secondary.opacity(0.05))
+            .background(Color.black.opacity(0.5))
 
             Divider()
 
@@ -69,6 +98,7 @@ package struct SettingsView: View {
                     case .presets:    presetsTab
                     case .general:    generalTab
                     case .backup:     backupTab
+                    case .logs:       logsTab
                     case .help:       helpTab
                     }
                 }
@@ -76,9 +106,19 @@ package struct SettingsView: View {
             }
             .id(activeTab)
         }
+        }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color(white: 0.10))
         .background(WindowSizeLock(width: 570, height: 560))
         .tint(Color.nannyAccent)
+        .preferredColorScheme(.dark)
+        .onAppear {
+            repositioner.refreshAccessibilityStatus()
+            if repositioner.hasAccessibilityPermission, !repositioner.isObserving {
+                repositioner.startObserving()
+            }
+            Task { newerVersion = await UpdateChecker.fetchNewerVersion() }
+        }
         .onChange(of: activeTab) { _, newTab in
             presetMode = .idle
             pendingName = ""
@@ -99,7 +139,7 @@ package struct SettingsView: View {
         Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "—"
     }
 
-    private func sidebarItem(_ label: String, systemImage: String, tab: Tab) -> some View {
+    private func sidebarItem(_ label: String, systemImage: String, tab: NavTab) -> some View {
         Button { activeTab = tab } label: {
             HStack(spacing: 8) {
                 Image(systemName: systemImage)
@@ -112,12 +152,73 @@ package struct SettingsView: View {
             .padding(.vertical, 7)
             .contentShape(Rectangle())
             .background(
-                activeTab == tab ? Color.nannyAccent.opacity(0.12) : Color.clear,
-                in: RoundedRectangle(cornerRadius: 6)
+                activeTab == tab ? Color.nannyAccent.opacity(0.25) : Color.clear,
+                in: RoundedRectangle(cornerRadius: 8)
             )
-            .foregroundStyle(activeTab == tab ? Color.nannyAccent : Color.primary)
+            .foregroundStyle(activeTab == tab ? Color.white : Color(white: 0.55))
         }
         .buttonStyle(.plain)
+    }
+
+    // MARK: - Banners (permission / update)
+
+    private func accessibilityBanner(granted: Bool = false) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: granted ? "checkmark.shield.fill" : "exclamationmark.shield.fill")
+                .font(.callout)
+                .foregroundStyle(granted ? .green : .orange)
+                .animation(.easeInOut(duration: 0.2), value: granted)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(granted ? "Accessibility access granted" : "Accessibility access required")
+                    .font(.callout.weight(.semibold))
+                    .animation(.easeInOut(duration: 0.2), value: granted)
+                if !granted {
+                    Text("NotificationNanny needs this to reposition and intercept notification banners.")
+                        .font(.caption2)
+                        .foregroundStyle(Color(white: 0.65))
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            Spacer()
+            if !granted {
+                Button("Grant Access") {
+                    repositioner.requestAccessibilityPermission()
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .background((granted ? Color.green : Color.orange).opacity(0.18))
+        .animation(.easeInOut(duration: 0.3), value: granted)
+    }
+
+    private func updateBanner(version: String) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: "arrow.down.circle.fill")
+                .font(.callout)
+                .foregroundStyle(.green)
+            Text("v\(version) is available")
+                .font(.callout.weight(.semibold))
+            Spacer()
+            Button("View Release") {
+                NSWorkspace.shared.open(URL(string: "https://github.com/chessper53/NotificationNanny/releases/latest")!)
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.small)
+            Button {
+                newerVersion = nil
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.caption2.weight(.bold))
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(Color(white: 0.5))
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .background(Color.green.opacity(0.12))
     }
 
     // MARK: - Position Tab
@@ -129,7 +230,7 @@ package struct SettingsView: View {
         return VStack(alignment: .leading, spacing: 14) {
             Text("Choose where banners appear. Drag the indicator on the preview or use the sliders to fine-tune the position.")
                 .font(.callout)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Color(white: 0.55))
                 .fixedSize(horizontal: false, vertical: true)
 
             HStack {
@@ -178,8 +279,7 @@ package struct SettingsView: View {
                           range: -Double(visible.height)...Double(visible.height))
             }
             .padding(12)
-            .background(Color.secondary.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
-            .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.secondary.opacity(0.12), lineWidth: 1))
+            .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
 
             Button {
                 repositioner.sendTestNotification(groupID: nil)
@@ -200,16 +300,29 @@ package struct SettingsView: View {
             HStack(alignment: .top, spacing: 8) {
                 Image(systemName: "flask")
                     .font(.caption)
-                    .foregroundStyle(.orange)
+                    .foregroundStyle(Color(red: 1.0, green: 0.55, blue: 0.0))
                     .padding(.top, 1)
                 Text("Experimental. The custom banner replaces the system one entirely. Some notification actions like inline replies may not work. Behavior can vary between apps and macOS versions.")
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Color(white: 0.75))
                     .fixedSize(horizontal: false, vertical: true)
             }
             .padding(10)
-            .background(Color.orange.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
-            .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.orange.opacity(0.2), lineWidth: 1))
+            .background(Color.orange.opacity(0.22), in: RoundedRectangle(cornerRadius: 8))
+
+            // Info: when custom renderer is active
+            HStack(alignment: .top, spacing: 8) {
+                Image(systemName: "info.circle")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .padding(.top, 1)
+                Text("The custom renderer is used automatically when scale ≠ 100% or a tint color is set. Otherwise notifications use the native macOS banner.")
+                    .font(.caption)
+                    .foregroundStyle(Color(white: 0.6))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(10)
+            .background(Color.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 8))
 
             // Global scale + opacity
             VStack(alignment: .leading, spacing: 10) {
@@ -240,8 +353,34 @@ package struct SettingsView: View {
 
             }
             .padding(12)
-            .background(Color.secondary.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
-            .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.secondary.opacity(0.12), lineWidth: 1))
+            .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
+
+            // Background color
+            VStack(alignment: .leading, spacing: 10) {
+                HStack {
+                    Text("Background Color")
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Button("Clear") { settings.clearBannerColor() }
+                        .buttonStyle(.borderless)
+                        .font(.caption)
+                        .foregroundStyle(Color.nannyAccent)
+                        .disabled(!settings.hasBannerColor)
+                }
+                HStack(spacing: 10) {
+                    ColorPicker("", selection: Binding(
+                        get: { settings.bannerColor },
+                        set: { settings.bannerColor = $0 }
+                    ), supportsOpacity: false)
+                    .labelsHidden()
+                    Text(settings.hasBannerColor ? "Custom tint active — enables custom renderer" : "No tint — uses frosted glass")
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                }
+            }
+            .padding(12)
+            .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
 
             // Per-group overrides
             if !settings.appGroups.isEmpty {
@@ -258,9 +397,8 @@ package struct SettingsView: View {
                             }
                         }
                     }
-                    .background(Color.secondary.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
-                    .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.secondary.opacity(0.12), lineWidth: 1))
-                }
+                    .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
+                        }
             }
 
             Button {
@@ -277,20 +415,13 @@ package struct SettingsView: View {
     @ViewBuilder
     private func groupScaleRow(for group: AppGroup) -> some View {
         let hasCustom = settings.appGroups.first(where: { $0.id == group.id }).map {
-            $0.bannerScale != nil || $0.bannerMode != nil
+            $0.bannerScale != nil || $0.hasBannerColor
         } ?? false
         let scaleBinding = Binding<Double>(
             get: { settings.appGroups.first(where: { $0.id == group.id })?.bannerScale ?? settings.bannerScale },
             set: { newVal in
                 guard let i = settings.appGroups.firstIndex(where: { $0.id == group.id }) else { return }
                 settings.appGroups[i].bannerScale = newVal
-            }
-        )
-        let modeBinding = Binding<BannerMode?>(
-            get: { settings.appGroups.first(where: { $0.id == group.id })?.bannerMode },
-            set: { newVal in
-                guard let i = settings.appGroups.firstIndex(where: { $0.id == group.id }) else { return }
-                settings.appGroups[i].bannerMode = newVal
             }
         )
         VStack(alignment: .leading, spacing: 8) {
@@ -301,7 +432,9 @@ package struct SettingsView: View {
                     Button("Reset") {
                         guard let i = settings.appGroups.firstIndex(where: { $0.id == group.id }) else { return }
                         settings.appGroups[i].bannerScale = nil
-                        settings.appGroups[i].bannerMode = nil
+                        settings.appGroups[i].bannerColorR = nil
+                        settings.appGroups[i].bannerColorG = nil
+                        settings.appGroups[i].bannerColorB = nil
                     }
                     .buttonStyle(.borderless)
                     .font(.caption)
@@ -320,33 +453,48 @@ package struct SettingsView: View {
                 }
             }
             if hasCustom {
-                // Banner type
                 HStack(spacing: 8) {
-                    Text("Type").font(.caption2).foregroundStyle(.secondary).frame(width: 34, alignment: .leading)
-                    Picker("", selection: modeBinding) {
-                        Text("Auto (from scale)").tag(Optional<BannerMode>.none)
-                        Text("Native (system)").tag(Optional<BannerMode>.some(.native))
-                        Text("Custom overlay").tag(Optional<BannerMode>.some(.custom))
-                    }
-                    .labelsHidden()
-                    .pickerStyle(.menu)
-                    .controlSize(.small)
+                    Text("A").font(.caption2).foregroundStyle(.secondary)
+                    Slider(value: scaleBinding, in: 0.5...2.5)
+                        .onChange(of: scaleBinding.wrappedValue) { _, v in
+                            if abs(v - 1.0) < 0.02 { scaleBinding.wrappedValue = 1.0 }
+                        }
+                        .controlSize(.mini)
+                    Text("A").font(.body.weight(.medium)).foregroundStyle(.secondary)
+                    Text("\(Int(scaleBinding.wrappedValue * 100))%")
+                        .font(.caption2.monospacedDigit())
+                        .foregroundStyle(.secondary)
+                        .frame(width: 38, alignment: .trailing)
                 }
-
-                // Scale slider — only relevant when type is Auto or Custom
-                if modeBinding.wrappedValue != .native {
-                    HStack(spacing: 8) {
-                        Text("A").font(.caption2).foregroundStyle(.secondary)
-                        Slider(value: scaleBinding, in: 0.5...2.5)
-                            .onChange(of: scaleBinding.wrappedValue) { _, v in
-                                if abs(v - 1.0) < 0.02 { scaleBinding.wrappedValue = 1.0 }
-                            }
-                            .controlSize(.mini)
-                        Text("A").font(.body.weight(.medium)).foregroundStyle(.secondary)
-                        Text("\(Int(scaleBinding.wrappedValue * 100))%")
-                            .font(.caption2.monospacedDigit())
-                            .foregroundStyle(.secondary)
-                            .frame(width: 38, alignment: .trailing)
+                let colorBinding = Binding<Color>(
+                    get: {
+                        guard let g = settings.appGroups.first(where: { $0.id == group.id }),
+                              let r = g.bannerColorR, let gr = g.bannerColorG, let b = g.bannerColorB
+                        else { return settings.bannerColor }
+                        return Color(red: r, green: gr, blue: b)
+                    },
+                    set: { newColor in
+                        guard let i = settings.appGroups.firstIndex(where: { $0.id == group.id }) else { return }
+                        let c = NSColor(newColor).usingColorSpace(.sRGB) ?? .black
+                        settings.appGroups[i].bannerColorR = Double(c.redComponent)
+                        settings.appGroups[i].bannerColorG = Double(c.greenComponent)
+                        settings.appGroups[i].bannerColorB = Double(c.blueComponent)
+                    }
+                )
+                HStack(spacing: 8) {
+                    Text("Color").font(.caption2).foregroundStyle(.secondary)
+                    ColorPicker("", selection: colorBinding, supportsOpacity: false)
+                        .labelsHidden()
+                    if settings.appGroups.first(where: { $0.id == group.id })?.hasBannerColor == true {
+                        Button("Clear") {
+                            guard let i = settings.appGroups.firstIndex(where: { $0.id == group.id }) else { return }
+                            settings.appGroups[i].bannerColorR = nil
+                            settings.appGroups[i].bannerColorG = nil
+                            settings.appGroups[i].bannerColorB = nil
+                        }
+                        .buttonStyle(.borderless)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
                     }
                 }
             }
@@ -361,7 +509,7 @@ package struct SettingsView: View {
         VStack(alignment: .leading, spacing: 14) {
             Text("Create groups of apps and give each group its own rules: position, screen, banner type, and scale. Apps not in any group use the defaults.")
                 .font(.callout)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Color(white: 0.55))
                 .fixedSize(horizontal: false, vertical: true)
 
             HStack(alignment: .center, spacing: 8) {
@@ -488,12 +636,12 @@ package struct SettingsView: View {
                           range: -Double(visible.height)...Double(visible.height))
             }
             .padding(10)
-            .background(Color.secondary.opacity(0.06), in: RoundedRectangle(cornerRadius: 8))
+            .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 8))
 
             VStack(alignment: .leading, spacing: 6) {
                 Text("Assigned Apps")
-                    .font(.caption.weight(.medium))
-                    .foregroundStyle(.secondary)
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(Color(white: 0.45))
                 appAssignmentRow(for: group)
             }
 
@@ -507,8 +655,52 @@ package struct SettingsView: View {
             .controlSize(.small)
         }
         .padding(14)
-        .background(Color.secondary.opacity(0.04), in: RoundedRectangle(cornerRadius: 10))
-        .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.secondary.opacity(0.12), lineWidth: 1))
+        .background(Color.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 10))
+    }
+
+    @ViewBuilder
+    private func exceptionBannerRow(for group: AppGroup) -> some View {
+        let scaleBinding = Binding<Double>(
+            get: { settings.appGroups.first(where: { $0.id == group.id })?.bannerScale ?? settings.bannerScale },
+            set: { v in
+                guard let i = settings.appGroups.firstIndex(where: { $0.id == group.id }) else { return }
+                settings.appGroups[i].bannerScale = v
+            }
+        )
+        let hasCustom = settings.appGroups.first(where: { $0.id == group.id })?.bannerScale != nil
+
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text("Banner Scale")
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(.secondary)
+                Spacer()
+                if hasCustom {
+                    Button("Reset") {
+                        guard let i = settings.appGroups.firstIndex(where: { $0.id == group.id }) else { return }
+                        settings.appGroups[i].bannerScale = nil
+                    }
+                    .buttonStyle(.borderless)
+                    .font(.caption)
+                    .foregroundStyle(Color.nannyAccent)
+                }
+            }
+            HStack(spacing: 8) {
+                Text("A").font(.caption2).foregroundStyle(.secondary)
+                Slider(value: scaleBinding, in: 0.5...2.5)
+                    .onChange(of: scaleBinding.wrappedValue) { _, v in
+                        if abs(v - 1.0) < 0.02 { scaleBinding.wrappedValue = 1.0 }
+                    }
+                    .controlSize(.mini)
+                Text("A").font(.body.weight(.medium)).foregroundStyle(.secondary)
+                Text("\(Int(scaleBinding.wrappedValue * 100))%")
+                    .font(.caption2.monospacedDigit())
+                    .foregroundStyle(.secondary)
+                    .frame(width: 38, alignment: .trailing)
+            }
+        }
+        .padding(10)
+        .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 8))
     }
 
     // MARK: - Presets Tab
@@ -523,7 +715,7 @@ package struct SettingsView: View {
         VStack(alignment: .leading, spacing: 14) {
             Text("App-wide settings for startup, timing, and notification behaviour. These apply globally and are not affected by presets or per-app rules.")
                 .font(.callout)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Color(white: 0.55))
                 .fixedSize(horizontal: false, vertical: true)
 
             VStack(spacing: 0) {
@@ -540,8 +732,7 @@ package struct SettingsView: View {
                 settingsDivider
                 settingsToggleRow("Hold banners while display is asleep", isOn: $settings.holdWhileAsleep)
             }
-            .background(Color.secondary.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
-            .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.secondary.opacity(0.12), lineWidth: 1))
+            .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
 
             if let error = launchAtLogin.lastError {
                 Text(error).font(.caption2).foregroundStyle(.red)
@@ -565,10 +756,101 @@ package struct SettingsView: View {
         }
     }
 
+    // MARK: - Logs Tab
+
+    private static let logTimeFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "HH:mm:ss.SSS"
+        return f
+    }()
+
+    private var logsTab: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("Recent activity from the notification repositioner. Useful for diagnosing issues — share the saved file in a bug report.")
+                .font(.callout)
+                .foregroundStyle(Color(white: 0.55))
+                .fixedSize(horizontal: false, vertical: true)
+
+            HStack {
+                Text("\(logger.entries.count) entries")
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(Color(white: 0.45))
+                Spacer()
+                Button("Clear") { logger.clear() }
+                    .buttonStyle(.borderless)
+                    .font(.caption)
+                    .foregroundStyle(Color.nannyAccent)
+                    .disabled(logger.entries.isEmpty)
+                Button("Save…") { saveLog() }
+                    .buttonStyle(.borderless)
+                    .font(.caption)
+                    .foregroundStyle(Color.nannyAccent)
+                    .disabled(logger.entries.isEmpty)
+            }
+
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 1) {
+                    if logger.entries.isEmpty {
+                        Text("No entries yet. Trigger a notification to start logging.")
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
+                            .padding(10)
+                    } else {
+                        ForEach(logger.entries.reversed()) { entry in
+                            logEntryRow(entry)
+                        }
+                    }
+                }
+                .padding(6)
+            }
+            .frame(maxHeight: .infinity)
+            .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
+        }
+    }
+
+    private func logEntryRow(_ entry: LogEntry) -> some View {
+        HStack(alignment: .top, spacing: 8) {
+            Text(Self.logTimeFormatter.string(from: entry.timestamp))
+                .font(.system(size: 10, design: .monospaced))
+                .foregroundStyle(Color(white: 0.38))
+                .frame(width: 80, alignment: .leading)
+                .lineLimit(1)
+            if entry.level != .info {
+                Text(entry.level.rawValue)
+                    .font(.system(size: 10, weight: .bold, design: .monospaced))
+                    .foregroundStyle(entry.level == .warn ? Color.orange : Color.red)
+                    .frame(width: 38, alignment: .leading)
+            } else {
+                Color.clear.frame(width: 38, height: 1)
+            }
+            Text(entry.message)
+                .font(.system(size: 11, design: .monospaced))
+                .foregroundStyle(Color(white: 0.78))
+                .lineLimit(4)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
+        }
+        .padding(.vertical, 2)
+        .padding(.horizontal, 4)
+    }
+
+    private func saveLog() {
+        let text = logger.exportText()
+        guard let data = text.data(using: .utf8) else { return }
+        let panel = NSSavePanel()
+        panel.nameFieldStringValue = "NotificationNanny Log.txt"
+        panel.allowedContentTypes = [.plainText]
+        panel.begin { response in
+            guard response == .OK, let url = panel.url else { return }
+            try? data.write(to: url, options: .atomic)
+        }
+    }
+
     // MARK: - Help Tab
 
     private var helpTab: some View {
         VStack(alignment: .leading, spacing: 14) {
+
             Text("Need help or have an idea?")
                 .font(.subheadline.weight(.semibold))
 
@@ -601,8 +883,7 @@ package struct SettingsView: View {
                     url: "https://github.com/chessper53/NotificationNanny"
                 )
             }
-            .background(Color.secondary.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
-            .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.secondary.opacity(0.12), lineWidth: 1))
+            .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
 
             HStack(alignment: .top, spacing: 8) {
                 Image(systemName: "person.crop.circle")
@@ -615,7 +896,7 @@ package struct SettingsView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
             .padding(10)
-            .background(Color.secondary.opacity(0.06), in: RoundedRectangle(cornerRadius: 8))
+            .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 8))
 
             HStack(spacing: 4) {
                 Image(systemName: "lock.shield").font(.caption2)
@@ -624,7 +905,181 @@ package struct SettingsView: View {
             }
             .foregroundStyle(.tertiary)
             .padding(.top, 4)
+
+            // Diagnostics
+            VStack(alignment: .leading, spacing: 10) {
+                HStack {
+                    Text("Diagnostics")
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    if let results = diagResults {
+                        Button {
+                            NSPasteboard.general.clearContents()
+                            NSPasteboard.general.setString(diagReportText(results), forType: .string)
+                            diagCopied = true
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { diagCopied = false }
+                        } label: {
+                            Label(diagCopied ? "Copied!" : "Copy Report", systemImage: diagCopied ? "checkmark" : "doc.on.doc")
+                        }
+                        .buttonStyle(.borderless)
+                        .font(.caption)
+                        .foregroundStyle(diagCopied ? .green : Color.nannyAccent)
+                        .animation(.easeInOut(duration: 0.15), value: diagCopied)
+                    }
+                    Button {
+                        diagResults = buildDiagResults()
+                    } label: {
+                        Label("Run Diagnostics", systemImage: "stethoscope")
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+
+                    if diagResults != nil {
+                        Button { diagResults = nil } label: {
+                            Image(systemName: "xmark")
+                        }
+                        .buttonStyle(.borderless)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    }
+                }
+
+                if let results = diagResults {
+                    VStack(spacing: 0) {
+                        ForEach(results) { result in
+                            HStack(spacing: 8) {
+                                Image(systemName: result.status.icon)
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(result.status.color)
+                                    .frame(width: 14)
+                                VStack(alignment: .leading, spacing: 1) {
+                                    Text(result.label)
+                                        .font(.caption.weight(.medium))
+                                        .foregroundStyle(.primary)
+                                    Text(result.detail)
+                                        .font(.caption2)
+                                        .foregroundStyle(.secondary)
+                                }
+                                Spacer()
+                            }
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 7)
+                            if result.id != results.last?.id { settingsDivider }
+                        }
+                    }
+                    .background(Color.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 8))
+                }
+            }
+            .padding(12)
+            .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
         }
+    }
+
+    // MARK: - Diagnostics helpers
+
+    private struct DiagResult: Identifiable {
+        let id = UUID()
+        let label: String
+        let detail: String
+        let status: DiagStatus
+    }
+
+    private enum DiagStatus {
+        case ok, warn, fail, info
+        var icon: String {
+            switch self {
+            case .ok:   return "checkmark.circle.fill"
+            case .warn: return "exclamationmark.triangle.fill"
+            case .fail: return "xmark.circle.fill"
+            case .info: return "info.circle.fill"
+            }
+        }
+        var color: Color {
+            switch self {
+            case .ok:   return .green
+            case .warn: return .orange
+            case .fail: return Color(red: 1, green: 0.3, blue: 0.3)
+            case .info: return .secondary
+            }
+        }
+    }
+
+    @MainActor
+    private func buildDiagResults() -> [DiagResult] {
+        var results: [DiagResult] = []
+
+        // App & system info
+        let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "unknown"
+        let build   = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "?"
+        let osVer   = ProcessInfo.processInfo.operatingSystemVersionString
+        results.append(DiagResult(label: "App version",   detail: "v\(version) (\(build))", status: .info))
+        results.append(DiagResult(label: "macOS version", detail: osVer,                    status: .info))
+
+        // Install location
+        let bundlePath = Bundle.main.bundlePath
+        let installDetail: String
+        if bundlePath.contains("/opt/homebrew") || bundlePath.contains("/usr/local/Caskroom") {
+            installDetail = "Homebrew Cask — update with brew upgrade --cask notificationnanny"
+        } else if bundlePath.hasPrefix("/Applications") {
+            installDetail = "Direct install (/Applications)"
+        } else {
+            installDetail = bundlePath
+        }
+        results.append(DiagResult(label: "Install location", detail: installDetail, status: .info))
+
+        // Accessibility permission
+        if repositioner.hasAccessibilityPermission {
+            results.append(DiagResult(label: "Accessibility", detail: "Granted", status: .ok))
+        } else {
+            results.append(DiagResult(label: "Accessibility", detail: "Not granted — banner repositioning disabled", status: .fail))
+        }
+
+        // Repositioner observing
+        if repositioner.hasAccessibilityPermission {
+            if repositioner.isObserving {
+                results.append(DiagResult(label: "Repositioner", detail: "Active and observing", status: .ok))
+            } else {
+                results.append(DiagResult(label: "Repositioner", detail: "Permission granted but not observing", status: .warn))
+            }
+        }
+
+        // Login Item
+        launchAtLogin.refresh()
+        if launchAtLogin.isEnabled {
+            results.append(DiagResult(label: "Launch at login", detail: "Enabled", status: .ok))
+        } else {
+            results.append(DiagResult(label: "Launch at login", detail: "Disabled", status: .info))
+        }
+
+        // Recent errors
+        let errors = NannyLogger.shared.entries.filter { $0.level == .error }.suffix(5)
+        if errors.isEmpty {
+            results.append(DiagResult(label: "Recent errors", detail: "None", status: .ok))
+        } else {
+            let fmt = DateFormatter()
+            fmt.dateFormat = "HH:mm:ss"
+            for e in errors {
+                results.append(DiagResult(label: "Error \(fmt.string(from: e.timestamp))", detail: e.message, status: .warn))
+            }
+        }
+
+        return results
+    }
+
+    private func diagReportText(_ results: [DiagResult]) -> String {
+        let lines = results.map { r in
+            let badge: String
+            switch r.status {
+            case .ok:   badge = "[OK]  "
+            case .warn: badge = "[WARN]"
+            case .fail: badge = "[FAIL]"
+            case .info: badge = "[INFO]"
+            }
+            return "\(badge)  \(r.label): \(r.detail)"
+        }
+        let header = "NotificationNanny Diagnostics — \(Date())"
+        return ([header, String(repeating: "-", count: header.count)] + lines).joined(separator: "\n")
     }
 
     private func helpLinkRow(title: String, description: String, systemImage: String, url: String) -> some View {
@@ -727,7 +1182,7 @@ package struct SettingsView: View {
         .background(isSelected ? Color.nannyAccent : Color.clear)
         .foregroundStyle(isSelected ? Color.white : Color.primary)
         .clipShape(Capsule())
-        .overlay(Capsule().stroke(isSelected ? Color.clear : Color.secondary.opacity(0.35), lineWidth: 1))
+        .overlay(Capsule().stroke(isSelected ? Color.clear : Color.white.opacity(0.15), lineWidth: 1))
     }
 
     // MARK: - App assignment list
@@ -776,8 +1231,7 @@ package struct SettingsView: View {
             .padding(.vertical, 4)
         }
         .frame(minHeight: 60, maxHeight: 140)
-        .background(Color.secondary.opacity(0.06), in: RoundedRectangle(cornerRadius: 6))
-        .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.secondary.opacity(0.15), lineWidth: 1))
+        .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 6))
     }
 
     private func cachedIcon(for appName: String) -> NSImage? {
@@ -831,9 +1285,9 @@ package struct SettingsView: View {
 
     private var presetsSection: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Save and switch between named layouts. Each preset captures the position, scale, and auto-dismiss delay. Per-app rules and general toggles are shared across all presets.")
+            Text("Save and switch between named configurations. Presets capture your full setup including per-app rules.")
                 .font(.callout)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Color(white: 0.55))
                 .fixedSize(horizontal: false, vertical: true)
 
             Text("Presets")
@@ -841,7 +1295,7 @@ package struct SettingsView: View {
                 .foregroundStyle(.secondary)
 
             VStack(alignment: .leading, spacing: 0) {
-                if settings.presets.isEmpty && presetMode == .idle {
+                if settings.presets.isEmpty {
                     Text("No presets yet.")
                         .font(.caption2)
                         .foregroundStyle(.tertiary)
@@ -850,13 +1304,14 @@ package struct SettingsView: View {
                 } else {
                     ForEach(Array(settings.presets.enumerated()), id: \.element.id) { index, preset in
                         presetRow(preset, index: index)
-                        if index < settings.presets.count - 1 || presetMode != .idle {
+                        if index < settings.presets.count - 1 || settings.presets.count < 5 {
                             settingsDivider
                         }
                     }
                 }
 
-                if presetMode == .adding {
+                if settings.presets.count < 5 {
+                    if !settings.presets.isEmpty { settingsDivider }
                     HStack(spacing: 6) {
                         TextField("Name", text: $pendingName)
                             .textFieldStyle(.roundedBorder)
@@ -867,19 +1322,10 @@ package struct SettingsView: View {
                             .buttonStyle(.borderedProminent)
                             .controlSize(.mini)
                             .disabled(pendingName.trimmingCharacters(in: .whitespaces).isEmpty)
-                        Button("Cancel") { pendingName = ""; presetMode = .idle }
+                        Button("Cancel") { pendingName = "" }
                             .buttonStyle(.borderless)
                             .controlSize(.mini)
                     }
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 10)
-                } else if settings.presets.count < 5 {
-                    if !settings.presets.isEmpty { settingsDivider }
-                    Button { pendingName = ""; presetMode = .adding } label: {
-                        Label("Save current as preset", systemImage: "plus")
-                    }
-                    .buttonStyle(.borderless)
-                    .font(.caption)
                     .padding(.horizontal, 14)
                     .padding(.vertical, 10)
                 } else {
@@ -891,8 +1337,7 @@ package struct SettingsView: View {
                         .padding(.vertical, 10)
                 }
             }
-            .background(Color.secondary.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
-            .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.secondary.opacity(0.12), lineWidth: 1))
+            .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
         }
     }
 
@@ -902,7 +1347,7 @@ package struct SettingsView: View {
         VStack(alignment: .leading, spacing: 14) {
             Text("Export your settings to a file or import a previously saved backup. Everything is included: positions, scale, per-app rules, presets, and general toggles.")
                 .font(.callout)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Color(white: 0.55))
                 .fixedSize(horizontal: false, vertical: true)
 
             VStack(spacing: 0) {
@@ -944,8 +1389,7 @@ package struct SettingsView: View {
                 }
                 .buttonStyle(.plain)
             }
-            .background(Color.secondary.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
-            .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.secondary.opacity(0.12), lineWidth: 1))
+            .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
             .confirmationDialog("Replace all settings?",
                                 isPresented: $showImportConfirmation,
                                 titleVisibility: .visible) {
@@ -1056,7 +1500,7 @@ package struct SettingsView: View {
         let name = pendingName.trimmingCharacters(in: .whitespaces)
         guard !name.isEmpty else { return }
         settings.saveCurrentAsPreset(name: name)
-        pendingName = ""; presetMode = .idle
+        pendingName = ""
     }
 }
 

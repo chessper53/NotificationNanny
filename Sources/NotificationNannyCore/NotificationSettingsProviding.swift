@@ -1,5 +1,6 @@
 import AppKit
 import Combine
+import SwiftUI
 
 @MainActor
 package protocol NotificationSettingsProviding: AnyObject {
@@ -11,6 +12,9 @@ package protocol NotificationSettingsProviding: AnyObject {
     var autoDismissSeconds: Double { get }
     /// 1.0 = native size. Applied via private CGSSetWindowTransform.
     var bannerScale: Double { get }
+    var bannerColor: Color { get }
+    func effectiveBannerColor(for appName: String?) -> Color
+    func effectiveBannerColor(forGroupID groupID: UUID?) -> Color
     /// Fires (on the main actor) whenever any setting changes.
     var settingsDidChange: AnyPublisher<Void, Never> { get }
     func placement(for appName: String?, screen: NSScreen) -> ScreenPlacement
