@@ -51,8 +51,8 @@ private func slsSetWindowAlpha(_ conn: Int32, _ wid: CGWindowID, _ alpha: Float)
 
 @MainActor
 package final class NotificationRepositioner: ObservableObject {
-    @Published private(set) var hasAccessibilityPermission: Bool
-    @Published private(set) var isObserving: Bool = false
+    @Published package private(set) var hasAccessibilityPermission: Bool
+    @Published package private(set) var isObserving: Bool = false
 
     private let permissionMonitor = AccessibilityPermissionMonitor()
     private var settings: (any NotificationSettingsProviding)?
@@ -154,6 +154,7 @@ package final class NotificationRepositioner: ObservableObject {
         self.ncApp = app
         self.ncPid = pid
         self.isObserving = true
+        NannyLogger.shared.log("Observer started (PID: \(pid))")
         repositionVisibleWindows()
     }
 
@@ -190,6 +191,7 @@ package final class NotificationRepositioner: ObservableObject {
         isObserving = false; detectedBannerInfo = nil
         windowAppNameCache.removeAll()
         customBannerManager.dismissAll()
+        NannyLogger.shared.log("Observer torn down")
     }
 
     // MARK: - App name extraction
@@ -248,6 +250,11 @@ package final class NotificationRepositioner: ObservableObject {
             customBannerManager.dismiss(key: CFHash(element))
             repositionVisibleWindows()
             return
+        }
+
+        if notification == kAXWindowCreatedNotification as String {
+            let name = appName(for: element) ?? "unknown app"
+            NannyLogger.shared.log("Banner appeared: \(name)")
         }
 
         if notification == kAXWindowMovedNotification as String {
@@ -381,6 +388,7 @@ package final class NotificationRepositioner: ObservableObject {
     private func handleDisplaySleep() {
         guard settings?.holdWhileAsleep == true else { return }
         isDisplaySleeping = true
+        NannyLogger.shared.log("Display sleeping — holding banners")
         // Move all currently-visible NC banners offscreen so they don't flicker
         // to wrong positions briefly when the display wakes.
         guard let ncApp else { return }
@@ -400,6 +408,7 @@ package final class NotificationRepositioner: ObservableObject {
         guard !pendingWakeWindows.isEmpty else { return }
         let queued = pendingWakeWindows
         pendingWakeWindows = []
+        NannyLogger.shared.log("Display woke — repositioning \(queued.count) queued banner(s)")
         // Brief delay to let the display fully initialise before repositioning.
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in
             guard let self else { return }
@@ -807,6 +816,11 @@ package final class NotificationRepositioner: ObservableObject {
             scale = settings.effectiveBannerScale(for: name)
             useCustomBanner = settings.shouldUseCustomBanner(for: name)
         }
+        let resolvedName: String
+        if testGroupID != nil { resolvedName = "Test" } else { resolvedName = appName(for: window) ?? "unknown" }
+        let modeLabel = useCustomBanner ? "custom overlay" : "native"
+        NannyLogger.shared.log("Repositioning \(resolvedName) → \(modeLabel) scale=\(String(format: "%.2fx", scale)) pos=(\(Int(info.windowOrigin.x)),\(Int(info.windowOrigin.y)))")
+
         if useCustomBanner {
             // Custom overlay path: suppress the real NC banner, show our own at the configured scale.
             let bannerEl = findBannerElement(in: window) ?? window
@@ -824,6 +838,7 @@ package final class NotificationRepositioner: ObservableObject {
                 content = extractBannerContent(from: bannerEl, knownAppName: appName(for: window))
             }
             if let content {
+                NannyLogger.shared.log("Custom overlay: \(content.appName) — \(content.title.prefix(60))")
                 setWindowPosition(window, to: CGPoint(x: info.windowOrigin.x, y: -9999))
 
                 // Width grows modestly with scale so text has room; height is content-driven.
@@ -856,6 +871,9 @@ package final class NotificationRepositioner: ObservableObject {
                     axTopLeft: finalAXOrigin,
                     width: scaledWidth,
                     scale: scale,
+                    backgroundColor: testGroupID != nil
+                        ? settings.effectiveBannerColor(forGroupID: testGroupID!)
+                        : settings.effectiveBannerColor(for: appName(for: window)),
                     autoDismissSeconds: settings.autoDismissSeconds,
                     onOpen: { [weak self] in self?.handleBannerTap(appName: capturedName, bannerElement: capturedEl) },
                     key: key
@@ -865,6 +883,7 @@ package final class NotificationRepositioner: ObservableObject {
                 return
             }
             log.info("repositionWindow: content extraction failed — falling back to real banner")
+            NannyLogger.shared.log("Content extraction failed — falling back to native banner", level: .warn)
         }
 
         setWindowPosition(window, to: info.windowOrigin)

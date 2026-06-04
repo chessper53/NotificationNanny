@@ -1,0 +1,24 @@
+{
+    "configurations": [
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:NotificationNanny}",
+            "name": "Debug NotificationNanny",
+            "target": "NotificationNanny",
+            "configuration": "debug",
+            "preLaunchTask": "swift: Build Debug NotificationNanny"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:NotificationNanny}",
+            "name": "Release NotificationNanny",
+            "target": "NotificationNanny",
+            "configuration": "release",
+            "preLaunchTask": "swift: Build Release NotificationNanny"
+        }
+    ]
+}
