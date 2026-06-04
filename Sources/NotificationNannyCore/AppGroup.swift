@@ -18,6 +18,12 @@ struct AppGroup: Identifiable, Codable, Equatable {
     var bannerScale: Double?
     /// nil means derive from the effective scale (custom if scale != 1.0, native otherwise).
     var bannerMode: BannerMode?
+    /// nil means inherit the global banner color from AppSettings.
+    var bannerColorR: Double?
+    var bannerColorG: Double?
+    var bannerColorB: Double?
+
+    var hasBannerColor: Bool { bannerColorR != nil }
 
     init(id: UUID = UUID(), name: String, appNames: [String] = [],
          placement: ScreenPlacement = .default, targetDisplayID: CGDirectDisplayID = 0,
@@ -33,6 +39,7 @@ struct AppGroup: Identifiable, Codable, Equatable {
 
     private enum CodingKeys: String, CodingKey {
         case id, name, appNames, placement, targetDisplayID, bannerScale, bannerMode
+        case bannerColorR, bannerColorG, bannerColorB
     }
 
     init(from decoder: Decoder) throws {
@@ -44,5 +51,8 @@ struct AppGroup: Identifiable, Codable, Equatable {
         targetDisplayID = try c.decodeIfPresent(CGDirectDisplayID.self, forKey: .targetDisplayID) ?? 0
         bannerScale     = try c.decodeIfPresent(Double.self, forKey: .bannerScale)
         bannerMode      = try c.decodeIfPresent(BannerMode.self, forKey: .bannerMode)
+        bannerColorR    = try c.decodeIfPresent(Double.self, forKey: .bannerColorR)
+        bannerColorG    = try c.decodeIfPresent(Double.self, forKey: .bannerColorG)
+        bannerColorB    = try c.decodeIfPresent(Double.self, forKey: .bannerColorB)
     }
 }

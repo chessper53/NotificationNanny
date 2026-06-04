@@ -9,7 +9,9 @@ enum UpdateChecker {
     /// Returns the latest version string if it is newer than the running app, otherwise nil.
     static func fetchNewerVersion() async -> String? {
         guard let url = URL(string: "https://api.github.com/repos/chessper53/NotificationNanny/releases/latest"),
-              let current = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String
+              let current = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String,
+              !current.hasPrefix("$"),  // guard: build script didn't substitute MARKETING_VERSION
+              !current.isEmpty
         else { return nil }
         do {
             var req = URLRequest(url: url)
