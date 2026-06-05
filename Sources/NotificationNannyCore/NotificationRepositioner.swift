@@ -352,6 +352,7 @@ package final class NotificationRepositioner: ObservableObject {
     private var targetBannerSize: CGSize = .zero
 
     func sendTestNotification(groupID: UUID?) {
+        guard testGroupID == nil else { return }  // one test in flight at a time
         testGroupID = .some(groupID)
         testBannerWindow = nil
         logger.log("sendTestNotification: firing (groupID=\(groupID?.uuidString ?? "nil"), observing=\(isObserving))")
@@ -606,7 +607,7 @@ package final class NotificationRepositioner: ObservableObject {
         activeBannerElement = nil
     }
 
-    private func repositionWindow(_ window: AXUIElement) {
+    private func repositionWindow(_ window: AXUIElement, attempt: Int = 0) {
         log.debug("repositionWindow: computing base target (stackIndex=0)")
         guard let baseInfo = targetOrigin(for: window, stackIndex: 0), let settings else {
             log.debug("repositionWindow: no base target or no settings — bailing")
@@ -709,7 +710,17 @@ package final class NotificationRepositioner: ObservableObject {
                 scheduleHolds(window: window, stackIndex: stackIndex, generation: gen)
                 return
             }
-            log.info("repositionWindow: content extraction failed — falling back to real banner")
+            // AXAttributedDescription may not be populated yet when the banner first appears.
+            // Retry a few times before giving up and falling back to the native banner.
+            if attempt < 3 {
+                let delay: Double = [0.05, 0.15, 0.35][attempt]
+                DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+                    guard let self, self.animationGeneration == gen else { return }
+                    self.repositionWindow(window, attempt: attempt + 1)
+                }
+                return
+            }
+            log.info("repositionWindow: content extraction failed after \(attempt) retries — falling back to real banner")
             logger.log("Content extraction failed — falling back to native banner", level: .warn)
         }
 
