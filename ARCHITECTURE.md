@@ -10,11 +10,12 @@
 
 **Version History**
 
-| Version | Date       | Author   | Change Summary                     |
-| ------- | ---------- | -------- | ---------------------------------- |
-| 1.0     | 2026-06-05 | Claude   | Initial architecture documentation |
+| Version | Date       | Author   | Change Summary                                                          |
+| ------- | ---------- | -------- | ----------------------------------------------------------------------- |
+| 1.0     | 2026-06-05 | Claude   | Initial architecture documentation                                      |
+| 1.1     | 2026-06-05 | Claude   | Post-refactor update: BannerTint, AppNameResolver, SettingsView split, PrivateWindowAPI, animation auto-activation |
 
-**Status:** DRAFT
+**Status:** CURRENT
 
 ---
 
@@ -61,9 +62,11 @@ NotificationNanny (v6.4.0)
 - `AppCoordinator` — Root lifecycle object; owns settings, repositioner, status bar, settings window
 - `AppSettings` — Reactive settings store; persists to UserDefaults + JSON; implements `NotificationSettingsProviding`
 - `NotificationRepositioner` — AX observation loop, banner repositioning, scale hammering, sleep/wake handling
+- `AppNameResolver` — AX attribute parsing, banner-element tree walk, per-window app-name cache (extracted from `NotificationRepositioner`)
 - `CustomBannerManager` — Manages `NSPanel`-based custom overlay windows keyed by AX element hash
 - `CustomBannerView` — SwiftUI view rendered inside the custom overlay panel
-- `NannyLogger` — In-memory ring buffer (500 entries) observable by the UI
+- `NannyLogger` — In-memory ring buffer (500 entries) observable by the UI; injectable into `NotificationRepositioner`
+- `PrivateWindowAPI` — Clean Swift interface over `CGSSetWindowTransform`, `CGSSetWindowAlpha`, SkyLight SPI
 
 ---
 
@@ -181,9 +184,11 @@ C4Container
 NotificationNanny (SPM Package)
 ├── NotificationNannyCore          (library target — all app logic)
 │   ├── AppSettings.swift          Settings store + export/import
-│   ├── NotificationRepositioner.swift  AX engine + repositioning
+│   ├── NotificationRepositioner.swift  AX engine + repositioning (orchestrator)
+│   ├── AppNameResolver.swift      AX attribute parsing, banner-element search, app-name cache
+│   ├── PrivateWindowAPI.swift     CGS/SkyLight SPI wrapper (setTransform, setAlpha, windowID)
 │   ├── CustomOverlay.swift        Custom banner view + manager
-│   ├── AppGroup.swift             Per-app group data model
+│   ├── AppGroup.swift             Per-app group data model + BannerTint + BannerMode
 │   ├── ScreenPlacement.swift      Placement model + NSScreen extension
 │   ├── NotificationPosition.swift 9-anchor position enum + geometry
 │   ├── Preset.swift               Named configuration snapshot
@@ -194,7 +199,16 @@ NotificationNanny (SPM Package)
 │   ├── NannyLogger.swift          In-memory log ring buffer
 │   ├── NotificationProbe.swift    Diagnostic window enumeration
 │   ├── MenuBarContent.swift       (menu bar population, if present)
-│   └── PositionTile.swift         DraggableScreenTile + TestNotification
+│   ├── PositionTile.swift         DraggableScreenTile + TestNotification
+│   ├── SettingsView.swift         Shell: sidebar, banner strips, WindowSizeLock, SettingsSliderRow
+│   ├── SettingsView+PositionTab.swift    Position tab (PositionTabView)
+│   ├── SettingsView+BannerTab.swift      Banner tab (BannerTabView + AnimationPreviewButton)
+│   ├── SettingsView+ExceptionsTab.swift  Exceptions tab (ExceptionsTabView)
+│   ├── SettingsView+PresetsTab.swift     Presets tab (PresetsTabView)
+│   ├── SettingsView+GeneralTab.swift     General tab (GeneralTabView)
+│   ├── SettingsView+BackupTab.swift      Backup tab (BackupTabView)
+│   ├── SettingsView+LogsTab.swift        Logs tab (LogsTabView)
+│   └── SettingsView+HelpTab.swift        Help + diagnostics tab (HelpTabView)
 │
 ├── NotificationNanny              (executable target — entry point only)
 │   └── NotificationNannyApp.swift @main + AppCoordinator
@@ -216,8 +230,10 @@ NotificationNanny (SPM Package)
 **Purpose:** Contains all business logic so it can be `@testable import`-ed by the test target without instantiating the app process.
 
 **Key Components:**
-- `AppSettings` — `@MainActor` `ObservableObject`; the root settings store. Exposes `@Published` properties for every setting; each `didSet` fires `defaults.set(...)` for instant persistence. Also exposes `NotificationSettingsProviding` conformance so the repositioner can subscribe without importing concrete types.
-- `NotificationRepositioner` — The heart of the app. Attaches an `AXObserver` to the NC process, receives window lifecycle events, computes target positions, and either moves the real NC window or creates a custom `NSPanel` overlay.
+- `AppSettings` — `@MainActor` `ObservableObject`; the root settings store. Exposes `@Published` properties for every setting; each `didSet` fires `defaults.set(...)` for instant persistence. Also exposes `NotificationSettingsProviding` conformance so the repositioner can subscribe without importing concrete types. Provides `bannerTint: BannerTint?` as a unified API over the separate R/G/B UserDefaults keys.
+- `NotificationRepositioner` — The heart of the app. Attaches an `AXObserver` to the NC process, receives window lifecycle events, computes target positions, and either moves the real NC window or creates a custom `NSPanel` overlay. Accepts an injected `NannyLogger` (defaults to `.shared`).
+- `AppNameResolver` — Extracted concern: walks the AX element tree to find the notification banner child, reads `AXAttributedDescription`, strips Unicode marks, and maintains a per-window `CFHashCode → String` cache that is invalidated on `kAXUIElementDestroyedNotification`.
+- `PrivateWindowAPI` — Isolated namespace for all private SPI: `@_silgen_name` declarations (`CGSSetWindowTransform`, `CGSSetWindowAlpha`, `_AXUIElementGetWindow`) and runtime `dlopen`/`dlsym` for SkyLight. Exposes `windowID(for:)`, `setTransform(_:on:)`, `setAlpha(_:on:)`.
 - `CustomBannerManager` / `CustomBannerView` / `BannerAnimationController` — Full custom overlay pipeline: `NSPanel` + `NSVisualEffectView` host + SwiftUI `NSHostingView`. Keyed by `CFHashCode(axElement)`.
 - `NotificationSettingsProviding` — Protocol used by `NotificationRepositioner` so tests can inject a mock settings object.
 
@@ -240,10 +256,16 @@ NotificationNanny (SPM Package)
 - **Lifecycle:** Instantiated once by `AppCoordinator`; lives for the app lifetime.
 - **Export format:** `SettingsExport` struct (Codable JSON) — excludes `knownApps` (device-specific) and `isEnabled`/`holdWhileAsleep` (not currently in export schema).
 
+#### BannerTint
+
+- **Purpose:** A Codable RGB color value that replaces the former `bannerColorR/G/B: Double?` triple.
+- **Usage:** Used as `BannerTint?` in both `AppGroup` and `Preset`. `AppSettings` stores R/G/B separately in UserDefaults for backward compatibility but exposes a `bannerTint: BannerTint?` computed property as the clean API.
+- **Migration:** `AppGroup` and `Preset` have custom `init(from:)` decoders that accept both the new `bannerTint` key and the legacy separate `bannerColorR/G/B` keys, allowing seamless reading of data written by older versions.
+
 #### AppGroup
 
-- **Purpose:** Per-app rule set. One group contains N app names and overrides: `ScreenPlacement`, `targetDisplayID`, `bannerScale?`, `bannerMode?`, `bannerColorRGB?`.
-- **Nil-means-inherit pattern:** `bannerScale`, `bannerMode`, and color components are all `Optional` — `nil` means "inherit global default", allowing groups to opt into only specific overrides.
+- **Purpose:** Per-app rule set. One group contains N app names and overrides: `ScreenPlacement`, `targetDisplayID`, `bannerScale?`, `bannerMode?`, `bannerTint?`.
+- **Nil-means-inherit pattern:** `bannerScale`, `bannerMode`, and `bannerTint` are all `Optional` — `nil` means "inherit global default", allowing groups to opt into only specific overrides.
 - **Relationships:** `AppSettings.appGroups: [AppGroup]` (1:N); a given `appName` string belongs to at most one group (enforced by `addApp(_:toGroup:)`).
 
 #### ScreenPlacement
@@ -285,6 +307,13 @@ classDiagram
         +importData(_:)
     }
 
+    class BannerTint {
+        +Double r
+        +Double g
+        +Double b
+        +color() Color
+    }
+
     class AppGroup {
         +UUID id
         +String name
@@ -293,9 +322,8 @@ classDiagram
         +CGDirectDisplayID targetDisplayID
         +Double? bannerScale
         +BannerMode? bannerMode
-        +Double? bannerColorR
-        +Double? bannerColorG
-        +Double? bannerColorB
+        +BannerTint? bannerTint
+        +hasBannerColor Bool
     }
 
     class ScreenPlacement {
@@ -324,9 +352,11 @@ classDiagram
         +[String: ScreenPlacement] placements
         +[AppGroup] appGroups
         +Double bannerScale
+        +BannerTint? bannerTint
         +Double autoDismissSeconds
         +BannerAnimation bannerAnimation
-        ...
+        +Bool holdWhileAsleep
+        +Bool pauseWhileStreaming
     }
 
     class BannerContent {
@@ -355,8 +385,10 @@ classDiagram
     AppSettings "1" --> "0..*" ScreenPlacement : placements (keyed by displayID)
     AppGroup "1" --> "1" ScreenPlacement : placement
     AppGroup --> BannerMode : bannerMode (optional)
+    AppGroup --> BannerTint : bannerTint (optional)
     Preset "1" --> "0..*" AppGroup : embedded snapshot
     Preset "1" --> "0..*" ScreenPlacement : placements snapshot
+    Preset --> BannerTint : bannerTint (optional)
     BannerContent ..> BannerMode : determines rendering path
 ```
 
@@ -502,18 +534,17 @@ sequenceDiagram
 
 ### 5.3 Scale Architecture
 
-Banner scaling is currently experimental. `NotificationRepositioner.applyScale` tries **four approaches in sequence** every time a banner is repositioned:
+Banner scaling is handled exclusively via the **custom banner path**. `shouldUseCustomBanner` returns `true` when any of the following is active:
+- `bannerScale ≠ 1.0`
+- `bannerAnimation ≠ .slide` (all non-default animations require custom rendering)
+- `hasBannerColor` (tint is set)
+- `bannerMode == .custom` (forced)
 
-| Approach | Method | Target | Status |
-|----------|--------|--------|--------|
-| 1a | `AXUIElementSetAttributeValue(kAXSizeAttribute)` | NC overlay window | Rarely works (size not settable cross-process) |
-| 1b | `AXUIElementSetAttributeValue(kAXSizeAttribute)` | Banner child element | Rarely works |
-| 2a/b | `CGSSetWindowAlpha` / `SLSSetWindowAlpha` | Window compositor | Alpha works; used as a sanity check |
-| 2c/d | `CGSSetWindowTransform` / `SLSSetWindowTransform` | Window compositor | Visual scale via affine transform — main technique |
+When the custom path is active, the real NC banner is moved off-screen (y = −9999) and `CustomBannerManager` renders an `NSPanel` overlay at the correct position. Width grows proportionally with scale; the overlay is sized and animated by the Swift code, not the NC process.
 
-When scale ≠ 1.0 AND the NC window is an overlay type, a 60fps `DispatchSourceTimer` (the "scale hammer") continuously re-writes `kAXSizeAttribute` on the banner child element to fight the NC layout pass, which resets sizes each frame.
+The 60fps `DispatchSourceTimer` ("scale hammer") is still present for the rare native-banner case where `bannerMode == .native` but scale is set — it continuously re-writes `kAXSizeAttribute` on the NC banner element to fight the NC layout pass that resets sizes each frame. This path is uncommon in practice.
 
-**In practice:** When `shouldUseCustomBanner` is true (scale ≠ 1.0 or tint active), the app suppresses the NC banner entirely and renders its own. This is the reliable path. The CGS transform approach is the fallback for the native banner case.
+The former four-approach `applyScale` gauntlet (AX size writes + CGS/SkyLight transform attempts on every reposition) was dead code (never called) and has been removed. The `PrivateWindowAPI` module retains the underlying `CGSSetWindowTransform`/`SLSSetWindowTransform` symbols should they be needed in future.
 
 ---
 
@@ -611,6 +642,21 @@ sequenceDiagram
 - **Purpose:** Map a live `AXUIElement` to its corresponding `NSPanel` overlay without retaining the element.
 - **Implementation:** `CFHash(axElement)` is used as the dictionary key in `CustomBannerManager.active`. This avoids strong references across process boundaries while providing a stable identity for the lifetime of a given banner window.
 
+### 6. `AppNameResolver` — Single-Responsibility Cache
+
+- **Purpose:** Isolates AX attribute parsing and app-name caching from the repositioner orchestrator, making both independently testable.
+- **Implementation:** `AppNameResolver` is owned by `NotificationRepositioner` as a private property. It exposes `appName(for:)`, `findBannerElement(in:)`, `invalidate(key:)`, and `invalidateAll()`. Cache entries are evicted per-element on destruction and wholesale on observer teardown. The 7-level depth cap on `findBannerElement` prevents runaway traversal of deep AX trees.
+
+### 7. `PrivateWindowAPI` — Isolated SPI Namespace
+
+- **Purpose:** Keeps all unsafe, unaudited private-API declarations out of business logic files so they are easy to find, audit, and replace.
+- **Implementation:** A single `enum PrivateWindowAPI` with `static` methods wraps both the `@_silgen_name`-linked CGS symbols and the runtime `dlopen`/`dlsym` SkyLight symbols. Callers use `PrivateWindowAPI.setTransform(_:on:)` etc. without knowing which framework delivered the result.
+
+### 8. `BannerTint` — Value-Type Color
+
+- **Purpose:** Replaces the `bannerColorR/G/B: Double?` triple-optional anti-pattern with a single optional value, reducing mis-use surface and making "color is set" states unambiguous.
+- **Migration:** Both `AppGroup` and `Preset` have custom Codable decoders that read the new `bannerTint` key OR fall back to the legacy separate `bannerColorR/G/B` keys. Old data is silently upgraded on first read; new data is written using only `bannerTint`. `AppSettings` retains the raw R/G/B UserDefaults keys for storage but exposes only `bannerTint: BannerTint?` externally.
+
 ---
 
 ## 9. Testing Strategy
@@ -649,7 +695,10 @@ sequenceDiagram
 | NC / NotificationCenterUI | `com.apple.notificationcenterui` — the Apple system process responsible for displaying notification banners. |
 | Banner | A transient notification window shown by NC (the rectangular toast that slides in from the corner). |
 | CGS / SkyLight | CoreGraphics Server (private) and SkyLight.framework (private) — the window compositor layer below Quartz. Provides `CGSSetWindowTransform` for affine scaling. |
-| Scale Hammer | The 60fps `DispatchSourceTimer` that repeatedly writes `kAXSizeAttribute` on the NC banner element, fighting the NC layout pass which resets sizes at the same rate. |
+| Scale Hammer | The 60fps `DispatchSourceTimer` that repeatedly writes `kAXSizeAttribute` on the NC banner element, fighting the NC layout pass which resets sizes at the same rate. Only active on the native-banner path when `bannerMode == .native` with a non-1× scale; the custom overlay path does not need it. |
+| BannerTint | A `Codable` struct (`r, g, b: Double`) that replaces the former `bannerColorR/G/B: Double?` triple in `AppGroup` and `Preset`. `AppSettings` exposes it as a computed property over separate UserDefaults keys. |
+| AppNameResolver | Extracted class that owns AX attribute parsing, banner-element tree search, and the per-window app-name cache. Previously inlined in `NotificationRepositioner`. |
+| PrivateWindowAPI | Swift namespace (`enum`) isolating all `@_silgen_name` CGS declarations and runtime `dlopen`/`dlsym` SkyLight loading. Exposes `windowID(for:)`, `setTransform(_:on:)`, `setAlpha(_:on:)`. |
 | Drift Guard | The ≤4px Euclidean distance check on `kAXWindowMovedNotification` that prevents self-induced feedback loops. |
 | Generation Counter | `animationGeneration` integer used to invalidate stale async closures after a new reposition begins. |
 | Overlay window | An `NSPanel` with `.borderless` + `.nonactivatingPanel` at `.statusBar` window level, used as the custom banner replacement. |
@@ -662,36 +711,30 @@ sequenceDiagram
 
 ## 11. Architectural Improvement Areas
 
-The following issues range from minor code quality concerns to significant structural problems that limit maintainability, testability, and reliability.
+Items marked ✅ have been resolved. Remaining items are open.
 
 ---
 
 ### P1 — Critical / High Impact
 
-#### 1. `NotificationRepositioner` is a God Class (~1050 lines)
+#### 1. `NotificationRepositioner` is a God Class — partial ✅
 
-**Problem:** A single class handles AX observer lifecycle, event routing, app name extraction, multi-screen geometry, sleep/wake management, scale hammering, custom banner orchestration, test-mode state, and the process-finder fallback. This makes it nearly impossible to unit-test any individual concern.
+**Resolved:** `AppNameResolver` extracted (AX attribute parsing, banner-element tree walk, per-window cache). `PrivateWindowAPI` extracted (all private SPI). The class is now ~750 lines (down from ~1050).
 
-**Suggested split:**
+**Still open:**
 ```
 NotificationRepositioner (orchestrator only)
-├── AXObserverController        — attach/detach observer, process finding
-├── BannerGeometryEngine        — targetOrigin, stacking, screen resolution
-├── AppNameResolver             — AX attribute parsing, cache, recording
-└── ScaleController             — hammering timer, CGS/SLS transform attempts
+├── AXObserverController   — attach/detach observer, process finding   (not yet extracted)
+└── BannerGeometryEngine   — targetOrigin, stacking, screen resolution (not yet extracted)
 ```
 
-#### 2. Scale Implementation is a Gauntlet Without Feedback
+#### 2. Scale Gauntlet ✅
 
-**Problem:** `applyScale` tries four approaches on every banner, logging results but never persisting which approach worked. On macOS 26, the correct approach may differ from macOS 14; the code has no mechanism to adapt. This generates noise in the log and wastes CPU probing dead-end API calls.
+**Resolved:** The dead `applyScale` method (never called) has been removed. The scale hammer (`startScaleHammer`) is simplified — it no longer logs at debug verbosity on every tick. The `PrivateWindowAPI` module retains the underlying CGS/SkyLight symbols for future use.
 
-**Suggestion:** Probe at startup (or first banner appearance) with a simple canary banner. Cache `ScaleApproach.preferredForCurrentOS` in UserDefaults. Fall back only if the preferred approach returns a non-zero error code.
+#### 3. `SettingsView` is 1600+ Lines in One File ✅
 
-#### 3. `SettingsView` is 1600+ Lines in One File
-
-**Problem:** All eight settings tabs, all helper views, all diagnostic logic, and all backup/import logic live in a single file. This makes navigation and code review difficult, and any `@State` or `@ObservedObject` change invalidates the entire view body.
-
-**Suggestion:** Split into per-tab views (`PositionTabView`, `BannerTabView`, `ExceptionsTabView`, etc.) in their own files. Each tab can own its own `@State`; `SettingsView` becomes a shell with a sidebar and a `switch` that routes to child views.
+**Resolved:** Split into 8 per-tab `View` structs in separate files (`SettingsView+PositionTab.swift` … `SettingsView+HelpTab.swift`). Each tab owns its own `@State`. `SettingsView.swift` is now a ~160-line shell containing only the sidebar, update/permission banners, and `WindowSizeLock`.
 
 ---
 
@@ -699,61 +742,57 @@ NotificationRepositioner (orchestrator only)
 
 #### 4. `Preset` Embeds a Full Deep Copy of `[AppGroup]`
 
-**Problem:** `Preset` stores a complete snapshot of `appGroups`. Applying a preset replaces the live array entirely, which means there is no diff — any group the user modified after saving the preset is silently overwritten. There is also no schema migration path if `AppGroup` gains new fields.
+**Problem:** `Preset` stores a complete snapshot of `appGroups`. Applying a preset replaces the live array entirely — any group the user modified after saving the preset is silently overwritten. No schema version field makes future migrations harder.
 
-**Suggestion:** Introduce a `PresetV2` that stores a diff against a "base" or uses a separate `presetsIncludeGroups: Bool` flag the user can opt in to. At minimum, the export schema should be versioned.
+**Suggestion:** Add a `presetsIncludeGroups: Bool` flag the user can opt in to. At minimum, version the export schema.
 
-#### 5. `AppGroup` Color Stored as Three Raw `Double?` Components
+#### 5. `AppGroup` / `Preset` Color Anti-Pattern ✅
 
-**Problem:** `AppGroup` stores banner color as `bannerColorR/G/B: Double?`. This is duplicated from `AppSettings` (which also has `bannerColorR/G/B`), is error-prone (three separate optionals that must agree), and bypasses Swift's type system.
+**Resolved:** `BannerTint: Codable` value type introduced (`r, g, b: Double`). `AppGroup.bannerTint: BannerTint?` replaces the three-optional fields. `Preset.bannerTint: BannerTint?` replaces the `bannerColorR/G/B + hasBannerColor` quad. `AppSettings` exposes `bannerTint: BannerTint?` as a computed property while retaining separate R/G/B UserDefaults keys for storage compatibility. Both `AppGroup` and `Preset` decoders silently migrate old data on first read.
 
-**Suggestion:** Extract a `BannerTint: Codable` value type (`r, g, b: Double`) and make both `AppSettings` and `AppGroup` use `var bannerTint: BannerTint?`. This reduces the three-optional anti-pattern to a single optional value.
+#### 6. `osascript` for Test Notifications — kept intentionally
 
-#### 6. `osascript` for Test Notifications
+**Status:** UNUserNotificationCenter was attempted but requires the app to have notification permission granted before the first test — unreliable on fresh installs. osascript is retained. `terminationHandler` now logs the exit code and stderr to the Logs tab so failures are visible.
 
-**Problem:** `TestNotification.send()` spawns `/usr/bin/osascript` with a shell script to fire a notification. This is fragile (AppleScript is not guaranteed available), verbose, and unnecessary.
+#### 7. `pgrep` Subprocess as NC Process Fallback ✅
 
-**Suggestion:** Use `UNUserNotificationCenter.current().add(UNNotificationRequest(...))` directly. The app already holds a `UNUserNotificationCenterDelegate` and has the infrastructure to force banner presentation.
-
-#### 7. `pgrep` Subprocess as NC Process Fallback
-
-**Problem:** `findNotificationProcessPid` falls back to spawning `/usr/bin/pgrep usernotificationsd` as a subprocess. This is fragile, slow, and incorrect — `usernotificationsd` is a background daemon, not the process that draws banners. On macOS 26 the banner process identity may differ entirely.
-
-**Suggestion:** Use `NSWorkspace.shared.runningApplications` exclusively (already the primary path), and add a CGWindowList scan to find windows owned by processes with "notification" in the bundle ID as the fallback — no subprocess needed.
+**Resolved:** `pgrepFirst(name:)` removed. `findNotificationProcessPid` now uses (1) exact bundle ID match, (2) any running app whose bundle ID contains "notification", (3) CGWindowList scan for a window owner whose name contains "notification". No subprocess is spawned.
 
 ---
 
 ### P3 — Lower Impact / Code Quality
 
-#### 8. `windowAppNameCache` Never Expires
+#### 8. `windowAppNameCache` Never Expires ✅
 
-**Problem:** `windowAppNameCache: [CFHashCode: String]` is cleared only when the observer tears down. `CFHash` values can theoretically be reused across banner lifetimes (same hash, different element), leading to incorrect app-name assignments for new banners.
-
-**Suggestion:** Store `(cfHashCode, weakElement)` pairs and invalidate the cache entry on `kAXUIElementDestroyedNotification`. Alternatively, cap cache size and use an LRU eviction.
+**Resolved:** Cache is now owned by `AppNameResolver`. `invalidate(key:)` is called on every `kAXUIElementDestroyedNotification` before the custom-banner dismiss. `invalidateAll()` is called when the observer tears down.
 
 #### 9. `@Published var appGroups` Triggers Full Array Republish
 
-**Problem:** Because `appGroups` is a `[AppGroup]` value type array, any mutation (changing a group's scale, renaming a group, toggling a single checkbox) republishes the entire array. This causes `SettingsView` to re-render all group-related UI even when only one group changed.
+**Open.** Mutating any field of any group republishes the entire array. Impact is bounded by SwiftUI's diffing on `ForEach(Identifiable)` but causes unnecessary work for large group lists.
 
-**Suggestion:** Consider a `@Published var appGroupsByID: [UUID: AppGroup]` lookup alongside the ordered array, or use `Identifiable`-aware diffing via `ForEach` bindings on `$settings.appGroups` to limit re-renders.
+**Suggestion:** `@Published var appGroupsByID: [UUID: AppGroup]` alongside the ordered array, or use `$settings.appGroups` element bindings in SwiftUI.
 
-#### 10. Private SPI Declarations Scattered in the Repositioner
+#### 10. Private SPI Declarations Scattered in the Repositioner ✅
 
-**Problem:** The `@_silgen_name` declarations and `dlopen`/`dlsym` loading for CGS and SkyLight are declared at file scope inside `NotificationRepositioner.swift`. They are difficult to find, test, or replace.
+**Resolved:** All `@_silgen_name` declarations and `dlopen`/`dlsym` SkyLight loading extracted to `PrivateWindowAPI.swift`. Callers use `PrivateWindowAPI.setTransform(_:on:)`, `.setAlpha(_:on:)`, `.windowID(for:)`.
 
-**Suggestion:** Extract into a dedicated `PrivateWindowAPI.swift` file that exposes a clean Swift interface (e.g. `PrivateWindowAPI.setTransform(_:on:)`) and isolates the unsafe symbol declarations.
+#### 11. Icon Lookup Hardcodes Four Directory Paths ✅
 
-#### 11. Icon Lookup Hardcodes Four Directory Paths
+**Resolved:** `lookupIcon(for:)` now checks (1) running app list, (2) `NSWorkspace.urlForApplication(withBundleIdentifier:)` for any running app that matches the display name, (3) directory scan as last resort. Same improvement applied to `cachedIcon(for:)` in `ExceptionsTabView`.
 
-**Problem:** `lookupIcon(for:)` scans `/Applications`, `~/Applications`, `/System/Applications`, and `/System/Applications/Utilities` with hardcoded strings. Apps installed elsewhere (e.g. in `/opt/homebrew/Caskroom`, developer builds in `~/Developer`) are missed, resulting in fallback bell icons.
+#### 12. `NannyLogger` is a Global Singleton with No Injection Path ✅
 
-**Suggestion:** Use `NSWorkspace.shared.urlForApplication(withBundleIdentifier:)` combined with the running application list as primary lookups. The directory scan can remain as a last resort.
+**Resolved:** `NotificationRepositioner.init(logger: NannyLogger? = nil)` accepts an injected logger; defaults to `.shared`. All `NannyLogger.shared.log(...)` calls inside the repositioner now go through `self.logger`.
 
-#### 12. `NannyLogger` is a Global Singleton with No Injection Path
+---
 
-**Problem:** `NannyLogger.shared` is used directly throughout the codebase. There is no way to redirect log output in tests or provide a custom sink.
+### Additional fix applied
 
-**Suggestion:** Accept `NannyLogger` as an injected dependency in `NotificationRepositioner.init(logger:)`. Keep the shared singleton as the default for production use.
+#### Animation selection now auto-activates custom renderer
+
+**Problem:** Selecting Bounce/Fade/Scale in the Banner tab had no effect because `shouldUseCustomBanner` did not consider `bannerAnimation`. The animation setting is only honoured by the custom overlay; native banners ignore it.
+
+**Fix:** `shouldUseCustomBanner(for:)` and `shouldUseCustomBanner(forGroupID:)` now return `true` when `bannerAnimation != .slide`. Slide is the system-compatible default and does not force the custom path.
 
 ---
 
@@ -775,4 +814,4 @@ NotificationRepositioner (orchestrator only)
 
 ---
 
-*Architecture document generated from source on 2026-06-05 (v6.4.0)*
+*Architecture document last updated 2026-06-05 (v6.4.0, post-refactor)*
