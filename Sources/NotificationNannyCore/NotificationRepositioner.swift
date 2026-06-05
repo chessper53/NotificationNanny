@@ -3,51 +3,8 @@ import AppKit
 import Combine
 import os
 
-private let log        = Logger(subsystem: "com.notificationnanny", category: "repositioner")
-private let scaleLog   = Logger(subsystem: "com.notificationnanny", category: "scale")
-private let axLog      = Logger(subsystem: "com.notificationnanny", category: "ax")
-private let cgsLog     = Logger(subsystem: "com.notificationnanny", category: "cgs")
-
-// MARK: - Private API declarations
-
-/// Extracts the CGWindowID from an AXUIElement. Private SPI, widely used by accessibility tools.
-@_silgen_name("_AXUIElementGetWindow")
-func _AXUIElementGetWindow(_ element: AXUIElement, _ windowID: UnsafeMutablePointer<CGWindowID>) -> AXError
-
-/// Returns the current process's CoreGraphics server connection ID.
-@_silgen_name("CGSMainConnectionID")
-func CGSMainConnectionID() -> Int32
-
-/// Applies a 2D affine transform to a window at the compositor level (scales/rotates the entire
-/// rendered window texture, including text). Scale origin is the window's top-left corner.
-@_silgen_name("CGSSetWindowTransform")
-@discardableResult
-func CGSSetWindowTransform(_ connection: Int32, _ windowID: CGWindowID, _ transform: CGAffineTransform) -> Int32
-
-/// Sets the alpha (opacity) of a window at the compositor level. Returns 0 on success.
-@_silgen_name("CGSSetWindowAlpha")
-@discardableResult
-func CGSSetWindowAlpha(_ connection: Int32, _ windowID: CGWindowID, _ alpha: Float) -> Int32
-
-// SkyLight is a private framework — look up symbols at runtime to avoid linker errors.
-private let _skyLight: UnsafeMutableRawPointer? = dlopen(
-    "/System/Library/PrivateFrameworks/SkyLight.framework/SkyLight", RTLD_LAZY
-)
-
-private func slsMainConnectionID() -> Int32 {
-    guard let fn = _skyLight.flatMap({ dlsym($0, "SLSMainConnectionID") }) else { return 0 }
-    return unsafeBitCast(fn, to: (@convention(c) () -> Int32).self)()
-}
-
-private func slsSetWindowTransform(_ conn: Int32, _ wid: CGWindowID, _ t: CGAffineTransform) -> Int32 {
-    guard let fn = _skyLight.flatMap({ dlsym($0, "SLSSetWindowTransform") }) else { return -1 }
-    return unsafeBitCast(fn, to: (@convention(c) (Int32, CGWindowID, CGAffineTransform) -> Int32).self)(conn, wid, t)
-}
-
-private func slsSetWindowAlpha(_ conn: Int32, _ wid: CGWindowID, _ alpha: Float) -> Int32 {
-    guard let fn = _skyLight.flatMap({ dlsym($0, "SLSSetWindowAlpha") }) else { return -1 }
-    return unsafeBitCast(fn, to: (@convention(c) (Int32, CGWindowID, Float) -> Int32).self)(conn, wid, alpha)
-}
+private let log    = Logger(subsystem: "com.notificationnanny", category: "repositioner")
+private let axLog  = Logger(subsystem: "com.notificationnanny", category: "ax")
 
 @MainActor
 package final class NotificationRepositioner: ObservableObject {
@@ -55,14 +12,17 @@ package final class NotificationRepositioner: ObservableObject {
     @Published package private(set) var isObserving: Bool = false
 
     private let permissionMonitor = AccessibilityPermissionMonitor()
+    private let resolver = AppNameResolver()
     private var settings: (any NotificationSettingsProviding)?
     private var cancellables = Set<AnyCancellable>()
+    private let logger: NannyLogger
 
     nonisolated(unsafe) private var observer: AXObserver?
     private var ncApp: AXUIElement?
     private var ncPid: pid_t = 0
 
-    package init() {
+    package init(logger: NannyLogger? = nil) {
+        self.logger = logger ?? .shared
         hasAccessibilityPermission = permissionMonitor.hasPermission
         permissionMonitor.startPollingIfNeeded { [weak self] in
             self?.hasAccessibilityPermission = true
@@ -154,32 +114,31 @@ package final class NotificationRepositioner: ObservableObject {
         self.ncApp = app
         self.ncPid = pid
         self.isObserving = true
-        NannyLogger.shared.log("Observer started (PID: \(pid))")
+        logger.log("Observer started (PID: \(pid))")
         repositionVisibleWindows()
     }
 
     private func findNotificationProcessPid() -> pid_t {
+        // Primary: exact bundle ID match.
         if let app = NSRunningApplication
             .runningApplications(withBundleIdentifier: "com.apple.notificationcenterui").first {
             return app.processIdentifier
         }
+        // Secondary: any running app whose bundle ID contains "notification".
         for app in NSWorkspace.shared.runningApplications {
             if app.bundleIdentifier?.localizedCaseInsensitiveContains("notification") == true {
                 return app.processIdentifier
             }
         }
-        return pgrepFirst(name: "usernotificationsd")
-    }
-
-    private func pgrepFirst(name: String) -> pid_t {
-        let task = Process(); let pipe = Pipe()
-        task.launchPath = "/usr/bin/pgrep"; task.arguments = [name]
-        task.standardOutput = pipe; task.standardError = Pipe()
-        try? task.run(); task.waitUntilExit()
-        let data = pipe.fileHandleForReading.readDataToEndOfFile()
-        if let str = String(data: data, encoding: .utf8),
-           let line = str.split(separator: "\n").first,
-           let pid = pid_t(line.trimmingCharacters(in: .whitespaces)) { return pid }
+        // Fallback: find a window owner whose name contains "notification" via CGWindowList.
+        // Avoids spawning subprocesses and works across macOS versions.
+        let windows = CGWindowListCopyWindowInfo([.optionAll], kCGNullWindowID) as? [[String: Any]] ?? []
+        for info in windows {
+            guard let ownerName = info[kCGWindowOwnerName as String] as? String,
+                  ownerName.localizedCaseInsensitiveContains("notification"),
+                  let pid = info[kCGWindowOwnerPID as String] as? Int32 else { continue }
+            return pid
+        }
         return 0
     }
 
@@ -189,54 +148,19 @@ package final class NotificationRepositioner: ObservableObject {
         }
         observer = nil; ncApp = nil; ncPid = 0
         isObserving = false; detectedBannerInfo = nil
-        windowAppNameCache.removeAll()
+        resolver.invalidateAll()
         customBannerManager.dismissAll()
-        NannyLogger.shared.log("Observer torn down")
+        logger.log("Observer torn down")
     }
 
-    // MARK: - App name extraction
-
-    private static let bannerSubroles: Set<String> = [
-        "AXNotificationCenterBanner",
-        "AXNotificationCenterBannerStack",
-    ]
+    // MARK: - App name extraction (delegated to AppNameResolver)
 
     private func findBannerElement(in el: AXUIElement, depth: Int = 0) -> AXUIElement? {
-        guard depth < 7 else { return nil }
-        var srRef: CFTypeRef?
-        if AXUIElementCopyAttributeValue(el, kAXSubroleAttribute as CFString, &srRef) == .success,
-           let sr = srRef as? String, Self.bannerSubroles.contains(sr) { return el }
-        var cRef: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(el, kAXChildrenAttribute as CFString, &cRef) == .success,
-              let children = cRef as? [AXUIElement] else { return nil }
-        for child in children {
-            if let found = findBannerElement(in: child, depth: depth + 1) { return found }
-        }
-        return nil
-    }
-
-    private func appNameFromElement(_ el: AXUIElement) -> String? {
-        var ref: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(el, "AXAttributedDescription" as CFString, &ref) == .success,
-              let val = ref, CFGetTypeID(val) == CFAttributedStringGetTypeID() else { return nil }
-        let str = CFAttributedStringGetString((val as! CFAttributedString)) as String
-        guard let first = str.components(separatedBy: ", ").first, !first.isEmpty else { return nil }
-        // Strip directional Unicode marks (e.g. U+200E prepended by WhatsApp)
-        let cleaned = first
-            .unicodeScalars
-            .filter { !$0.properties.isDefaultIgnorableCodePoint }
-            .reduce(into: "") { $0.append(Character($1)) }
-            .trimmingCharacters(in: .whitespaces)
-        return cleaned.isEmpty ? nil : cleaned
+        resolver.findBannerElement(in: el, depth: depth)
     }
 
     private func appName(for window: AXUIElement) -> String? {
-        let key = CFHash(window)
-        if let cached = windowAppNameCache[key] { return cached }
-        let el = findBannerElement(in: window) ?? window
-        guard let name = appNameFromElement(el) else { return nil }
-        windowAppNameCache[key] = name
-        return name
+        resolver.appName(for: window)
     }
 
     // MARK: - Event handling
@@ -245,16 +169,18 @@ package final class NotificationRepositioner: ObservableObject {
         axLog.debug("── AX event: \(notification, privacy: .public)")
 
         if notification == kAXUIElementDestroyedNotification as String {
-            axLog.debug("handleAXEvent: element destroyed → stop scale hammer + dismiss custom banner + repositionVisibleWindows")
+            axLog.debug("handleAXEvent: element destroyed → invalidate cache + stop scale hammer + dismiss custom banner")
+            let key = CFHash(element)
+            resolver.invalidate(key: key)
             stopScaleHammer()
-            customBannerManager.dismiss(key: CFHash(element))
+            customBannerManager.dismiss(key: key)
             repositionVisibleWindows()
             return
         }
 
         if notification == kAXWindowCreatedNotification as String {
             let name = appName(for: element) ?? "unknown app"
-            NannyLogger.shared.log("Banner appeared: \(name)")
+            logger.log("Banner appeared: \(name)")
         }
 
         if notification == kAXWindowMovedNotification as String {
@@ -361,7 +287,6 @@ package final class NotificationRepositioner: ObservableObject {
     private static let stackGap: CGFloat = 8
     private var animationGeneration = 0
     private var lastSelfSetPosition: CGPoint = .zero
-    private var windowAppNameCache: [CFHashCode: String] = [:]
     // nil = not in test mode; .some(nil) = test active, screen default; .some(.some(id)) = test active, group
     private var testGroupID: UUID?? = nil
     private var testBannerWindow: AXUIElement? = nil
@@ -388,7 +313,7 @@ package final class NotificationRepositioner: ObservableObject {
     private func handleDisplaySleep() {
         guard settings?.holdWhileAsleep == true else { return }
         isDisplaySleeping = true
-        NannyLogger.shared.log("Display sleeping — holding banners")
+        logger.log("Display sleeping — holding banners")
         // Move all currently-visible NC banners offscreen so they don't flicker
         // to wrong positions briefly when the display wakes.
         guard let ncApp else { return }
@@ -408,7 +333,7 @@ package final class NotificationRepositioner: ObservableObject {
         guard !pendingWakeWindows.isEmpty else { return }
         let queued = pendingWakeWindows
         pendingWakeWindows = []
-        NannyLogger.shared.log("Display woke — repositioning \(queued.count) queued banner(s)")
+        logger.log("Display woke — repositioning \(queued.count) queued banner(s)")
         // Brief delay to let the display fully initialise before repositioning.
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in
             guard let self else { return }
@@ -429,6 +354,7 @@ package final class NotificationRepositioner: ObservableObject {
     func sendTestNotification(groupID: UUID?) {
         testGroupID = .some(groupID)
         testBannerWindow = nil
+        logger.log("sendTestNotification: firing (groupID=\(groupID?.uuidString ?? "nil"), observing=\(isObserving))")
         TestNotification.send()
         DispatchQueue.main.asyncAfter(deadline: .now() + 5) { [weak self] in
             self?.testGroupID = nil
@@ -651,7 +577,7 @@ package final class NotificationRepositioner: ObservableObject {
         log.debug("snapWindow: AXUIElementSetAttributeValue(position) → \(posResult.rawValue)")
     }
 
-    // MARK: - Scale: high-frequency AX hammer
+    // MARK: - Scale hammer (60fps AX size write to fight NC layout reset)
 
     private func startScaleHammer(bannerElement: AXUIElement, naturalSize: CGSize, scale: Double) {
         stopScaleHammer()
@@ -659,125 +585,25 @@ package final class NotificationRepositioner: ObservableObject {
         let target = CGSize(width: naturalSize.width * scale, height: naturalSize.height * scale)
         activeBannerElement = bannerElement
         targetBannerSize = target
-        scaleLog.info("scaleHammer: starting — target=\(target.width, format: .fixed(precision: 0))×\(target.height, format: .fixed(precision: 0)) (scale=\(scale, format: .fixed(precision: 2))× of natural \(naturalSize.width, format: .fixed(precision: 0))×\(naturalSize.height, format: .fixed(precision: 0)))")
+        log.info("scaleHammer: starting — \(Int(target.width))×\(Int(target.height)) at \(String(format: "%.2f", scale))×")
 
         let timer = DispatchSource.makeTimerSource(queue: .main)
-        timer.schedule(deadline: .now(), repeating: .milliseconds(16))  // ~60 fps
+        timer.schedule(deadline: .now(), repeating: .milliseconds(16))
         var writeCount = 0
         timer.setEventHandler { [weak self] in
             guard let self, let el = self.activeBannerElement else { return }
             var sz = self.targetBannerSize
             guard let v = AXValueCreate(.cgSize, &sz) else { return }
-            let r = AXUIElementSetAttributeValue(el, kAXSizeAttribute as CFString, v)
+            AXUIElementSetAttributeValue(el, kAXSizeAttribute as CFString, v)
             writeCount += 1
-            if writeCount <= 5 || writeCount % 30 == 0 {
-                scaleLog.debug("scaleHammer[#\(writeCount)]: AXSetSize(\(Int(sz.width))×\(Int(sz.height))) → \(r.rawValue)")
-            }
         }
         timer.resume()
         scaleTimer = timer
     }
 
     private func stopScaleHammer() {
-        if let t = scaleTimer {
-            t.cancel()
-            scaleTimer = nil
-            scaleLog.info("scaleHammer: stopped")
-        }
+        if let t = scaleTimer { t.cancel(); scaleTimer = nil; log.info("scaleHammer: stopped") }
         activeBannerElement = nil
-    }
-
-    // MARK: - Scale: multi-approach gauntlet
-
-    private func applyScale(to window: AXUIElement, bannerOffset: CGPoint, bannerSize: CGSize, windowSize: CGSize) {
-        let scale = settings?.bannerScale ?? 1.0
-        scaleLog.debug("════ attemptScale scale=\(scale, format: .fixed(precision: 3)) ════")
-        scaleLog.debug("  windowSize=\(windowSize.width, format: .fixed(precision: 0))×\(windowSize.height, format: .fixed(precision: 0)) bannerOffset=(\(bannerOffset.x, format: .fixed(precision: 1)),\(bannerOffset.y, format: .fixed(precision: 1))) bannerSize=\(bannerSize.width, format: .fixed(precision: 1))×\(bannerSize.height, format: .fixed(precision: 1))")
-
-        var windowID: CGWindowID = 0
-        let axErr = _AXUIElementGetWindow(window, &windowID)
-        scaleLog.debug("  _AXUIElementGetWindow → err=\(axErr.rawValue) windowID=\(windowID)")
-        let cgsConn = CGSMainConnectionID()
-        let slsConn = slsMainConnectionID()
-        scaleLog.debug("  CGSMainConnectionID=\(cgsConn)  SLSMainConnectionID=\(slsConn)  same=\(cgsConn == slsConn)  SkyLight=\(String(describing: _skyLight), privacy: .public)")
-
-        let identity = abs(scale - 1.0) < 0.001
-
-        // ── Approach 1a: AX write kAXSizeAttribute on the OVERLAY WINDOW ──────────────
-        scaleLog.debug("  [1a] AX kAXSizeAttribute on overlay window:")
-        let newWinSize = CGSize(width: windowSize.width * scale, height: windowSize.height * scale)
-        var newWinSizeMut = newWinSize
-        if let sizeVal = AXValueCreate(.cgSize, &newWinSizeMut) {
-            let r = AXUIElementSetAttributeValue(window, kAXSizeAttribute as CFString, sizeVal)
-            scaleLog.debug("    AXSetAttributeValue(kAXSizeAttribute, \(newWinSize.width, format: .fixed(precision: 0))×\(newWinSize.height, format: .fixed(precision: 0))) → \(r.rawValue) (\(r == .success ? "✓ SUCCESS — window may have resized!" : r == .attributeUnsupported ? "attributeUnsupported" : r == .illegalArgument ? "illegalArgument" : "other"))")
-        }
-
-        // ── Approach 1b: AX write kAXSizeAttribute on the BANNER CHILD ELEMENT ────────
-        scaleLog.debug("  [1b] AX kAXSizeAttribute on banner child element:")
-        if let bannerEl = findBannerElement(in: window) {
-            var curSzRef: CFTypeRef?
-            var curBannerSize = bannerSize
-            if AXUIElementCopyAttributeValue(bannerEl, kAXSizeAttribute as CFString, &curSzRef) == .success,
-               let sv = curSzRef, CFGetTypeID(sv) == AXValueGetTypeID() {
-                AXValueGetValue(sv as! AXValue, .cgSize, &curBannerSize)
-            }
-            scaleLog.debug("    current banner element size=\(curBannerSize.width, format: .fixed(precision: 0))×\(curBannerSize.height, format: .fixed(precision: 0))")
-
-            let targetSize = CGSize(width: curBannerSize.width * scale, height: curBannerSize.height * scale)
-            var targetSizeMut = targetSize
-            if let sv = AXValueCreate(.cgSize, &targetSizeMut) {
-                let r = AXUIElementSetAttributeValue(bannerEl, kAXSizeAttribute as CFString, sv)
-                scaleLog.debug("    AXSetAttributeValue(kAXSizeAttribute, \(targetSize.width, format: .fixed(precision: 0))×\(targetSize.height, format: .fixed(precision: 0))) → \(r.rawValue) (\(r == .success ? "✓ SUCCESS — banner element may have resized!" : r == .attributeUnsupported ? "attributeUnsupported" : r == .illegalArgument ? "illegalArgument" : "other"))")
-            }
-
-            // Also probe what AX attributes are settable on the banner element
-            var settableRef: CFArray?
-            if AXUIElementCopyAttributeNames(bannerEl, &settableRef) == .success,
-               let names = settableRef as? [String] {
-                scaleLog.debug("    banner element AX attributes (\(names.count)): \(names.joined(separator: ", "), privacy: .public)")
-            }
-        } else {
-            scaleLog.debug("    no banner child element found — skipping")
-        }
-
-        guard windowID != 0, axErr == .success else {
-            scaleLog.error("  no valid windowID — skipping CGS/SLS approaches")
-            return
-        }
-
-        // ── Approach 2a: CGSSetWindowAlpha (cross-process CGS sanity check) ───────────
-        let targetAlpha: Float = identity ? 1.0 : 0.85
-        let alphaR = CGSSetWindowAlpha(cgsConn, windowID, targetAlpha)
-        scaleLog.debug("  [2a] CGSSetWindowAlpha(\(targetAlpha, format: .fixed(precision: 2))) → \(alphaR) (\(alphaR == 0 ? "sent — does banner dim?" : "failed"))")
-
-        // ── Approach 2b: SLSSetWindowAlpha ────────────────────────────────────────────
-        let slsAlphaR = slsSetWindowAlpha(slsConn, windowID, targetAlpha)
-        scaleLog.debug("  [2b] SLSSetWindowAlpha(\(targetAlpha, format: .fixed(precision: 2))) → \(slsAlphaR) (\(slsAlphaR == 0 ? "sent — does banner dim?" : "failed/not found"))")
-
-        if identity {
-            let r1 = CGSSetWindowTransform(cgsConn, windowID, .identity)
-            let r2 = slsSetWindowTransform(slsConn, windowID, .identity)
-            scaleLog.debug("  identity reset: CGS→\(r1) SLS→\(r2)")
-            return
-        }
-
-        // Scale center in Quartz coords (y-up from window bottom)
-        let cx = bannerOffset.x + bannerSize.width  / 2
-        let cy = windowSize.height - (bannerOffset.y + bannerSize.height / 2)
-        let transform = CGAffineTransform(translationX: cx, y: cy)
-            .scaledBy(x: scale, y: scale)
-            .translatedBy(x: -cx, y: -cy)
-        scaleLog.debug("  transform(Quartz-y-up center=(\(cx, format: .fixed(precision: 0)),\(cy, format: .fixed(precision: 0)))): a=\(transform.a, format: .fixed(precision: 3)) tx=\(transform.tx, format: .fixed(precision: 1)) ty=\(transform.ty, format: .fixed(precision: 1))")
-
-        // ── Approach 2c: CGSSetWindowTransform ────────────────────────────────────────
-        let cgsR = CGSSetWindowTransform(cgsConn, windowID, transform)
-        scaleLog.debug("  [2c] CGSSetWindowTransform → \(cgsR) (\(cgsR == 0 ? "sent" : "failed"))")
-
-        // ── Approach 2d: SLSSetWindowTransform (SkyLight, lower than CGS) ─────────────
-        let slsR = slsSetWindowTransform(slsConn, windowID, transform)
-        scaleLog.debug("  [2d] SLSSetWindowTransform → \(slsR) (\(slsR == 0 ? "sent — does banner scale?" : "failed/not found"))")
-
-        scaleLog.debug("════ end attemptScale ════")
     }
 
     private func repositionWindow(_ window: AXUIElement) {
@@ -819,7 +645,7 @@ package final class NotificationRepositioner: ObservableObject {
         let resolvedName: String
         if testGroupID != nil { resolvedName = "Test" } else { resolvedName = appName(for: window) ?? "unknown" }
         let modeLabel = useCustomBanner ? "custom overlay" : "native"
-        NannyLogger.shared.log("Repositioning \(resolvedName) → \(modeLabel) scale=\(String(format: "%.2fx", scale)) pos=(\(Int(info.windowOrigin.x)),\(Int(info.windowOrigin.y)))")
+        logger.log("Repositioning \(resolvedName) → \(modeLabel) scale=\(String(format: "%.2fx", scale)) pos=(\(Int(info.windowOrigin.x)),\(Int(info.windowOrigin.y)))")
 
         if useCustomBanner {
             // Custom overlay path: suppress the real NC banner, show our own at the configured scale.
@@ -838,7 +664,7 @@ package final class NotificationRepositioner: ObservableObject {
                 content = extractBannerContent(from: bannerEl, knownAppName: appName(for: window))
             }
             if let content {
-                NannyLogger.shared.log("Custom overlay: \(content.appName) — \(content.title.prefix(60))")
+                logger.log("Custom overlay: \(content.appName) — \(content.title.prefix(60))")
                 setWindowPosition(window, to: CGPoint(x: info.windowOrigin.x, y: -9999))
 
                 // Width grows modestly with scale so text has room; height is content-driven.
@@ -884,7 +710,7 @@ package final class NotificationRepositioner: ObservableObject {
                 return
             }
             log.info("repositionWindow: content extraction failed — falling back to real banner")
-            NannyLogger.shared.log("Content extraction failed — falling back to native banner", level: .warn)
+            logger.log("Content extraction failed — falling back to native banner", level: .warn)
         }
 
         setWindowPosition(window, to: info.windowOrigin)
@@ -945,6 +771,17 @@ package final class NotificationRepositioner: ObservableObject {
     }
 
     private func lookupIcon(for appName: String) -> NSImage? {
+        let ws = NSWorkspace.shared
+        // Primary: running app list — cheapest, handles non-standard install paths.
+        if let icon = ws.runningApplications.first(where: { $0.localizedName == appName })?.icon {
+            return icon
+        }
+        // Secondary: if a running app with a known bundle ID can be resolved to a URL, use that.
+        if let bundleID = ws.runningApplications.first(where: { $0.localizedName == appName })?.bundleIdentifier,
+           let url = ws.urlForApplication(withBundleIdentifier: bundleID) {
+            return ws.icon(forFile: url.path)
+        }
+        // Fallback: scan common install directories by display name.
         let dirs = [
             "/Applications",
             NSHomeDirectory() + "/Applications",
@@ -953,12 +790,9 @@ package final class NotificationRepositioner: ObservableObject {
         ]
         for dir in dirs {
             let path = "\(dir)/\(appName).app"
-            if FileManager.default.fileExists(atPath: path) {
-                return NSWorkspace.shared.icon(forFile: path)
-            }
+            if FileManager.default.fileExists(atPath: path) { return ws.icon(forFile: path) }
         }
-        return NSWorkspace.shared.runningApplications
-            .first { $0.localizedName == appName }?.icon
+        return nil
     }
 
     private func handleBannerTap(appName: String, bannerElement: AXUIElement) {

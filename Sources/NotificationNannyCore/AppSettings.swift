@@ -81,26 +81,33 @@ package final class AppSettings: ObservableObject {
         }
     }
 
-    package func clearBannerColor() {
-        hasBannerColor = false
-        bannerColorR = 0; bannerColorG = 0; bannerColorB = 0
+    /// Clean single-optional API over the raw R/G/B UserDefaults storage.
+    package var bannerTint: BannerTint? {
+        get { hasBannerColor ? BannerTint(r: bannerColorR, g: bannerColorG, b: bannerColorB) : nil }
+        set {
+            if let t = newValue {
+                bannerColorR = t.r; bannerColorG = t.g; bannerColorB = t.b; hasBannerColor = true
+            } else {
+                bannerColorR = 0; bannerColorG = 0; bannerColorB = 0; hasBannerColor = false
+            }
+        }
     }
 
+    package func clearBannerColor() { bannerTint = nil }
+
     package func effectiveBannerColor(for appName: String?) -> Color {
-        if let appName, let g = group(for: appName), g.hasBannerColor,
-           let r = g.bannerColorR, let gr = g.bannerColorG, let b = g.bannerColorB {
-            return Color(red: r, green: gr, blue: b).opacity(0.55)
+        if let appName, let tint = group(for: appName)?.bannerTint {
+            return tint.color.opacity(0.55)
         }
-        if hasBannerColor { return Color(red: bannerColorR, green: bannerColorG, blue: bannerColorB).opacity(0.55) }
+        if let tint = bannerTint { return tint.color.opacity(0.55) }
         return .clear
     }
 
     package func effectiveBannerColor(forGroupID groupID: UUID?) -> Color {
-        if let groupID, let g = appGroups.first(where: { $0.id == groupID }), g.hasBannerColor,
-           let r = g.bannerColorR, let gr = g.bannerColorG, let b = g.bannerColorB {
-            return Color(red: r, green: gr, blue: b).opacity(0.55)
+        if let groupID, let tint = appGroups.first(where: { $0.id == groupID })?.bannerTint {
+            return tint.color.opacity(0.55)
         }
-        if hasBannerColor { return Color(red: bannerColorR, green: bannerColorG, blue: bannerColorB).opacity(0.55) }
+        if let tint = bannerTint { return tint.color.opacity(0.55) }
         return .clear
     }
 
@@ -144,7 +151,7 @@ package final class AppSettings: ObservableObject {
            let anim = BannerAnimation(rawValue: raw) {
             self.bannerAnimation = anim
         } else {
-            self.bannerAnimation = .slide
+            self.bannerAnimation = .default
         }
         self.targetDisplayID    = CGDirectDisplayID(max(0, defaults.integer(forKey: Key.targetDisplay)))
 
@@ -291,6 +298,7 @@ package final class AppSettings: ObservableObject {
         case .custom: return true
         case nil:
             if abs(effectiveBannerScale(for: appName) - 1.0) > 0.001 { return true }
+            if bannerAnimation != .default { return true }
             if let appName, let g = group(for: appName) { return g.hasBannerColor }
             return hasBannerColor
         }
@@ -302,6 +310,7 @@ package final class AppSettings: ObservableObject {
         case .custom: return true
         case nil:
             if abs(effectiveBannerScale(forGroupID: groupID) - 1.0) > 0.001 { return true }
+            if bannerAnimation != .default { return true }
             if let groupID, let g = appGroups.first(where: { $0.id == groupID }) { return g.hasBannerColor }
             return hasBannerColor
         }
@@ -364,10 +373,7 @@ package final class AppSettings: ObservableObject {
             targetDisplayID: targetDisplayID,
             autoDismissSeconds: autoDismissSeconds,
             bannerScale: bannerScale,
-            bannerColorR: bannerColorR,
-            bannerColorG: bannerColorG,
-            bannerColorB: bannerColorB,
-            hasBannerColor: hasBannerColor,
+            bannerTint: bannerTint,
             holdWhileAsleep: holdWhileAsleep,
             pauseWhileStreaming: pauseWhileStreaming,
             appGroups: appGroups,
@@ -377,18 +383,15 @@ package final class AppSettings: ObservableObject {
     }
 
     func applyPreset(_ preset: Preset) {
-        placements = preset.placements
-        targetDisplayID = preset.targetDisplayID
+        placements         = preset.placements
+        targetDisplayID    = preset.targetDisplayID
         autoDismissSeconds = preset.autoDismissSeconds
-        bannerScale = preset.bannerScale
-        bannerColorR = preset.bannerColorR
-        bannerColorG = preset.bannerColorG
-        bannerColorB = preset.bannerColorB
-        hasBannerColor = preset.hasBannerColor
-        holdWhileAsleep = preset.holdWhileAsleep
+        bannerScale        = preset.bannerScale
+        bannerTint         = preset.bannerTint
+        holdWhileAsleep    = preset.holdWhileAsleep
         pauseWhileStreaming = preset.pauseWhileStreaming
-        appGroups = preset.appGroups
-        bannerAnimation = preset.bannerAnimation
+        appGroups          = preset.appGroups
+        bannerAnimation    = preset.bannerAnimation
     }
 
     func deletePreset(_ preset: Preset) {
@@ -396,16 +399,16 @@ package final class AppSettings: ObservableObject {
     }
 
     package func resetAllSettings() {
-        isEnabled = true
+        isEnabled          = true
         autoDismissSeconds = 0
-        targetDisplayID = 0
-        placements = [:]
-        presets = []
-        appGroups = []
-        bannerScale = 1.0
-        holdWhileAsleep = false
-        bannerColorR = 0; bannerColorG = 0; bannerColorB = 0; hasBannerColor = false
-        bannerAnimation = .slide
+        targetDisplayID    = 0
+        placements         = [:]
+        presets            = []
+        appGroups          = []
+        bannerScale        = 1.0
+        holdWhileAsleep    = false
+        bannerTint         = nil
+        bannerAnimation    = .default
     }
 
     // MARK: - Persistence
