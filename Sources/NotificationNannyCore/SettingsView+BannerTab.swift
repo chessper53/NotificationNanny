@@ -95,20 +95,6 @@ struct BannerTabView: View {
             .padding(12)
             .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
 
-            // Animation
-            VStack(alignment: .leading, spacing: 10) {
-                Text("Appear Animation").font(.caption.weight(.medium)).foregroundStyle(.secondary)
-                HStack(spacing: 4) {
-                    ForEach(BannerAnimation.allCases, id: \.self) { anim in
-                        AnimationPreviewButton(anim: anim, isSelected: settings.bannerAnimation == anim) {
-                            settings.bannerAnimation = anim
-                        }
-                    }
-                }
-            }
-            .padding(12)
-            .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
-
             // Per-group overrides
             if !settings.appGroups.isEmpty {
                 VStack(alignment: .leading, spacing: 8) {
@@ -254,23 +240,12 @@ private struct AnimationPreviewButton: View {
         switch anim {
         case .default:
             RoundedRectangle(cornerRadius: 3).fill(c).frame(width: 30, height: 7).offset(x: shown ? 0 : 18)
-        case .slide, .bounce:
-            RoundedRectangle(cornerRadius: 3).fill(c).frame(width: 30, height: 7).offset(y: shown ? 0 : -18)
-        case .fade:
-            RoundedRectangle(cornerRadius: 3).fill(c).frame(width: 30, height: 7).opacity(shown ? 1 : 0)
-        case .scale:
-            RoundedRectangle(cornerRadius: 3).fill(c).frame(width: 30, height: 7)
-                .scaleEffect(shown ? 1 : 0.55).opacity(shown ? 1 : 0)
         }
     }
 
     private var curve: Animation {
         switch anim {
         case .default: return .spring(response: 0.45, dampingFraction: 0.85)
-        case .slide:   return .spring(response: 0.45, dampingFraction: 0.78)
-        case .bounce:  return .spring(response: 0.38, dampingFraction: 0.42)
-        case .fade:    return .easeOut(duration: 0.3)
-        case .scale:   return .spring(response: 0.38, dampingFraction: 0.68)
         }
     }
 }
