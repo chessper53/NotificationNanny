@@ -11,16 +11,25 @@
 
 ## Settings
 
+<!--
+  SCREENSHOTS — replace each URL below, then do the same in the table src= attributes.
+  Position:   PASTE_POSITION_URL
+  Banner:     PASTE_BANNER_URL
+  Exceptions: PASTE_EXCEPTIONS_URL
+  Presets:    PASTE_PRESETS_URL
+  General:    PASTE_GENERAL_URL
+  Backup:     PASTE_BACKUP_URL
+-->
 <table>
   <tr>
-    <td align="center"><img src="PLACEHOLDER_POSITION" width="260" alt="Position"/><br/><sub>Position</sub></td>
-    <td align="center"><img src="PLACEHOLDER_BANNER" width="260" alt="Banner"/><br/><sub>Banner</sub></td>
-    <td align="center"><img src="PLACEHOLDER_EXCEPTIONS" width="260" alt="Exceptions"/><br/><sub>Exceptions</sub></td>
+    <td align="center"><img src="PASTE_POSITION_URL" width="260" alt="Position"/><br/><sub>Position</sub></td>
+    <td align="center"><img src="PASTE_BANNER_URL" width="260" alt="Banner"/><br/><sub>Banner</sub></td>
+    <td align="center"><img src="PASTE_EXCEPTIONS_URL" width="260" alt="Exceptions"/><br/><sub>Exceptions</sub></td>
   </tr>
   <tr>
-    <td align="center"><img src="PLACEHOLDER_PRESETS" width="260" alt="Presets"/><br/><sub>Presets</sub></td>
-    <td align="center"><img src="PLACEHOLDER_GENERAL" width="260" alt="General"/><br/><sub>General</sub></td>
-    <td align="center"><img src="PLACEHOLDER_BACKUP" width="260" alt="Backup"/><br/><sub>Backup</sub></td>
+    <td align="center"><img src="PASTE_PRESETS_URL" width="260" alt="Presets"/><br/><sub>Presets</sub></td>
+    <td align="center"><img src="PASTE_GENERAL_URL" width="260" alt="General"/><br/><sub>General</sub></td>
+    <td align="center"><img src="PASTE_BACKUP_URL" width="260" alt="Backup"/><br/><sub>Backup</sub></td>
   </tr>
 </table>
 
