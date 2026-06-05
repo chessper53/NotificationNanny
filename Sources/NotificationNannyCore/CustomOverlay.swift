@@ -4,6 +4,7 @@ import SwiftUI
 // MARK: - Animation
 
 package enum BannerAnimation: String, Codable, CaseIterable {
+    case `default` = "Default"  // native macOS slide-in from the right — no custom renderer
     case slide  = "Slide"
     case bounce = "Bounce"
     case fade   = "Fade"
@@ -57,12 +58,6 @@ struct CustomBannerView: View {
                         .font(.system(size: 11 * scale))
                         .foregroundStyle(.tertiary)
                 }
-                if !content.title.isEmpty {
-                    Text(content.title)
-                        .font(.system(size: 13 * scale, weight: .semibold))
-                        .foregroundStyle(.primary)
-                        .lineLimit(1)
-                }
                 if !content.body.isEmpty {
                     Text(content.body)
                         .font(.system(size: 13 * scale))
@@ -108,9 +103,8 @@ struct CustomBannerView: View {
     }
 
     private func setupAnimations() {
-        // Prepare initial state
         switch animation {
-        case .slide:
+        case .default, .slide:
             slideOffset = -130
             controller.slideOutClosure = {
                 withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) { slideOffset = -130 }

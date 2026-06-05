@@ -161,8 +161,27 @@ enum TestNotification {
         let task = Process()
         task.launchPath = "/usr/bin/osascript"
         task.arguments = ["-e", script]
+        let errPipe = Pipe()
         task.standardOutput = Pipe()
-        task.standardError = Pipe()
-        try? task.run()
+        task.standardError = errPipe
+        task.terminationHandler = { t in
+            let code = t.terminationStatus
+            let errStr = String(data: errPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8)?
+                .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            Task { @MainActor in
+                if code != 0 || !errStr.isEmpty {
+                    NannyLogger.shared.log("TestNotification: osascript exit=\(code) err=\(errStr)", level: .warn)
+                } else {
+                    NannyLogger.shared.log("TestNotification: osascript ok")
+                }
+            }
+        }
+        do {
+            try task.run()
+        } catch {
+            Task { @MainActor in
+                NannyLogger.shared.log("TestNotification: failed to launch osascript: \(error)", level: .error)
+            }
+        }
     }
 }
