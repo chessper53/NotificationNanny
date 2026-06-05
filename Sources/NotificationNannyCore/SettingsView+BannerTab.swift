@@ -162,8 +162,7 @@ struct BannerTabView: View {
                 }
                 let colorBinding = Binding<Color>(
                     get: {
-                        settings.appGroups.first(where: { $0.id == group.id })?.bannerTint?.color
-                            ?? settings.bannerColor
+                        settings.appGroups.first(where: { $0.id == group.id })?.bannerTint?.color ?? .white
                     },
                     set: { newColor in
                         guard let i = settings.appGroups.firstIndex(where: { $0.id == group.id }) else { return }
@@ -182,6 +181,11 @@ struct BannerTabView: View {
                         }
                         .buttonStyle(.borderless).font(.caption2).foregroundStyle(.secondary)
                     }
+                    Spacer()
+                    Button { repositioner.sendTestNotification(groupID: group.id) } label: {
+                        Label("Test", systemImage: "paperplane.fill").font(.caption2)
+                    }
+                    .buttonStyle(.borderedProminent).controlSize(.mini)
                 }
             }
         }
