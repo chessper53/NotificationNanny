@@ -266,6 +266,7 @@ final class CustomBannerManager {
     }
 
     func isActive(key: CFHashCode) -> Bool { active[key] != nil }
+    var hasActive: Bool { !active.isEmpty }
 
     func resetDismissTimers(autoDismissSeconds: Double) {
         let timeout = autoDismissSeconds > 0 ? autoDismissSeconds : 8
