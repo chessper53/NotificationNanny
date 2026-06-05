@@ -58,10 +58,16 @@ struct CustomBannerView: View {
                         .font(.system(size: 11 * scale))
                         .foregroundStyle(.tertiary)
                 }
+                if !content.title.isEmpty {
+                    Text(content.title)
+                        .font(.system(size: 13 * scale, weight: .semibold))
+                        .foregroundStyle(.primary)
+                        .lineLimit(1)
+                }
                 if !content.body.isEmpty {
                     Text(content.body)
                         .font(.system(size: 13 * scale))
-                        .foregroundStyle(.primary)
+                        .foregroundStyle(.primary.opacity(0.85))
                         .lineLimit(2)
                         .fixedSize(horizontal: false, vertical: true)
                 }
