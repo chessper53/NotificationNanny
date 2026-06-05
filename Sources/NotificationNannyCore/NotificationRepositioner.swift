@@ -568,14 +568,8 @@ package final class NotificationRepositioner: ObservableObject {
         }
 
         // -- Position --
-        var origin = t.windowOrigin
-        log.debug("snapWindow: setting position → (\(origin.x, format: .fixed(precision: 1)), \(origin.y, format: .fixed(precision: 1)))")
-        guard let posValue = AXValueCreate(.cgPoint, &origin) else {
-            log.error("snapWindow: AXValueCreate(.cgPoint) failed")
-            return
-        }
-        let posResult = AXUIElementSetAttributeValue(window, kAXPositionAttribute as CFString, posValue)
-        log.debug("snapWindow: AXUIElementSetAttributeValue(position) → \(posResult.rawValue)")
+        log.debug("snapWindow: setting position → (\(t.windowOrigin.x, format: .fixed(precision: 1)), \(t.windowOrigin.y, format: .fixed(precision: 1)))")
+        setWindowPosition(window, to: t.windowOrigin)
     }
 
     // MARK: - Scale hammer (60fps AX size write to fight NC layout reset)
@@ -649,6 +643,28 @@ package final class NotificationRepositioner: ObservableObject {
         logger.log("Repositioning \(resolvedName) → \(modeLabel) scale=\(String(format: "%.2fx", scale)) pos=(\(Int(info.windowOrigin.x)),\(Int(info.windowOrigin.y)))")
 
         if useCustomBanner {
+            // If an overlay is already live for this window, just reposition it — don't recreate.
+            // repositionWindow is called for multiple AX events on the same window; recreating each
+            // time stacks up dismissed-but-still-animating panels.
+            let key = CFHash(window)
+            if customBannerManager.isActive(key: key) {
+                setWindowPosition(window, to: CGPoint(x: info.windowOrigin.x, y: -9999))
+                let scaledWidth = info.bannerSize.width * scale
+                let widthDelta = scaledWidth - info.bannerSize.width
+                let bannerAXOrigin = CGPoint(x: info.windowOrigin.x + info.bannerOffsetInWindow.x,
+                                             y: info.windowOrigin.y + info.bannerOffsetInWindow.y)
+                let anchoredX: CGFloat
+                switch info.placement.position {
+                case .topRight, .middleRight, .bottomRight:    anchoredX = bannerAXOrigin.x - widthDelta
+                case .topCenter, .middleCenter, .bottomCenter: anchoredX = bannerAXOrigin.x - widthDelta / 2
+                default:                                        anchoredX = bannerAXOrigin.x
+                }
+                customBannerManager.move(key: key, axTopLeft: CGPoint(x: anchoredX, y: bannerAXOrigin.y),
+                                         width: scaledWidth)
+                scheduleHolds(window: window, stackIndex: stackIndex, generation: gen)
+                return
+            }
+
             // Custom overlay path: suppress the real NC banner, show our own at the configured scale.
             let bannerEl = findBannerElement(in: window) ?? window
             // In test mode, hardcode the content so the osascript comma-separated AX
