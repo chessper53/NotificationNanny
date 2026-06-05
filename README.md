@@ -4,32 +4,18 @@
 
 ![macOS 14+](https://img.shields.io/badge/macOS-14%2B-blue) ![Swift](https://img.shields.io/badge/Swift-5.9-orange) ![Version](https://img.shields.io/badge/version-7.0.0-brightgreen)
 
-<div align="center">
-  <img width="340" alt="NotificationNanny popup" src="https://github.com/user-attachments/assets/65a9d5d5-24df-4e58-a657-389299c95ca2" />
-  <img width="240" alt="NotificationNanny per-app rules" src="https://github.com/user-attachments/assets/9652aecb-5616-47ea-9078-bcde3c407052" />
-</div>
-
 ## Settings
 
-<!--
-  SCREENSHOTS — replace each URL below, then do the same in the table src= attributes.
-  Position:   PASTE_POSITION_URL
-  Banner:     PASTE_BANNER_URL
-  Exceptions: PASTE_EXCEPTIONS_URL
-  Presets:    PASTE_PRESETS_URL
-  General:    PASTE_GENERAL_URL
-  Backup:     PASTE_BACKUP_URL
--->
 <table>
   <tr>
-    <td align="center"><img src="PASTE_POSITION_URL" width="260" alt="Position"/><br/><sub>Position</sub></td>
-    <td align="center"><img src="PASTE_BANNER_URL" width="260" alt="Banner"/><br/><sub>Banner</sub></td>
-    <td align="center"><img src="PASTE_EXCEPTIONS_URL" width="260" alt="Exceptions"/><br/><sub>Exceptions</sub></td>
+    <td align="center"><img src="https://github.com/user-attachments/assets/777c81f7-6cc5-4407-a4b6-5328de2c262b" width="260" alt="Position"/><br/><sub>Position</sub></td>
+    <td align="center"><img src="https://github.com/user-attachments/assets/5d01ec6a-8267-4114-9691-9b5b46f1e3cd" width="260" alt="Banner"/><br/><sub>Banner</sub></td>
+    <td align="center"><img src="https://github.com/user-attachments/assets/366b1afc-c5a2-4deb-8837-5a4ca7794268" width="260" alt="Exceptions"/><br/><sub>Exceptions</sub></td>
   </tr>
   <tr>
-    <td align="center"><img src="PASTE_PRESETS_URL" width="260" alt="Presets"/><br/><sub>Presets</sub></td>
-    <td align="center"><img src="PASTE_GENERAL_URL" width="260" alt="General"/><br/><sub>General</sub></td>
-    <td align="center"><img src="PASTE_BACKUP_URL" width="260" alt="Backup"/><br/><sub>Backup</sub></td>
+    <td align="center"><img src="https://github.com/user-attachments/assets/bd47b5e8-e667-4bb0-bf55-8ed1c15c9029" width="260" alt="Presets"/><br/><sub>Presets</sub></td>
+    <td align="center"><img src="https://github.com/user-attachments/assets/f670ef93-8241-45e5-bef2-282506dd64d6" width="260" alt="General"/><br/><sub>General</sub></td>
+    <td align="center"><img src="https://github.com/user-attachments/assets/c63fce84-d270-4e68-b711-f43190e393e5" width="260" alt="Help"/><br/><sub>Help</sub></td>
   </tr>
 </table>
 
