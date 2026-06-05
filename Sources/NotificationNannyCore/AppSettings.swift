@@ -23,6 +23,7 @@ package final class AppSettings: ObservableObject {
         static let bannerColorG         = "bannerColorG"
         static let bannerColorB         = "bannerColorB"
         static let hasBannerColor       = "hasBannerColor"
+        static let bannerAnimation      = "bannerAnimation"
     }
 
     /// ~/Library/Application Support/NotificationNanny/known_apps.json
@@ -64,6 +65,10 @@ package final class AppSettings: ObservableObject {
     @Published private var bannerColorG: Double { didSet { defaults.set(bannerColorG, forKey: Key.bannerColorG) } }
     @Published private var bannerColorB: Double { didSet { defaults.set(bannerColorB, forKey: Key.bannerColorB) } }
     @Published package private(set) var hasBannerColor: Bool { didSet { defaults.set(hasBannerColor, forKey: Key.hasBannerColor) } }
+
+    @Published package var bannerAnimation: BannerAnimation {
+        didSet { defaults.set(bannerAnimation.rawValue, forKey: Key.bannerAnimation) }
+    }
 
     package var bannerColor: Color {
         get { Color(red: bannerColorR, green: bannerColorG, blue: bannerColorB) }
@@ -135,6 +140,12 @@ package final class AppSettings: ObservableObject {
         self.bannerColorG = defaults.object(forKey: Key.bannerColorG) as? Double ?? 0.0
         self.bannerColorB = defaults.object(forKey: Key.bannerColorB) as? Double ?? 0.0
         self.hasBannerColor = (defaults.object(forKey: Key.hasBannerColor) as? Bool) ?? false
+        if let raw = defaults.string(forKey: Key.bannerAnimation),
+           let anim = BannerAnimation(rawValue: raw) {
+            self.bannerAnimation = anim
+        } else {
+            self.bannerAnimation = .slide
+        }
         self.targetDisplayID    = CGDirectDisplayID(max(0, defaults.integer(forKey: Key.targetDisplay)))
 
         if let data = defaults.data(forKey: Key.placements),
@@ -359,7 +370,8 @@ package final class AppSettings: ObservableObject {
             hasBannerColor: hasBannerColor,
             holdWhileAsleep: holdWhileAsleep,
             pauseWhileStreaming: pauseWhileStreaming,
-            appGroups: appGroups
+            appGroups: appGroups,
+            bannerAnimation: bannerAnimation
         )
         presets.append(preset)
     }
@@ -376,6 +388,7 @@ package final class AppSettings: ObservableObject {
         holdWhileAsleep = preset.holdWhileAsleep
         pauseWhileStreaming = preset.pauseWhileStreaming
         appGroups = preset.appGroups
+        bannerAnimation = preset.bannerAnimation
     }
 
     func deletePreset(_ preset: Preset) {
@@ -392,6 +405,7 @@ package final class AppSettings: ObservableObject {
         bannerScale = 1.0
         holdWhileAsleep = false
         bannerColorR = 0; bannerColorG = 0; bannerColorB = 0; hasBannerColor = false
+        bannerAnimation = .slide
     }
 
     // MARK: - Persistence

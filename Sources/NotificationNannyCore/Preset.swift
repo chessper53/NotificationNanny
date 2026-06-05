@@ -15,11 +15,13 @@ struct Preset: Codable, Identifiable, Equatable {
     var holdWhileAsleep: Bool
     var pauseWhileStreaming: Bool
     var appGroups: [AppGroup]
+    var bannerAnimation: BannerAnimation
 
     init(name: String, placements: [String: ScreenPlacement],
          targetDisplayID: CGDirectDisplayID, autoDismissSeconds: Double,
          bannerScale: Double, bannerColorR: Double, bannerColorG: Double, bannerColorB: Double,
-         hasBannerColor: Bool, holdWhileAsleep: Bool, pauseWhileStreaming: Bool, appGroups: [AppGroup]) {
+         hasBannerColor: Bool, holdWhileAsleep: Bool, pauseWhileStreaming: Bool,
+         appGroups: [AppGroup], bannerAnimation: BannerAnimation = .slide) {
         self.id = UUID()
         self.name = name
         self.placements = placements
@@ -33,6 +35,7 @@ struct Preset: Codable, Identifiable, Equatable {
         self.holdWhileAsleep = holdWhileAsleep
         self.pauseWhileStreaming = pauseWhileStreaming
         self.appGroups = appGroups
+        self.bannerAnimation = bannerAnimation
     }
 
     init(from decoder: Decoder) throws {
@@ -50,5 +53,7 @@ struct Preset: Codable, Identifiable, Equatable {
         holdWhileAsleep    = try c.decodeIfPresent(Bool.self,             forKey: .holdWhileAsleep) ?? false
         pauseWhileStreaming = try c.decodeIfPresent(Bool.self,            forKey: .pauseWhileStreaming) ?? false
         appGroups          = try c.decodeIfPresent([AppGroup].self,       forKey: .appGroups) ?? []
+        let rawAnim        = try c.decodeIfPresent(String.self,           forKey: .bannerAnimation) ?? BannerAnimation.slide.rawValue
+        bannerAnimation    = BannerAnimation(rawValue: rawAnim) ?? .slide
     }
 }
