@@ -25,6 +25,7 @@ package struct SettingsView: View {
     @State private var pendingImportData: Data? = nil
     @State private var diagResults: [DiagResult]? = nil
     @State private var diagCopied = false
+    @State private var appliedPresetID: UUID? = nil
     @State private var permissionJustGranted = false
 
     package init() {}
@@ -109,7 +110,7 @@ package struct SettingsView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color(white: 0.10))
-        .background(WindowSizeLock(width: 570, height: 560))
+        .background(WindowSizeLock(width: 660, height: 640))
         .tint(Color.nannyAccent)
         .preferredColorScheme(.dark)
         .onAppear {
@@ -316,7 +317,7 @@ package struct SettingsView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .padding(.top, 1)
-                Text("The custom renderer is used automatically when scale ≠ 100% or a tint color is set. Otherwise notifications use the native macOS banner.")
+                Text("Custom renderer activates automatically when scale ≠ 100%, a tint color is set, or banner mode is forced. It replaces the system banner with a custom one that supports scaling, tinting, and animation.")
                     .font(.caption)
                     .foregroundStyle(Color(white: 0.6))
                     .fixedSize(horizontal: false, vertical: true)
@@ -355,7 +356,7 @@ package struct SettingsView: View {
             .padding(12)
             .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
 
-            // Background color
+            // Background color + presets
             VStack(alignment: .leading, spacing: 10) {
                 HStack {
                     Text("Background Color")
@@ -368,15 +369,57 @@ package struct SettingsView: View {
                         .foregroundStyle(Color.nannyAccent)
                         .disabled(!settings.hasBannerColor)
                 }
-                HStack(spacing: 10) {
-                    ColorPicker("", selection: Binding(
-                        get: { settings.bannerColor },
-                        set: { settings.bannerColor = $0 }
-                    ), supportsOpacity: false)
-                    .labelsHidden()
-                    Text(settings.hasBannerColor ? "Custom tint active — enables custom renderer" : "No tint — uses frosted glass")
-                        .font(.caption2)
-                        .foregroundStyle(.tertiary)
+                // Preset swatches + custom picker
+                HStack(spacing: 6) {
+                    ForEach(Self.colorPresets, id: \.0) { name, color in
+                        Button {
+                            settings.bannerColor = color
+                        } label: {
+                            Circle()
+                                .fill(color)
+                                .frame(width: 22, height: 22)
+                                .overlay(
+                                    Circle().strokeBorder(
+                                        settings.hasBannerColor && isColorMatch(color, settings.bannerColor)
+                                            ? Color.white : Color.clear,
+                                        lineWidth: 2)
+                                )
+                        }
+                        .buttonStyle(.plain)
+                        .help(name)
+                    }
+                    Spacer()
+                    HStack(spacing: 4) {
+                        Text("Custom")
+                            .font(.system(size: 9))
+                            .foregroundStyle(.tertiary)
+                        ColorPicker("", selection: Binding(
+                            get: { settings.bannerColor },
+                            set: { settings.bannerColor = $0 }
+                        ), supportsOpacity: false)
+                        .labelsHidden()
+                    }
+                    .help("Pick any custom color")
+                }
+                Text(settings.hasBannerColor ? "Tint active — enables custom renderer" : "No tint — uses native frosted glass")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+            }
+            .padding(12)
+            .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
+
+            // Animation with live previews
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Appear Animation")
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(.secondary)
+                HStack(spacing: 4) {
+                    ForEach(BannerAnimation.allCases, id: \.self) { anim in
+                        AnimationPreviewButton(
+                            anim: anim,
+                            isSelected: settings.bannerAnimation == anim
+                        ) { settings.bannerAnimation = anim }
+                    }
                 }
             }
             .padding(12)
@@ -1265,6 +1308,91 @@ package struct SettingsView: View {
 
     // MARK: - Slider row
 
+    // MARK: - Animation preview button
+
+    private struct AnimationPreviewButton: View {
+        let anim: BannerAnimation
+        let isSelected: Bool
+        let onTap: () -> Void
+
+        @State private var shown = false
+
+        var body: some View {
+            Button(action: onTap) {
+                VStack(spacing: 5) {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 4)
+                            .fill(Color.white.opacity(0.05))
+                            .frame(width: 42, height: 26)
+                        pill
+                    }
+                    .clipped()
+                    Text(anim.rawValue)
+                        .font(.system(size: 10, weight: isSelected ? .semibold : .regular))
+                        .foregroundStyle(isSelected ? Color.nannyAccent : Color.secondary)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 7)
+                .background(isSelected ? Color.nannyAccent.opacity(0.15) : Color.clear,
+                            in: RoundedRectangle(cornerRadius: 8))
+            }
+            .buttonStyle(.plain)
+            .task {
+                while !Task.isCancelled {
+                    shown = false
+                    try? await Task.sleep(for: .milliseconds(150))
+                    withAnimation(curve) { shown = true }
+                    try? await Task.sleep(for: .milliseconds(1850))
+                }
+            }
+        }
+
+        @ViewBuilder
+        private var pill: some View {
+            let c = isSelected ? Color.nannyAccent.opacity(0.85) : Color.white.opacity(0.4)
+            switch anim {
+            case .slide, .bounce:
+                RoundedRectangle(cornerRadius: 3).fill(c).frame(width: 30, height: 7)
+                    .offset(y: shown ? 0 : -18)
+            case .fade:
+                RoundedRectangle(cornerRadius: 3).fill(c).frame(width: 30, height: 7)
+                    .opacity(shown ? 1 : 0)
+            case .scale:
+                RoundedRectangle(cornerRadius: 3).fill(c).frame(width: 30, height: 7)
+                    .scaleEffect(shown ? 1 : 0.55).opacity(shown ? 1 : 0)
+            }
+        }
+
+        private var curve: Animation {
+            switch anim {
+            case .slide:  return .spring(response: 0.45, dampingFraction: 0.78)
+            case .bounce: return .spring(response: 0.38, dampingFraction: 0.42)
+            case .fade:   return .easeOut(duration: 0.3)
+            case .scale:  return .spring(response: 0.38, dampingFraction: 0.68)
+            }
+        }
+    }
+
+    private static let colorPresets: [(String, Color)] = [
+        ("Red",    Color(red: 1.0,  green: 0.23, blue: 0.19)),
+        ("Orange", Color(red: 1.0,  green: 0.58, blue: 0.0)),
+        ("Yellow", Color(red: 1.0,  green: 0.80, blue: 0.0)),
+        ("Green",  Color(red: 0.20, green: 0.78, blue: 0.35)),
+        ("Teal",   Color(red: 0.18, green: 0.67, blue: 0.78)),
+        ("Blue",   Color(red: 0.0,  green: 0.48, blue: 1.0)),
+        ("Purple", Color(red: 0.69, green: 0.32, blue: 0.87)),
+        ("Pink",   Color(red: 1.0,  green: 0.18, blue: 0.33)),
+    ]
+
+    private func isColorMatch(_ a: Color, _ b: Color) -> Bool {
+        let ca = NSColor(a).usingColorSpace(.sRGB)
+        let cb = NSColor(b).usingColorSpace(.sRGB)
+        guard let ca, let cb else { return false }
+        return abs(ca.redComponent   - cb.redComponent)   < 0.03 &&
+               abs(ca.greenComponent - cb.greenComponent) < 0.03 &&
+               abs(ca.blueComponent  - cb.blueComponent)  < 0.03
+    }
+
     private func sliderRow(title: String, value: Binding<Double>, range: ClosedRange<Double>) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(title).font(.caption2).foregroundStyle(.secondary)
@@ -1450,10 +1578,22 @@ package struct SettingsView: View {
             .padding(.vertical, 10)
         } else {
             HStack(spacing: 4) {
-                Button(preset.name) { settings.applyPreset(preset) }
-                    .buttonStyle(.borderless)
-                    .font(.callout)
-                    .lineLimit(1)
+                Button {
+                    settings.applyPreset(preset)
+                    appliedPresetID = preset.id
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { appliedPresetID = nil }
+                } label: {
+                    Label(
+                        appliedPresetID == preset.id ? "Applied!" : preset.name,
+                        systemImage: appliedPresetID == preset.id ? "checkmark" : ""
+                    )
+                    .animation(.easeInOut(duration: 0.15), value: appliedPresetID)
+                }
+                .buttonStyle(.borderless)
+                .font(.callout)
+                .foregroundStyle(appliedPresetID == preset.id ? Color.green : Color.primary)
+                .lineLimit(1)
+                .animation(.easeInOut(duration: 0.15), value: appliedPresetID)
                 Spacer()
                 Button { movePreset(at: index, by: -1) } label: {
                     Image(systemName: "chevron.up").font(.caption2)

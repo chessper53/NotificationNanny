@@ -12,15 +12,18 @@ struct DraggableScreenTile: View {
     var body: some View {
         let visible = screen.visibleFrame
         let aspect = visible.width / max(visible.height, 1)
-        let tileWidth: CGFloat = 288
+        let tileWidth:  CGFloat = 288
         let tileHeight: CGFloat = min(220, max(100, tileWidth / aspect))
-        let scale = tileWidth / visible.width
-        let bannerWidth = max(36, Self.realBannerSize.width * scale)
-        let bannerHeight = max(14, Self.realBannerSize.height * scale)
+        // Use separate x/y scales — tile height is clamped on wide displays,
+        // so a single scale based on width gives wrong y positions.
+        let scaleX = tileWidth  / max(visible.width,  1)
+        let scaleY = tileHeight / max(visible.height, 1)
+        let bannerWidth  = max(36, Self.realBannerSize.width  * scaleX)
+        let bannerHeight = max(14, Self.realBannerSize.height * scaleY)
         let bannerCenterReal = bannerCenterInVisibleCoords(visible: visible)
         let bannerCenterTile = CGPoint(
-            x: (bannerCenterReal.x - visible.minX) * scale,
-            y: (bannerCenterReal.y - visible.minY) * scale
+            x: (bannerCenterReal.x - visible.minX) * scaleX,
+            y: (bannerCenterReal.y - visible.minY) * scaleY
         )
 
         return ZStack(alignment: .topLeading) {
@@ -40,21 +43,20 @@ struct DraggableScreenTile: View {
                 )
             BannerChip(width: bannerWidth, height: bannerHeight)
                 .position(x: bannerCenterTile.x, y: bannerCenterTile.y)
-                .gesture(
-                    DragGesture(minimumDistance: 0, coordinateSpace: .local)
-                        .onChanged { value in
-                            updatePlacement(fromTilePoint: value.location,
-                                            tileSize: CGSize(width: tileWidth, height: tileHeight),
-                                            visible: visible)
-                        }
-                )
         }
         .frame(width: tileWidth, height: tileHeight)
         .contentShape(Rectangle())
+        // Gesture on the ZStack so .local coords = tile coords, not chip-local coords
+        .gesture(
+            DragGesture(minimumDistance: 0, coordinateSpace: .local)
+                .onChanged { value in
+                    updatePlacement(fromTilePoint: value.location,
+                                    scaleX: scaleX, scaleY: scaleY, visible: visible)
+                }
+        )
         .onTapGesture { tap in
             updatePlacement(fromTilePoint: tap,
-                            tileSize: CGSize(width: tileWidth, height: tileHeight),
-                            visible: visible)
+                            scaleX: scaleX, scaleY: scaleY, visible: visible)
         }
     }
 
@@ -78,14 +80,14 @@ struct DraggableScreenTile: View {
         return CGPoint(x: cx, y: cy)
     }
 
-    private func updatePlacement(fromTilePoint point: CGPoint, tileSize: CGSize, visible: CGRect) {
-        let scale = tileSize.width / visible.width
+    private func updatePlacement(fromTilePoint point: CGPoint,
+                                 scaleX: CGFloat, scaleY: CGFloat, visible: CGRect) {
         let banner = Self.realBannerSize
         let inset: CGFloat = 8
         let centreX = max(inset + banner.width / 2,
-                          min(visible.width - inset - banner.width / 2, point.x / scale))
+                          min(visible.width  - inset - banner.width  / 2, point.x / scaleX))
         let centreY = max(inset + banner.height / 2,
-                          min(visible.height - inset - banner.height / 2, point.y / scale))
+                          min(visible.height - inset - banner.height / 2, point.y / scaleY))
 
         let bandX: AnchorBand
         switch centreX {
