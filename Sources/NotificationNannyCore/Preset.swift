@@ -15,10 +15,10 @@ struct Preset: Codable, Identifiable, Equatable {
     var bannerAnimation: BannerAnimation
 
     init(name: String, placements: [String: ScreenPlacement],
-         targetDisplayID: CGDirectDisplayID, autoDismissSeconds: Double,
-         bannerScale: Double, bannerTint: BannerTint?,
-         holdWhileAsleep: Bool, pauseWhileStreaming: Bool,
-         appGroups: [AppGroup], bannerAnimation: BannerAnimation = .slide) {
+         targetDisplayID: CGDirectDisplayID = 0, autoDismissSeconds: Double = 0,
+         bannerScale: Double = 1.0, bannerTint: BannerTint? = nil,
+         holdWhileAsleep: Bool = false, pauseWhileStreaming: Bool = false,
+         appGroups: [AppGroup] = [], bannerAnimation: BannerAnimation = .slide) {
         self.id = UUID()
         self.name = name
         self.placements = placements
