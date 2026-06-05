@@ -31,4 +31,5 @@ package protocol NotificationSettingsProviding: AnyObject {
     /// True when a custom overlay should be used for the given context.
     func shouldUseCustomBanner(for appName: String?) -> Bool
     func shouldUseCustomBanner(forGroupID groupID: UUID?) -> Bool
+    var bannerAnimation: BannerAnimation { get }
 }

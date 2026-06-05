@@ -625,7 +625,7 @@ package final class NotificationRepositioner: ObservableObject {
                     x: t.windowOrigin.x + t.bannerOffsetInWindow.x,
                     y: t.windowOrigin.y + t.bannerOffsetInWindow.y
                 )
-                let scaledWidth = t.bannerSize.width * (1.0 + (scale - 1.0) * 0.75)
+                let scaledWidth = t.bannerSize.width * scale
                 let widthDelta = scaledWidth - t.bannerSize.width
                 let anchoredX: CGFloat
                 switch t.placement.position {
@@ -832,7 +832,7 @@ package final class NotificationRepositioner: ObservableObject {
                     appName: "NotificationNanny",
                     title: "Test Notification",
                     body: "Thank you for using NotificationNanny!",
-                    appIcon: NSApp.applicationIconImage
+                    appIcon: nil
                 )
             } else {
                 content = extractBannerContent(from: bannerEl, knownAppName: appName(for: window))
@@ -842,7 +842,7 @@ package final class NotificationRepositioner: ObservableObject {
                 setWindowPosition(window, to: CGPoint(x: info.windowOrigin.x, y: -9999))
 
                 // Width grows modestly with scale so text has room; height is content-driven.
-                let scaledWidth = info.bannerSize.width * (1.0 + (scale - 1.0) * 0.4)
+                let scaledWidth = info.bannerSize.width * scale
                 let widthDelta = scaledWidth - info.bannerSize.width
 
                 // AX origin of the natural banner (stacking already baked in via targetOrigin).
@@ -875,6 +875,7 @@ package final class NotificationRepositioner: ObservableObject {
                         ? settings.effectiveBannerColor(forGroupID: testGroupID!)
                         : settings.effectiveBannerColor(for: appName(for: window)),
                     autoDismissSeconds: settings.autoDismissSeconds,
+                    animation: settings.bannerAnimation,
                     onOpen: { [weak self] in self?.handleBannerTap(appName: capturedName, bannerElement: capturedEl) },
                     key: key
                 )

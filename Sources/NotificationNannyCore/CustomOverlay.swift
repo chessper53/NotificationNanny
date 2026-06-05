@@ -1,6 +1,15 @@
 import AppKit
 import SwiftUI
 
+// MARK: - Animation
+
+package enum BannerAnimation: String, Codable, CaseIterable {
+    case slide  = "Slide"
+    case bounce = "Bounce"
+    case fade   = "Fade"
+    case scale  = "Scale"
+}
+
 // MARK: - Data
 
 struct BannerContent {
@@ -10,84 +19,153 @@ struct BannerContent {
     let appIcon: NSImage?
 }
 
-// MARK: - View (no background — panel provides it)
+// MARK: - Animation Controller
+
+@MainActor
+final class BannerAnimationController {
+    var slideOutClosure: (() -> Void)?
+    var dismissCompletion: (() -> Void)?
+}
+
+// MARK: - View
 
 struct CustomBannerView: View {
     let content: BannerContent
-    let scale: Double
+    let scale: CGFloat
+    let animation: BannerAnimation
+    let controller: BannerAnimationController
     let onDismiss: () -> Void
     let onOpen: () -> Void
 
-    @State private var isHovering = false
-
-    private var iconSize: CGFloat { 38 * CGFloat(scale) }
+    @State private var slideOffset: CGFloat = -130
+    @State private var viewOpacity: Double = 1
+    @State private var viewScale: CGFloat = 1
+    @State private var isHovered = false
 
     var body: some View {
-        ZStack {
-            HStack(alignment: .center, spacing: 10 * CGFloat(scale)) {
-                if let icon = content.appIcon {
-                    Image(nsImage: icon)
-                        .resizable()
-                        .frame(width: iconSize, height: iconSize)
-                        .clipShape(RoundedRectangle(cornerRadius: 8 * CGFloat(scale), style: .continuous))
-                }
-
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(content.appName)
-                        .font(.system(size: 12 * scale, weight: .medium))
-                        .foregroundStyle(.white.opacity(0.5))
+        HStack(spacing: 10 * scale) {
+            iconView
+            VStack(alignment: .leading, spacing: 2 * scale) {
+                HStack(alignment: .firstTextBaseline) {
+                    Text(content.appName.uppercased())
+                        .font(.system(size: 11 * scale, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                        .kerning(0.4)
                         .lineLimit(1)
-                    if !content.title.isEmpty {
-                        Text(content.title)
-                            .font(.system(size: 14 * scale, weight: .semibold))
-                            .foregroundStyle(.white)
-                            .lineLimit(1)
-                    }
-                    if !content.body.isEmpty {
-                        Text(content.body)
-                            .font(.system(size: 13 * scale))
-                            .foregroundStyle(.white.opacity(0.65))
-                            .lineLimit(2)
-                            .fixedSize(horizontal: false, vertical: true)
+                    Spacer()
+                    Text("now")
+                        .font(.system(size: 11 * scale))
+                        .foregroundStyle(.tertiary)
+                }
+                if !content.title.isEmpty {
+                    Text(content.title)
+                        .font(.system(size: 13 * scale, weight: .semibold))
+                        .foregroundStyle(.primary)
+                        .lineLimit(1)
+                }
+                if !content.body.isEmpty {
+                    Text(content.body)
+                        .font(.system(size: 13 * scale))
+                        .foregroundStyle(.primary)
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+        .padding(EdgeInsets(top: 4 * scale, leading: 8 * scale,
+                            bottom: 4 * scale, trailing: 8 * scale))
+        .frame(maxWidth: .infinity)
+        .overlay(
+            RoundedRectangle(cornerRadius: 14 * scale, style: .continuous)
+                .strokeBorder(Color.white.opacity(0.08), lineWidth: 0.5)
+        )
+        .overlay(alignment: .topTrailing) {
+            if isHovered {
+                Button(action: onDismiss) {
+                    ZStack {
+                        Circle()
+                            .fill(Color.white.opacity(0.15))
+                            .frame(width: 20 * scale, height: 20 * scale)
+                        Image(systemName: "xmark")
+                            .font(.system(size: 9 * scale, weight: .bold))
+                            .foregroundStyle(.white.opacity(0.7))
                     }
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
+                .buttonStyle(.plain)
+                .padding(8 * scale)
+                .transition(.opacity.combined(with: .scale(scale: 0.8)))
             }
-            .padding(.horizontal, 8 * CGFloat(scale))
-            .padding(.vertical, 6 * CGFloat(scale))
-            .frame(maxWidth: .infinity)
-            .contentShape(Rectangle())
-            .onTapGesture { onOpen() }
-
-            Button { onDismiss() } label: {
-                Image(systemName: "xmark")
-                    .font(.system(size: 7, weight: .bold))
-                    .foregroundStyle(.white.opacity(0.7))
-                    .frame(width: 16, height: 16)
-                    .background(.white.opacity(0.15), in: Circle())
-            }
-            .buttonStyle(.plain)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .padding(5)
-            .opacity(isHovering ? 1 : 0)
-            .animation(.easeInOut(duration: 0.12), value: isHovering)
-
-            Button { onOpen() } label: {
-                Text("Show")
-                    .font(.system(size: max(9, 10 * scale), weight: .semibold))
-                    .foregroundStyle(.black.opacity(0.8))
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 4)
-                    .background(.white.opacity(0.85), in: RoundedRectangle(cornerRadius: 6))
-            }
-            .buttonStyle(.plain)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
-            .padding(8)
-            .opacity(isHovering ? 1 : 0)
-            .animation(.easeInOut(duration: 0.12), value: isHovering)
         }
-        .frame(maxWidth: .infinity)
-        .onHover { isHovering = $0 }
+        .contentShape(Rectangle())
+        .onTapGesture { onOpen() }
+        .onHover { hovering in
+            withAnimation(.easeInOut(duration: 0.15)) { isHovered = hovering }
+        }
+        .opacity(viewOpacity)
+        .scaleEffect(viewScale)
+        .offset(y: slideOffset)
+        .onAppear { setupAnimations() }
+    }
+
+    private func setupAnimations() {
+        // Prepare initial state
+        switch animation {
+        case .slide:
+            slideOffset = -130
+            controller.slideOutClosure = {
+                withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) { slideOffset = -130 }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.38) { [weak controller] in controller?.dismissCompletion?() }
+            }
+            withAnimation(.spring(response: 0.45, dampingFraction: 0.78)) { slideOffset = 0 }
+
+        case .bounce:
+            slideOffset = -130
+            controller.slideOutClosure = {
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.9)) { slideOffset = -130 }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.32) { [weak controller] in controller?.dismissCompletion?() }
+            }
+            withAnimation(.spring(response: 0.38, dampingFraction: 0.42)) { slideOffset = 0 }
+
+        case .fade:
+            slideOffset = 0
+            viewOpacity = 0
+            controller.slideOutClosure = {
+                withAnimation(.easeIn(duration: 0.22)) { viewOpacity = 0 }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.24) { [weak controller] in controller?.dismissCompletion?() }
+            }
+            withAnimation(.easeOut(duration: 0.3)) { viewOpacity = 1 }
+
+        case .scale:
+            slideOffset = 0
+            viewOpacity = 0
+            viewScale = 0.72
+            controller.slideOutClosure = {
+                withAnimation(.spring(response: 0.28, dampingFraction: 0.9)) { viewScale = 0.72; viewOpacity = 0 }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.30) { [weak controller] in controller?.dismissCompletion?() }
+            }
+            withAnimation(.spring(response: 0.38, dampingFraction: 0.68)) { viewScale = 1; viewOpacity = 1 }
+        }
+    }
+
+    @ViewBuilder
+    private var iconView: some View {
+        Group {
+            if let icon = content.appIcon {
+                Image(nsImage: icon)
+                    .resizable()
+                    .interpolation(.high)
+                    .antialiased(true)
+            } else {
+                ZStack {
+                    Color.white.opacity(0.12)
+                    Image(systemName: "bell.fill")
+                        .foregroundStyle(.white.opacity(0.7))
+                        .font(.system(size: 17 * scale, weight: .medium))
+                }
+            }
+        }
+        .frame(width: 36 * scale, height: 36 * scale)
+        .clipShape(RoundedRectangle(cornerRadius: 8 * scale, style: .continuous))
     }
 }
 
@@ -98,6 +176,7 @@ final class CustomBannerManager {
 
     private struct Entry {
         let panel: NSPanel
+        let controller: BannerAnimationController
         var dismissTimer: DispatchSourceTimer?
     }
 
@@ -110,68 +189,68 @@ final class CustomBannerManager {
         scale: Double,
         backgroundColor: Color,
         autoDismissSeconds: Double,
+        animation: BannerAnimation = .slide,
         onOpen: @escaping () -> Void,
         key: CFHashCode
     ) {
         dismiss(key: key)
 
-        let dismissHandler: () -> Void = { [weak self] in self?.dismiss(key: key) }
-        let openAndDismiss: () -> Void = { [weak self] in onOpen(); self?.dismiss(key: key) }
+        let controller = BannerAnimationController()
+        let onDismissAction: () -> Void = { [weak self] in self?.dismiss(key: key) }
+        let onOpenAction:   () -> Void = { [weak self] in onOpen(); self?.dismiss(key: key) }
 
-        let displayScale = scale * 0.8
-        let bannerWidth = width - 12
+        let s = CGFloat(scale)
+        let bannerHeight: CGFloat = 62 * s
+        let radius: CGFloat = 14 * s
+        let frame  = Self.axRect(axOrigin: axTopLeft, size: CGSize(width: width, height: bannerHeight))
+        let bounds = CGRect(origin: .zero, size: frame.size)
 
-        // Fixed height — content never changes shape so no measurement needed
-        let height = (56 * displayScale).rounded()
-        let frame = Self.axRect(axOrigin: axTopLeft, size: CGSize(width: bannerWidth, height: height))
-        let radius = max(14.0, 20.0 * displayScale)
-
-        // NSVisualEffectView owns the background — dark frosted glass guaranteed
-        let blurView = NSVisualEffectView(frame: CGRect(origin: .zero, size: frame.size))
+        let blurView = NSVisualEffectView(frame: bounds)
         blurView.material = .hudWindow
         blurView.blendingMode = .behindWindow
         blurView.state = .active
         blurView.appearance = NSAppearance(named: .darkAqua)
         blurView.wantsLayer = true
-        blurView.layer?.cornerRadius = radius
-        blurView.layer?.masksToBounds = true
+        let maskLayer = CAShapeLayer()
+        maskLayer.path = CGPath(roundedRect: bounds, cornerWidth: radius, cornerHeight: radius, transform: nil)
+        blurView.layer?.mask = maskLayer
         blurView.autoresizingMask = [.width, .height]
 
-        // Optional colour tint layer between blur and content
+        let darkener = NSView(frame: bounds)
+        darkener.wantsLayer = true
+        darkener.layer?.backgroundColor = NSColor(white: 0, alpha: 0.28).cgColor
+        darkener.autoresizingMask = [.width, .height]
+        blurView.addSubview(darkener)
+
         if backgroundColor != .clear {
-            let tintView = NSView(frame: blurView.bounds)
-            tintView.wantsLayer = true
-            tintView.layer?.backgroundColor = NSColor(backgroundColor).withAlphaComponent(0.45).cgColor
-            tintView.autoresizingMask = [.width, .height]
-            blurView.addSubview(tintView)
+            let tint = NSView(frame: bounds)
+            tint.wantsLayer = true
+            tint.layer?.backgroundColor = NSColor(backgroundColor).withAlphaComponent(0.45).cgColor
+            tint.autoresizingMask = [.width, .height]
+            blurView.addSubview(tint)
         }
 
-        // Border overlay
-        let borderView = NSView(frame: blurView.bounds)
-        borderView.wantsLayer = true
-        borderView.layer?.borderColor = NSColor.white.withAlphaComponent(0.1).cgColor
-        borderView.layer?.borderWidth = 0.5
-        borderView.layer?.cornerRadius = radius
-        borderView.autoresizingMask = [.width, .height]
-        blurView.addSubview(borderView)
-
-        // SwiftUI content — no background, purely text/icons on top of the blur
-        let hostingView = NSHostingView(rootView: CustomBannerView(
-            content: content,
-            scale: displayScale,
-            onDismiss: dismissHandler,
-            onOpen: openAndDismiss
-        ))
-        hostingView.frame = blurView.bounds
-        hostingView.autoresizingMask = [.width, .height]
-        hostingView.wantsLayer = true
-        hostingView.layer?.backgroundColor = .clear
-        blurView.addSubview(hostingView)
+        let bannerView = CustomBannerView(
+            content: content, scale: s, animation: animation, controller: controller,
+            onDismiss: onDismissAction, onOpen: onOpenAction)
+        let hosting = NSHostingView(rootView: bannerView)
+        hosting.frame = bounds
+        hosting.autoresizingMask = [.width, .height]
+        hosting.wantsLayer = true
+        hosting.layer?.isOpaque = false
+        hosting.layer?.backgroundColor = nil
+        blurView.addSubview(hosting)
 
         let panel = makePanel(frame: frame, contentView: blurView)
+        panel.alphaValue = 0
         panel.orderFront(nil)
+        NSAnimationContext.runAnimationGroup { ctx in
+            ctx.duration = 0.25
+            ctx.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            panel.animator().alphaValue = 1
+        }
 
-        var entry = Entry(panel: panel)
+        var entry = Entry(panel: panel, controller: controller)
         let timeout = autoDismissSeconds > 0 ? autoDismissSeconds : 8
         let timer = DispatchSource.makeTimerSource(queue: .main)
         timer.schedule(deadline: .now() + timeout)
@@ -184,7 +263,18 @@ final class CustomBannerManager {
     func dismiss(key: CFHashCode) {
         guard let entry = active.removeValue(forKey: key) else { return }
         entry.dismissTimer?.cancel()
-        entry.panel.orderOut(nil)
+        let panel      = entry.panel
+        let controller = entry.controller
+        controller.dismissCompletion = {
+            NSAnimationContext.runAnimationGroup { ctx in
+                ctx.duration = 0.2
+                ctx.timingFunction = CAMediaTimingFunction(name: .easeIn)
+                panel.animator().alphaValue = 0
+            } completionHandler: {
+                panel.orderOut(nil)
+            }
+        }
+        if let slideOut = controller.slideOutClosure { slideOut() } else { panel.orderOut(nil) }
     }
 
     func dismissAll() {
@@ -207,18 +297,15 @@ final class CustomBannerManager {
 
     func move(key: CFHashCode, axTopLeft: CGPoint, width: CGFloat) {
         guard let entry = active[key] else { return }
-        let currentSize = entry.panel.frame.size
-        let newFrame = Self.axRect(axOrigin: axTopLeft, size: CGSize(width: width, height: currentSize.height))
-        entry.panel.setFrame(newFrame, display: true, animate: false)
+        let h = entry.panel.frame.size.height
+        entry.panel.setFrame(Self.axRect(axOrigin: axTopLeft, size: CGSize(width: width, height: h)),
+                             display: true, animate: false)
     }
 
     private func makePanel(frame: NSRect, contentView: NSView) -> NSPanel {
-        let panel = NSPanel(
-            contentRect: frame,
-            styleMask: [.borderless, .nonactivatingPanel],
-            backing: .buffered,
-            defer: false
-        )
+        let panel = NSPanel(contentRect: frame,
+                            styleMask: [.borderless, .nonactivatingPanel],
+                            backing: .buffered, defer: false)
         panel.level = .statusBar
         panel.isOpaque = false
         panel.backgroundColor = .clear
