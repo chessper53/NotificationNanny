@@ -148,6 +148,7 @@ package final class NotificationRepositioner: ObservableObject {
         }
         observer = nil; ncApp = nil; ncPid = 0
         isObserving = false; detectedBannerInfo = nil
+        lastSelfSetPositions.removeAll()
         resolver.invalidateAll()
         customBannerManager.dismissAll()
         logger.log("Observer torn down")
@@ -172,6 +173,7 @@ package final class NotificationRepositioner: ObservableObject {
             axLog.debug("handleAXEvent: element destroyed → invalidate cache + stop scale hammer + dismiss custom banner")
             let key = CFHash(element)
             resolver.invalidate(key: key)
+            lastSelfSetPositions.removeValue(forKey: key)
             stopScaleHammer()
             customBannerManager.dismiss(key: key)
             repositionVisibleWindows()
@@ -189,8 +191,9 @@ package final class NotificationRepositioner: ObservableObject {
                let v = ref, CFGetTypeID(v) == AXValueGetTypeID() {
                 AXValueGetValue(v as! AXValue, .cgPoint, &cur)
             }
-            let drift = hypot(cur.x - lastSelfSetPosition.x, cur.y - lastSelfSetPosition.y)
-            axLog.debug("handleAXEvent: windowMoved — cur=(\(cur.x, format: .fixed(precision: 1)),\(cur.y, format: .fixed(precision: 1))) lastSelf=(\(self.lastSelfSetPosition.x, format: .fixed(precision: 1)),\(self.lastSelfSetPosition.y, format: .fixed(precision: 1))) drift=\(drift, format: .fixed(precision: 1))")
+            let lastPos = lastSelfSetPositions[CFHash(element)] ?? .zero
+            let drift = hypot(cur.x - lastPos.x, cur.y - lastPos.y)
+            axLog.debug("handleAXEvent: windowMoved — cur=(\(cur.x, format: .fixed(precision: 1)),\(cur.y, format: .fixed(precision: 1))) lastSelf=(\(lastPos.x, format: .fixed(precision: 1)),\(lastPos.y, format: .fixed(precision: 1))) drift=\(drift, format: .fixed(precision: 1))")
             guard drift > 4 else {
                 axLog.debug("handleAXEvent: drift ≤4, ignoring (self-induced move)")
                 return
@@ -286,7 +289,7 @@ package final class NotificationRepositioner: ObservableObject {
     private static let bannerInsetFromTopRight = CGPoint(x: 14, y: 14)
     private static let stackGap: CGFloat = 8
     private var animationGeneration = 0
-    private var lastSelfSetPosition: CGPoint = .zero
+    private var lastSelfSetPositions: [CFHashCode: CGPoint] = [:]
     // nil = not in test mode; .some(nil) = test active, screen default; .some(.some(id)) = test active, group
     private var testGroupID: UUID?? = nil
     private var testBannerWindow: AXUIElement? = nil
@@ -643,10 +646,19 @@ package final class NotificationRepositioner: ObservableObject {
         logger.log("Repositioning \(resolvedName) → \(modeLabel) scale=\(String(format: "%.2fx", scale)) pos=(\(Int(info.windowOrigin.x)),\(Int(info.windowOrigin.y)))")
 
         if useCustomBanner {
-            // If an overlay is already live for this window, just reposition it — don't recreate.
-            // repositionWindow is called for multiple AX events on the same window; recreating each
-            // time stacks up dismissed-but-still-animating panels.
             let key = CFHash(window)
+            logger.log("customBanner path: key=\(key) isActive=\(customBannerManager.isActive(key: key)) hasActive=\(customBannerManager.hasActive) testMode=\(testGroupID != nil) attempt=\(attempt)")
+
+            // In test mode, only allow one overlay at a time. Accumulated old NC windows
+            // (from previous test clicks that NC never dismissed) get parked off-screen.
+            if testGroupID != nil && !customBannerManager.isActive(key: key) && customBannerManager.hasActive {
+                logger.log("Test mode: parking extra NC window off-screen (key=\(key))")
+                setWindowPosition(window, to: CGPoint(x: info.windowOrigin.x, y: -9999))
+                scheduleHolds(window: window, stackIndex: stackIndex, generation: gen)
+                return
+            }
+
+            // If an overlay is already live for this window, just reposition it — don't recreate.
             if customBannerManager.isActive(key: key) {
                 setWindowPosition(window, to: CGPoint(x: info.windowOrigin.x, y: -9999))
                 let scaledWidth = info.bannerSize.width * scale
@@ -865,7 +877,7 @@ package final class NotificationRepositioner: ObservableObject {
            let v = ref, CFGetTypeID(v) == AXValueGetTypeID() {
             AXValueGetValue(v as! AXValue, .cgPoint, &actual)
         }
-        lastSelfSetPosition = actual
+        lastSelfSetPositions[CFHash(window)] = actual
         return actual
     }
 
