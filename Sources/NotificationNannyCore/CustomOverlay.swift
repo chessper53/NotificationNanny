@@ -4,11 +4,11 @@ import SwiftUI
 // MARK: - Animation
 
 package enum BannerAnimation: String, Codable, CaseIterable {
-    case `default` = "Default"  // native macOS slide-in from the right — no custom renderer
-    case slide  = "Slide"
-    case bounce = "Bounce"
-    case fade   = "Fade"
-    case scale  = "Scale"
+    case `default` = "Default"
+    // case slide  = "Slide"
+    // case bounce = "Bounce"
+    // case fade   = "Fade"
+    // case scale  = "Scale"
 }
 
 // MARK: - Data
@@ -38,7 +38,7 @@ struct CustomBannerView: View {
     let onDismiss: () -> Void
     let onOpen: () -> Void
 
-    @State private var slideOffset: CGFloat = -130
+    @State private var slideOffset: CGFloat = 150
     @State private var viewOpacity: Double = 1
     @State private var viewScale: CGFloat = 1
     @State private var isHovered = false
@@ -104,46 +104,21 @@ struct CustomBannerView: View {
         }
         .opacity(viewOpacity)
         .scaleEffect(viewScale)
-        .offset(y: slideOffset)
+        .offset(x: slideOffset)
         .onAppear { setupAnimations() }
     }
 
     private func setupAnimations() {
         switch animation {
-        case .default, .slide:
-            slideOffset = -130
+        case .default:
+            slideOffset = 150
             controller.slideOutClosure = {
-                withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) { slideOffset = -130 }
+                withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) { slideOffset = 150 }
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.38) { [weak controller] in controller?.dismissCompletion?() }
             }
             withAnimation(.spring(response: 0.45, dampingFraction: 0.78)) { slideOffset = 0 }
 
-        case .bounce:
-            slideOffset = -130
-            controller.slideOutClosure = {
-                withAnimation(.spring(response: 0.3, dampingFraction: 0.9)) { slideOffset = -130 }
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.32) { [weak controller] in controller?.dismissCompletion?() }
-            }
-            withAnimation(.spring(response: 0.38, dampingFraction: 0.42)) { slideOffset = 0 }
-
-        case .fade:
-            slideOffset = 0
-            viewOpacity = 0
-            controller.slideOutClosure = {
-                withAnimation(.easeIn(duration: 0.22)) { viewOpacity = 0 }
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.24) { [weak controller] in controller?.dismissCompletion?() }
-            }
-            withAnimation(.easeOut(duration: 0.3)) { viewOpacity = 1 }
-
-        case .scale:
-            slideOffset = 0
-            viewOpacity = 0
-            viewScale = 0.72
-            controller.slideOutClosure = {
-                withAnimation(.spring(response: 0.28, dampingFraction: 0.9)) { viewScale = 0.72; viewOpacity = 0 }
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.30) { [weak controller] in controller?.dismissCompletion?() }
-            }
-            withAnimation(.spring(response: 0.38, dampingFraction: 0.68)) { viewScale = 1; viewOpacity = 1 }
+        // case .bounce, .fade, .scale: commented out — not active
         }
     }
 
@@ -189,7 +164,7 @@ final class CustomBannerManager {
         scale: Double,
         backgroundColor: Color,
         autoDismissSeconds: Double,
-        animation: BannerAnimation = .slide,
+        animation: BannerAnimation = .default,
         onOpen: @escaping () -> Void,
         key: CFHashCode
     ) {
@@ -205,16 +180,25 @@ final class CustomBannerManager {
         let frame  = Self.axRect(axOrigin: axTopLeft, size: CGSize(width: width, height: bannerHeight))
         let bounds = CGRect(origin: .zero, size: frame.size)
 
+        // Clip container — holds everything and applies the rounded mask.
+        // Keeping the mask on a plain NSView (not NSVisualEffectView) avoids the
+        // 1px fringe that appears when masksToBounds is set on a blur view directly.
+        let clipView = NSView(frame: bounds)
+        clipView.wantsLayer = true
+        clipView.layer?.backgroundColor = NSColor.clear.cgColor
+        clipView.autoresizingMask = [.width, .height]
+        let maskLayer = CAShapeLayer()
+        maskLayer.path = CGPath(roundedRect: bounds, cornerWidth: radius, cornerHeight: radius, transform: nil)
+        clipView.layer?.mask = maskLayer
+
+        // Blur view fills the clip container — no rounding needed here.
         let blurView = NSVisualEffectView(frame: bounds)
         blurView.material = .hudWindow
         blurView.blendingMode = .behindWindow
         blurView.state = .active
         blurView.appearance = NSAppearance(named: .darkAqua)
-        blurView.wantsLayer = true
-        let maskLayer = CAShapeLayer()
-        maskLayer.path = CGPath(roundedRect: bounds, cornerWidth: radius, cornerHeight: radius, transform: nil)
-        blurView.layer?.mask = maskLayer
         blurView.autoresizingMask = [.width, .height]
+        clipView.addSubview(blurView)
 
         let darkener = NSView(frame: bounds)
         darkener.wantsLayer = true
@@ -238,10 +222,10 @@ final class CustomBannerManager {
         hosting.autoresizingMask = [.width, .height]
         hosting.wantsLayer = true
         hosting.layer?.isOpaque = false
-        hosting.layer?.backgroundColor = nil
+        hosting.layer?.backgroundColor = NSColor.clear.cgColor
         blurView.addSubview(hosting)
 
-        let panel = makePanel(frame: frame, contentView: blurView)
+        let panel = makePanel(frame: frame, contentView: clipView)
         panel.alphaValue = 0
         panel.orderFront(nil)
         NSAnimationContext.runAnimationGroup { ctx in
