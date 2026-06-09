@@ -1,0 +1,52 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "Run NotificationNanny",
+            "type": "shell",
+            "command": "./dev.sh",
+            "group": { "kind": "build", "isDefault": true },
+            "presentation": {
+                "reveal": "always",
+                "panel": "shared",
+                "close": true
+            }
+        },
+        {
+            "label": "kill-notificationnanny",
+            "type": "shell",
+            "command": "pkill -x NotificationNanny 2>/dev/null || true; sleep 0.3",
+            "presentation": {
+                "reveal": "silent",
+                "panel": "shared",
+                "close": true
+            }
+        },
+        {
+            "label": "pre-launch: debug",
+            "dependsOrder": "sequence",
+            "dependsOn": [
+                "kill-notificationnanny",
+                "swift: Build Debug NotificationNanny"
+            ],
+            "presentation": {
+                "reveal": "silent",
+                "panel": "shared",
+                "close": true
+            }
+        },
+        {
+            "label": "pre-launch: release",
+            "dependsOrder": "sequence",
+            "dependsOn": [
+                "kill-notificationnanny",
+                "swift: Build Release NotificationNanny"
+            ],
+            "presentation": {
+                "reveal": "silent",
+                "panel": "shared",
+                "close": true
+            }
+        }
+    ]
+}

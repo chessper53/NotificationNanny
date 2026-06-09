@@ -28,11 +28,17 @@ final class AppCoordinator: NSObject, ObservableObject {
     override init() {
         settings = AppSettings()
         launchAtLogin = LaunchAtLogin()
+        #if !DEBUG
         AppCoordinator.resetTCCIfBinaryChanged()
+        #endif
         repositioner = NotificationRepositioner()
         super.init()
         repositioner.bind(to: settings)
-        UNUserNotificationCenter.current().delegate = NotificationDisplayDelegate.shared
+        // UNUserNotificationCenter.current() aborts if the process has no bundle ID
+        // (e.g. raw binary run by the debugger outside a .app wrapper).
+        if Bundle.main.bundleIdentifier != nil {
+            UNUserNotificationCenter.current().delegate = NotificationDisplayDelegate.shared
+        }
         Task { @MainActor [weak self] in self?.autoEnableLoginItemIfNeeded() }
         setupStatusItem()
         observePermission()
@@ -76,7 +82,7 @@ final class AppCoordinator: NSObject, ObservableObject {
     func openSettings() {
         if let win = settingsWindow {
             win.makeKeyAndOrderFront(nil)
-            NSApp.activate(ignoringOtherApps: true)
+            if #available(macOS 14.0, *) { NSApp.activate() } else { NSApp.activate(ignoringOtherApps: true) }
             return
         }
         let rootView = SettingsView()
@@ -87,14 +93,14 @@ final class AppCoordinator: NSObject, ObservableObject {
         let window = NSWindow(contentViewController: hosting)
         window.title = "NotificationNanny Settings"
         window.styleMask = [.titled, .closable, .miniaturizable]
-        window.setContentSize(NSSize(width: 570, height: 560))
-        window.minSize = NSSize(width: 570, height: 560)
-        window.maxSize = NSSize(width: 570, height: 560)
+        window.setContentSize(NSSize(width: 660, height: 640))
+        window.minSize = NSSize(width: 660, height: 640)
+        window.maxSize = NSSize(width: 660, height: 640)
         window.isReleasedWhenClosed = false
         window.center()
         settingsWindow = window
         window.makeKeyAndOrderFront(nil)
-        NSApp.activate(ignoringOtherApps: true)
+        if #available(macOS 14.0, *) { NSApp.activate() } else { NSApp.activate(ignoringOtherApps: true) }
     }
 
     // MARK: - TCC reset on binary change

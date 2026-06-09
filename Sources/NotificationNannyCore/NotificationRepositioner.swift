@@ -95,7 +95,10 @@ package final class NotificationRepositioner: ObservableObject {
         teardownObserver()
 
         let pid = findNotificationProcessPid()
-        guard pid > 0 else { return }
+        guard pid > 0 else {
+            logger.log("NC process not found — will retry when it launches", level: .warn, tag: "AX")
+            return
+        }
         let app = AXUIElementCreateApplication(pid)
 
         var newObserver: AXObserver?
@@ -114,7 +117,7 @@ package final class NotificationRepositioner: ObservableObject {
         self.ncApp = app
         self.ncPid = pid
         self.isObserving = true
-        logger.log("Observer started (PID: \(pid))")
+        logger.log("Observer started — NC PID \(pid)", tag: "AX")
         repositionVisibleWindows()
     }
 
@@ -151,7 +154,7 @@ package final class NotificationRepositioner: ObservableObject {
         lastSelfSetPositions.removeAll()
         resolver.invalidateAll()
         customBannerManager.dismissAll()
-        logger.log("Observer torn down")
+        logger.log("Observer stopped", tag: "AX")
     }
 
     // MARK: - App name extraction (delegated to AppNameResolver)
@@ -170,8 +173,9 @@ package final class NotificationRepositioner: ObservableObject {
         axLog.debug("── AX event: \(notification, privacy: .public)")
 
         if notification == kAXUIElementDestroyedNotification as String {
-            axLog.debug("handleAXEvent: element destroyed → invalidate cache + stop scale hammer + dismiss custom banner")
             let key = CFHash(element)
+            let hadOverlay = customBannerManager.isActive(key: key)
+            logger.log("Window destroyed\(hadOverlay ? " — overlay dismissed" : "")", tag: "AX")
             resolver.invalidate(key: key)
             lastSelfSetPositions.removeValue(forKey: key)
             stopScaleHammer()
@@ -181,8 +185,8 @@ package final class NotificationRepositioner: ObservableObject {
         }
 
         if notification == kAXWindowCreatedNotification as String {
-            let name = appName(for: element) ?? "unknown app"
-            logger.log("Banner appeared: \(name)")
+            let name = appName(for: element) ?? "unknown"
+            logger.log("Window created — \(name)", tag: "AX")
         }
 
         if notification == kAXWindowMovedNotification as String {
@@ -316,7 +320,7 @@ package final class NotificationRepositioner: ObservableObject {
     private func handleDisplaySleep() {
         guard settings?.holdWhileAsleep == true else { return }
         isDisplaySleeping = true
-        logger.log("Display sleeping — holding banners")
+        logger.log("Display sleeping — holding banners", tag: "System")
         // Move all currently-visible NC banners offscreen so they don't flicker
         // to wrong positions briefly when the display wakes.
         guard let ncApp else { return }
@@ -336,7 +340,7 @@ package final class NotificationRepositioner: ObservableObject {
         guard !pendingWakeWindows.isEmpty else { return }
         let queued = pendingWakeWindows
         pendingWakeWindows = []
-        logger.log("Display woke — repositioning \(queued.count) queued banner(s)")
+        logger.log("Display woke — repositioning \(queued.count) held banner(s)", tag: "System")
         // Brief delay to let the display fully initialise before repositioning.
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in
             guard let self else { return }
@@ -358,7 +362,8 @@ package final class NotificationRepositioner: ObservableObject {
         guard testGroupID == nil else { return }  // one test in flight at a time
         testGroupID = .some(groupID)
         testBannerWindow = nil
-        logger.log("sendTestNotification: firing (groupID=\(groupID?.uuidString ?? "nil"), observing=\(isObserving))")
+        let groupLabel = groupID.map { "group \($0.uuidString.prefix(8))" } ?? "default"
+        logger.log("Test notification sent — \(groupLabel), observing=\(isObserving)", tag: "Test")
         TestNotification.send()
         DispatchQueue.main.asyncAfter(deadline: .now() + 5) { [weak self] in
             self?.testGroupID = nil
@@ -642,17 +647,19 @@ package final class NotificationRepositioner: ObservableObject {
         }
         let resolvedName: String
         if testGroupID != nil { resolvedName = "Test" } else { resolvedName = appName(for: window) ?? "unknown" }
-        let modeLabel = useCustomBanner ? "custom overlay" : "native"
-        logger.log("Repositioning \(resolvedName) → \(modeLabel) scale=\(String(format: "%.2fx", scale)) pos=(\(Int(info.windowOrigin.x)),\(Int(info.windowOrigin.y)))")
+        let modeLabel = useCustomBanner ? "custom" : "native"
+        let scaleLabel = scale != 1.0 ? " \(String(format: "%.0f%%", scale * 100))" : ""
+        logger.log("\(resolvedName) → \(info.placement.position.rawValue), \(modeLabel)\(scaleLabel), pos (\(Int(info.windowOrigin.x)), \(Int(info.windowOrigin.y)))", tag: "Banner")
 
         if useCustomBanner {
             let key = CFHash(window)
-            logger.log("customBanner path: key=\(key) isActive=\(customBannerManager.isActive(key: key)) hasActive=\(customBannerManager.hasActive) testMode=\(testGroupID != nil) attempt=\(attempt)")
+            let activeState = customBannerManager.isActive(key: key) ? "already active" : "new"
+            logger.log("Custom [\(resolvedName)] \(activeState), hasOtherActive=\(customBannerManager.hasActive), attempt=\(attempt)", tag: "Custom")
 
             // In test mode, only allow one overlay at a time. Accumulated old NC windows
             // (from previous test clicks that NC never dismissed) get parked off-screen.
             if testGroupID != nil && !customBannerManager.isActive(key: key) && customBannerManager.hasActive {
-                logger.log("Test mode: parking extra NC window off-screen (key=\(key))")
+                logger.log("Test mode: extra NC window parked off-screen", tag: "Custom")
                 setWindowPosition(window, to: CGPoint(x: info.windowOrigin.x, y: -9999))
                 scheduleHolds(window: window, stackIndex: stackIndex, generation: gen)
                 return
@@ -693,7 +700,8 @@ package final class NotificationRepositioner: ObservableObject {
                 content = extractBannerContent(from: bannerEl, knownAppName: appName(for: window))
             }
             if let content {
-                logger.log("Custom overlay: \(content.appName) — \(content.title.prefix(60))")
+                let preview = content.title.isEmpty ? content.body.prefix(50) : content.title.prefix(50)
+                logger.log("Overlay: \(content.appName) — \"\(preview)\"", tag: "Custom")
                 setWindowPosition(window, to: CGPoint(x: info.windowOrigin.x, y: -9999))
 
                 // Width grows modestly with scale so text has room; height is content-driven.
@@ -742,14 +750,14 @@ package final class NotificationRepositioner: ObservableObject {
             // Retry a few times before giving up and falling back to the native banner.
             if attempt < 3 {
                 let delay: Double = [0.05, 0.15, 0.35][attempt]
+                logger.log("Content extraction retry \(attempt + 1)/3 in \(Int(delay * 1000))ms", tag: "Custom")
                 DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
                     guard let self, self.animationGeneration == gen else { return }
                     self.repositionWindow(window, attempt: attempt + 1)
                 }
                 return
             }
-            log.info("repositionWindow: content extraction failed after \(attempt) retries — falling back to real banner")
-            logger.log("Content extraction failed — falling back to native banner", level: .warn)
+            logger.log("Content extraction failed after 3 retries — falling back to native banner", level: .warn, tag: "Custom")
         }
 
         setWindowPosition(window, to: info.windowOrigin)

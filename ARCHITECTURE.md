@@ -14,6 +14,7 @@
 | ------- | ---------- | -------- | ----------------------------------------------------------------------- |
 | 1.0     | 2026-06-05 | Claude   | Initial architecture documentation                                      |
 | 1.1     | 2026-06-05 | Claude   | Post-refactor update: BannerTint, AppNameResolver, SettingsView split, PrivateWindowAPI, animation auto-activation |
+| 1.2     | 2026-06-09 | Claude   | Added InstallSource, HomebrewUpdater; in-app Homebrew auto-updater with live output streaming |
 
 **Status:** CURRENT
 
@@ -67,6 +68,8 @@ NotificationNanny (v6.4.0)
 - `CustomBannerView` — SwiftUI view rendered inside the custom overlay panel
 - `NannyLogger` — In-memory ring buffer (500 entries) observable by the UI; injectable into `NotificationRepositioner`
 - `PrivateWindowAPI` — Clean Swift interface over `CGSSetWindowTransform`, `CGSSetWindowAlpha`, SkyLight SPI
+- `InstallSource` — Detects Homebrew-cask vs direct install by checking for the Caskroom directory
+- `HomebrewUpdater` — `@MainActor ObservableObject` that shells out to `brew upgrade --cask` and streams output to the UI
 
 ---
 
@@ -196,6 +199,8 @@ NotificationNanny (SPM Package)
 │   ├── AccessibilityPermissionMonitor.swift TCC polling
 │   ├── LaunchAtLogin.swift        SMAppService wrapper
 │   ├── UpdateChecker.swift        GitHub Releases version check
+│   ├── InstallSource.swift        Homebrew-vs-direct install detection
+│   ├── HomebrewUpdater.swift      In-app `brew upgrade --cask` runner
 │   ├── NannyLogger.swift          In-memory log ring buffer
 │   ├── NotificationProbe.swift    Diagnostic window enumeration
 │   ├── MenuBarContent.swift       (menu bar population, if present)
@@ -706,6 +711,8 @@ sequenceDiagram
 | Preset | A named snapshot of the full settings state (position, scale, groups, behaviour toggles) that can be recalled in one tap. |
 | ScreenPlacement | The combination of a 9-anchor `NotificationPosition` and pixel offsets (`xOffset`, `yOffset`), stored per physical display. |
 | LSUIElement | `Info.plist` key that hides the app from the Dock and the App Switcher, making it a pure menu-bar app. |
+| InstallSource | `enum` with `.homebrew` and `.direct` cases. Detected at runtime by checking whether the Homebrew Caskroom directory for the cask (`/opt/homebrew/Caskroom/notificationnanny` or `/usr/local/Caskroom/notificationnanny`) exists — more reliable than inspecting `Bundle.main.bundlePath`, which is `/Applications/...` for both install methods. |
+| HomebrewUpdater | `@MainActor ObservableObject` that runs `brew upgrade --cask notificationnanny` as a subprocess, streams stdout/stderr into `outputLines`, and transitions through `idle → running → succeeded / failed`. Drives the "Update Now" / "Relaunch" flow in `SettingsView`'s update banner. |
 
 ---
 
