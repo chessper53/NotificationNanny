@@ -4,6 +4,7 @@ package struct LogEntry: Identifiable, Sendable {
     package let id = UUID()
     package let timestamp: Date
     package let level: Level
+    package let tag: String
     package let message: String
 
     package enum Level: String, Sendable {
@@ -19,11 +20,11 @@ package final class NannyLogger: ObservableObject {
 
     @Published package private(set) var entries: [LogEntry] = []
 
-    private let cap = 500
+    private let cap = 1000
     private init() {}
 
-    package func log(_ message: String, level: LogEntry.Level = .info) {
-        entries.append(LogEntry(timestamp: Date(), level: level, message: message))
+    package func log(_ message: String, level: LogEntry.Level = .info, tag: String = "") {
+        entries.append(LogEntry(timestamp: Date(), level: level, tag: tag, message: message))
         if entries.count > cap { entries.removeFirst(entries.count - cap) }
     }
 
@@ -33,7 +34,8 @@ package final class NannyLogger: ObservableObject {
         let fmt = DateFormatter()
         fmt.dateFormat = "yyyy-MM-dd HH:mm:ss.SSS"
         return entries.map { e in
-            "\(fmt.string(from: e.timestamp)) [\(e.level.rawValue)] \(e.message)"
+            let tagPart = e.tag.isEmpty ? "" : "[\(e.tag)] "
+            return "\(fmt.string(from: e.timestamp)) [\(e.level.rawValue)] \(tagPart)\(e.message)"
         }.joined(separator: "\n")
     }
 }

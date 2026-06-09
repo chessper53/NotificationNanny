@@ -2,11 +2,18 @@ import SwiftUI
 import AppKit
 
 struct HelpTabView: View {
+    @EnvironmentObject var settings: AppSettings
     @EnvironmentObject var repositioner: NotificationRepositioner
     @EnvironmentObject var launchAtLogin: LaunchAtLogin
+    @ObservedObject private var logger = NannyLogger.shared
 
     @State private var diagResults: [DiagResult]? = nil
     @State private var diagCopied = false
+    @State private var logsExpanded = false
+
+    private static let timeFormatter: DateFormatter = {
+        let f = DateFormatter(); f.dateFormat = "HH:mm:ss.SSS"; return f
+    }()
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -45,7 +52,7 @@ struct HelpTabView: View {
             }
             .foregroundStyle(.tertiary).padding(.top, 4)
 
-            // Diagnostics
+            // MARK: - Diagnostics
             VStack(alignment: .leading, spacing: 10) {
                 HStack {
                     Text("Diagnostics").font(.caption.weight(.medium)).foregroundStyle(.secondary)
@@ -97,8 +104,152 @@ struct HelpTabView: View {
             }
             .padding(12)
             .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
+
+            // MARK: - Logs
+            VStack(alignment: .leading, spacing: 0) {
+                Button {
+                    withAnimation(.easeInOut(duration: 0.2)) { logsExpanded.toggle() }
+                } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: "doc.text.magnifyingglass")
+                            .font(.caption.weight(.medium))
+                            .foregroundStyle(.secondary)
+                            .frame(width: 14)
+                        Text("Activity Logs").font(.caption.weight(.medium)).foregroundStyle(.secondary)
+                        Spacer()
+                        if !logger.entries.isEmpty {
+                            let errorCount = logger.entries.filter { $0.level == .error }.count
+                            let warnCount  = logger.entries.filter { $0.level == .warn  }.count
+                            HStack(spacing: 4) {
+                                if errorCount > 0 {
+                                    logBadge("\(errorCount)", color: Color(red: 1, green: 0.3, blue: 0.3))
+                                }
+                                if warnCount > 0 {
+                                    logBadge("\(warnCount)", color: .orange)
+                                }
+                                Text("\(logger.entries.count) entries")
+                                    .font(.caption2).foregroundStyle(.tertiary)
+                            }
+                        } else {
+                            Text("Empty").font(.caption2).foregroundStyle(.tertiary)
+                        }
+                        Image(systemName: "chevron.right")
+                            .font(.caption2.weight(.semibold))
+                            .foregroundStyle(.tertiary)
+                            .rotationEffect(.degrees(logsExpanded ? 90 : 0))
+                            .animation(.easeInOut(duration: 0.2), value: logsExpanded)
+                    }
+                    .padding(.horizontal, 12).padding(.vertical, 10)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+
+                if logsExpanded {
+                    Divider().padding(.horizontal, 12)
+
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack {
+                            Text("\(logger.entries.count) entries")
+                                .font(.footnote.weight(.semibold)).foregroundStyle(Color(white: 0.45))
+                            Spacer()
+                            Button("Clear") { logger.clear() }
+                                .buttonStyle(.borderless).font(.caption).foregroundStyle(Color.nannyAccent)
+                                .disabled(logger.entries.isEmpty)
+                            Button("Save…") { saveLog() }
+                                .buttonStyle(.borderless).font(.caption).foregroundStyle(Color.nannyAccent)
+                                .disabled(logger.entries.isEmpty)
+                        }
+
+                        ScrollView {
+                            LazyVStack(alignment: .leading, spacing: 1) {
+                                if logger.entries.isEmpty {
+                                    Text("No entries yet. Trigger a notification to start logging.")
+                                        .font(.caption2).foregroundStyle(.tertiary).padding(10)
+                                } else {
+                                    ForEach(logger.entries.reversed()) { entry in
+                                        logEntryRow(entry)
+                                    }
+                                }
+                            }
+                            .padding(6)
+                        }
+                        .frame(height: 200)
+                        .background(Color.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 8))
+                    }
+                    .padding(.horizontal, 12).padding(.vertical, 10)
+                }
+            }
+            .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
         }
     }
+
+    // MARK: - Log helpers
+
+    @ViewBuilder
+    private func logBadge(_ text: String, color: Color) -> some View {
+        Text(text)
+            .font(.system(size: 9, weight: .bold))
+            .foregroundStyle(.white)
+            .padding(.horizontal, 5).padding(.vertical, 2)
+            .background(color, in: Capsule())
+    }
+
+    private func logEntryRow(_ entry: LogEntry) -> some View {
+        HStack(alignment: .top, spacing: 6) {
+            Text(Self.timeFormatter.string(from: entry.timestamp))
+                .font(.system(size: 10, design: .monospaced))
+                .foregroundStyle(Color(white: 0.35))
+                .frame(width: 80, alignment: .leading)
+                .lineLimit(1)
+            if entry.level != .info {
+                Text(entry.level.rawValue)
+                    .font(.system(size: 9, weight: .bold))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 4).padding(.vertical, 2)
+                    .background(entry.level == .warn ? Color.orange : Color(red: 1, green: 0.3, blue: 0.3),
+                                in: Capsule())
+            }
+            if !entry.tag.isEmpty {
+                Text(entry.tag)
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(tagColor(entry.tag).opacity(0.9))
+                    .padding(.horizontal, 4).padding(.vertical, 2)
+                    .background(tagColor(entry.tag).opacity(0.15), in: Capsule())
+            }
+            Text(entry.message)
+                .font(.system(size: 11, design: .monospaced))
+                .foregroundStyle(Color(white: 0.78))
+                .lineLimit(5)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
+        }
+        .padding(.vertical, 2).padding(.horizontal, 4)
+    }
+
+    private func tagColor(_ tag: String) -> Color {
+        switch tag {
+        case "AX":     return Color(red: 0.4, green: 0.6, blue: 1.0)
+        case "Banner": return Color.nannyAccent
+        case "Custom": return Color(red: 0.2, green: 0.8, blue: 0.7)
+        case "System": return Color(white: 0.6)
+        case "Test":   return Color(red: 0.3, green: 0.9, blue: 0.4)
+        default:       return Color(white: 0.55)
+        }
+    }
+
+    private func saveLog() {
+        let text = logger.exportText()
+        guard let data = text.data(using: .utf8) else { return }
+        let panel = NSSavePanel()
+        panel.nameFieldStringValue = "NotificationNanny Log.txt"
+        panel.allowedContentTypes = [.plainText]
+        panel.begin { response in
+            guard response == .OK, let url = panel.url else { return }
+            try? data.write(to: url, options: .atomic)
+        }
+    }
+
+    // MARK: - Help links
 
     private func helpLinkRow(title: String, description: String, systemImage: String, url: String) -> some View {
         Button {
@@ -149,56 +300,119 @@ struct HelpTabView: View {
 
     @MainActor
     private func buildDiagResults() -> [DiagResult] {
-        var results: [DiagResult] = []
+        var r: [DiagResult] = []
 
+        // App info
         let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "unknown"
         let build   = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "?"
         let osVer   = ProcessInfo.processInfo.operatingSystemVersionString
-        results.append(DiagResult(label: "App version",   detail: "v\(version) (\(build))", status: .info))
-        results.append(DiagResult(label: "macOS version", detail: osVer,                    status: .info))
+        r.append(DiagResult(label: "App version",   detail: "v\(version) (\(build))", status: .info))
+        r.append(DiagResult(label: "macOS version", detail: osVer,                    status: .info))
 
         let bundlePath = Bundle.main.bundlePath
         let installDetail: String
-        if bundlePath.contains("/opt/homebrew") || bundlePath.contains("/usr/local/Caskroom") {
-            installDetail = "Homebrew Cask — update with brew upgrade --cask notificationnanny"
-        } else if bundlePath.hasPrefix("/Applications") {
-            installDetail = "Direct install (/Applications)"
-        } else {
-            installDetail = bundlePath
+        switch InstallSource.current {
+        case .homebrew: installDetail = "Homebrew Cask"
+        case .direct:   installDetail = bundlePath.hasPrefix("/Applications") ? "Direct install (/Applications)" : bundlePath
         }
-        results.append(DiagResult(label: "Install location", detail: installDetail, status: .info))
+        r.append(DiagResult(label: "Install source", detail: installDetail, status: .info))
+
+        // Core status
+        r.append(DiagResult(
+            label: "App enabled",
+            detail: settings.isEnabled ? "Yes" : "Disabled by user",
+            status: settings.isEnabled ? .ok : .warn
+        ))
+
+        r.append(DiagResult(
+            label: "Accessibility",
+            detail: repositioner.hasAccessibilityPermission ? "Granted" : "Not granted — repositioning disabled",
+            status: repositioner.hasAccessibilityPermission ? .ok : .fail
+        ))
 
         if repositioner.hasAccessibilityPermission {
-            results.append(DiagResult(label: "Accessibility", detail: "Granted", status: .ok))
-        } else {
-            results.append(DiagResult(label: "Accessibility", detail: "Not granted — banner repositioning disabled", status: .fail))
+            r.append(DiagResult(
+                label: "Repositioner",
+                detail: repositioner.isObserving ? "Active and observing" : "Permission granted but not observing",
+                status: repositioner.isObserving ? .ok : .warn
+            ))
         }
 
-        if repositioner.hasAccessibilityPermission {
-            if repositioner.isObserving {
-                results.append(DiagResult(label: "Repositioner", detail: "Active and observing", status: .ok))
-            } else {
-                results.append(DiagResult(label: "Repositioner", detail: "Permission granted but not observing", status: .warn))
-            }
-        }
+        // Custom banner
+        let customBannerActive = settings.shouldUseCustomBanner(for: nil)
+        var customReason = ""
+        if abs(settings.bannerScale - 1.0) > 0.001 { customReason = "scale \(Int(settings.bannerScale * 100))%" }
+        else if settings.hasBannerColor { customReason = "global tint set" }
+        r.append(DiagResult(
+            label: "Custom banner (global)",
+            detail: customBannerActive ? "Active — \(customReason)" : "Off — using system banner",
+            status: customBannerActive ? .info : .info
+        ))
+
+        // Screens
+        let screens = NSScreen.screens
+        let screenNames = screens.enumerated().map { i, s in
+            "\(i + 1): \(Int(s.frame.width))x\(Int(s.frame.height))"
+        }.joined(separator: ", ")
+        r.append(DiagResult(
+            label: "Screens",
+            detail: "\(screens.count) display\(screens.count == 1 ? "" : "s") — \(screenNames)",
+            status: screens.count > 1 ? .info : .ok
+        ))
+
+        // Settings summary
+        let dismissDetail = settings.autoDismissSeconds > 0
+            ? "\(Int(settings.autoDismissSeconds))s custom timeout"
+            : "System default"
+        r.append(DiagResult(label: "Auto-dismiss", detail: dismissDetail, status: .info))
+
+        let groupCount = settings.appGroups.count
+        let appCount   = settings.appGroups.flatMap(\.appNames).count
+        let knownCount = settings.knownAppNames.count
+        r.append(DiagResult(
+            label: "Exception groups",
+            detail: groupCount == 0
+                ? "None configured"
+                : "\(groupCount) group\(groupCount == 1 ? "" : "s"), \(appCount) app\(appCount == 1 ? "" : "s") assigned, \(knownCount) apps seen",
+            status: .info
+        ))
+
+        r.append(DiagResult(
+            label: "Presets",
+            detail: settings.presets.isEmpty ? "None saved" : "\(settings.presets.count) saved",
+            status: .info
+        ))
 
         launchAtLogin.refresh()
-        results.append(DiagResult(
+        r.append(DiagResult(
             label: "Launch at login",
             detail: launchAtLogin.isEnabled ? "Enabled" : "Disabled",
             status: launchAtLogin.isEnabled ? .ok : .info
         ))
 
-        let errors = NannyLogger.shared.entries.filter { $0.level == .error }.suffix(5)
-        if errors.isEmpty {
-            results.append(DiagResult(label: "Recent errors", detail: "None", status: .ok))
+        // Notification Center process
+        let ncRunning = NSRunningApplication
+            .runningApplications(withBundleIdentifier: "com.apple.notificationcenterui").first != nil
+        r.append(DiagResult(
+            label: "Notification Center",
+            detail: ncRunning ? "Running" : "Not detected (may be normal)",
+            status: ncRunning ? .ok : .warn
+        ))
+
+        // Log health
+        let allErrors = logger.entries.filter { $0.level == .error }
+        let allWarns  = logger.entries.filter { $0.level == .warn  }
+        if allErrors.isEmpty && allWarns.isEmpty {
+            r.append(DiagResult(label: "Session log", detail: "No errors or warnings", status: .ok))
         } else {
-            let fmt = DateFormatter(); fmt.dateFormat = "HH:mm:ss"
-            for e in errors {
-                results.append(DiagResult(label: "Error \(fmt.string(from: e.timestamp))", detail: e.message, status: .warn))
-            }
+            r.append(DiagResult(
+                label: "Session log",
+                detail: "\(allErrors.count) error\(allErrors.count == 1 ? "" : "s"), \(allWarns.count) warning\(allWarns.count == 1 ? "" : "s") — open Logs for details",
+                status: allErrors.isEmpty ? .warn : .fail
+            ))
         }
-        return results
+
+        return r
     }
 
     private func diagReportText(_ results: [DiagResult]) -> String {

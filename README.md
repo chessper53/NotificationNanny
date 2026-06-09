@@ -4,8 +4,6 @@
 
 ![macOS 14+](https://img.shields.io/badge/macOS-14%2B-blue) ![Swift](https://img.shields.io/badge/Swift-5.9-orange) ![Version](https://img.shields.io/badge/version-7.0.0-brightgreen)
 
-## Settings
-
 <table>
   <tr>
     <td align="center"><img src="https://github.com/user-attachments/assets/777c81f7-6cc5-4407-a4b6-5328de2c262b" width="260" alt="Position"/><br/><sub>Position</sub></td>
@@ -18,6 +16,17 @@
     <td align="center"><img src="https://github.com/user-attachments/assets/c63fce84-d270-4e68-b711-f43190e393e5" width="260" alt="Help"/><br/><sub>Help</sub></td>
   </tr>
 </table>
+
+## Installation
+
+```sh
+brew tap chessper53/notificationnanny https://github.com/chessper53/NotificationNanny
+brew install --cask notificationnanny
+```
+
+Or download the latest zip from the [Releases page](https://github.com/chessper53/NotificationNanny/releases/latest) and drag `NotificationNanny.app` to your Applications folder.
+
+After installing, click the bell icon in your menu bar and grant Accessibility permission to get started. If you installed via Homebrew, updates are one click from the settings panel.
 
 ## What it does
 
@@ -64,23 +73,6 @@ macOS gives you one place for notification banners and no way to change it. Noti
 **Logs**
 - In-app log viewer showing the last 500 events from the banner engine, useful for debugging unexpected behavior
 
-## Issues and feature requests
-
-Open an issue. I read them all and work through them when I can. I have a full-time job so responses may take a little while, but nothing goes unread. [Open an issue here](https://github.com/chessper53/NotificationNanny/issues).
-
-## Installation
-
-```sh
-brew tap chessper53/notificationnanny https://github.com/chessper53/NotificationNanny
-brew install --cask notificationnanny
-```
-
-```sh
-brew upgrade --cask notificationnanny   # to update
-```
-
-After installing, click the bell in your menu bar and hit **Grant Accessibility Permission** to get started.
-
 ## How it works
 
 NotificationNanny uses the macOS Accessibility API to observe the notification center process. When a banner appears it repositions or replaces it according to your rules. For scaled, tinted, or custom banners it intercepts the notification, moves the system banner off-screen, and shows its own window matching the macOS banner style. This relies on private internals, so Apple can change the behavior in any OS update. The app sandbox is disabled because cross-process Accessibility access requires it.
@@ -90,6 +82,10 @@ Supports macOS 14 Sonoma, macOS 15 Sequoia, and macOS 26 Tahoe.
 ## Privacy
 
 No data is collected, transmitted, or stored outside your device. The Accessibility permission is used solely to observe and control notification windows on your local machine.
+
+## Issues and feature requests
+
+Open an issue. I read them all and work through them when I can. I have a full-time job so responses may take a little while, but nothing goes unread. [Open an issue here](https://github.com/chessper53/NotificationNanny/issues).
 
 ---
 
