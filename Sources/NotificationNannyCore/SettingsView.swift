@@ -7,11 +7,13 @@ package struct SettingsView: View {
     @EnvironmentObject var repositioner: NotificationRepositioner
     @EnvironmentObject var launchAtLogin: LaunchAtLogin
 
-    enum NavTab: Hashable { case position, exceptions, presets, general, banner, backup, logs, help }
+    enum NavTab: Hashable { case position, exceptions, presets, general, banner, backup, help }
 
     @State private var activeTab: NavTab = .position
     @State private var newerVersion: String? = nil
+    @State private var isBannerDismissed = false
     @State private var permissionJustGranted = false
+    @StateObject private var brewUpdater = HomebrewUpdater()
 
     package init() {}
 
@@ -22,13 +24,14 @@ package struct SettingsView: View {
                     accessibilityBanner(granted: permissionJustGranted)
                         .transition(.move(edge: .top).combined(with: .opacity))
                 }
-                if let newer = newerVersion {
+                if let newer = newerVersion, !isBannerDismissed {
                     updateBanner(version: newer)
                         .transition(.move(edge: .top).combined(with: .opacity))
                 }
             }
             .animation(.easeInOut(duration: 0.35), value: repositioner.hasAccessibilityPermission)
             .animation(.easeInOut(duration: 0.35), value: newerVersion)
+            .animation(.easeInOut(duration: 0.35), value: isBannerDismissed)
             .onChange(of: repositioner.hasAccessibilityPermission) { _, granted in
                 guard granted else { return }
                 permissionJustGranted = true
@@ -46,13 +49,64 @@ package struct SettingsView: View {
                     sidebarItem("General",    systemImage: "gearshape",               tab: .general)
                     sidebarItem("Backup",     systemImage: "tray.and.arrow.up",       tab: .backup)
                     Spacer()
-                    sidebarItem("Logs",       systemImage: "doc.text.magnifyingglass", tab: .logs)
                     sidebarItem("Help",       systemImage: "questionmark.circle",     tab: .help)
-                    Text("v\(appVersion)")
-                        .font(.caption2)
-                        .foregroundStyle(.tertiary)
-                        .padding(.horizontal, 12)
-                        .padding(.bottom, 6)
+                    Divider().padding(.horizontal, 8).padding(.vertical, 4)
+                    Button {
+                        settings.isEnabled.toggle()
+                    } label: {
+                        HStack(spacing: 8) {
+                            Image(systemName: settings.isEnabled ? "pause.circle" : "play.circle")
+                                .frame(width: 16, alignment: .center)
+                            Text(settings.isEnabled ? "Disable" : "Enable")
+                            Spacer()
+                        }
+                        .font(.callout)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 7)
+                        .contentShape(Rectangle())
+                        .foregroundStyle(settings.isEnabled ? Color.orange.opacity(0.8) : Color.green.opacity(0.85))
+                    }
+                    .buttonStyle(.plain)
+                    Button {
+                        NSApplication.shared.terminate(nil)
+                    } label: {
+                        HStack(spacing: 8) {
+                            Image(systemName: "power").frame(width: 16, alignment: .center)
+                            Text("Quit")
+                            Spacer()
+                        }
+                        .font(.callout)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 7)
+                        .contentShape(Rectangle())
+                        .foregroundStyle(Color(white: 0.45))
+                    }
+                    .buttonStyle(.plain)
+                    .keyboardShortcut("q")
+                    Group {
+                        if let newer = newerVersion, isBannerDismissed {
+                            Button {
+                                withAnimation(.easeInOut(duration: 0.35)) { isBannerDismissed = false }
+                            } label: {
+                                HStack(spacing: 4) {
+                                    Text("v\(appVersion)")
+                                    Image(systemName: "arrow.up.circle.fill")
+                                        .font(.system(size: 8))
+                                        .foregroundStyle(Color.nannyAccent)
+                                }
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                            }
+                            .buttonStyle(.plain)
+                            .help("v\(newer) available — click to update")
+                        } else {
+                            Text("v\(appVersion)")
+                                .font(.caption2)
+                                .foregroundStyle(.tertiary)
+                        }
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.bottom, 6)
                 }
                 .padding(8)
                 .frame(width: 150)
@@ -70,7 +124,6 @@ package struct SettingsView: View {
                         case .presets:    PresetsTabView()
                         case .general:    GeneralTabView()
                         case .backup:     BackupTabView()
-                        case .logs:       LogsTabView()
                         case .help:       HelpTabView()
                         }
                     }
@@ -149,23 +202,96 @@ package struct SettingsView: View {
 
     private func updateBanner(version: String) -> some View {
         HStack(spacing: 10) {
-            Image(systemName: "arrow.down.circle.fill").font(.callout).foregroundStyle(.green)
-            Text("v\(version) is available").font(.callout.weight(.semibold))
+            // Leading icon
+            Group {
+                switch brewUpdater.state {
+                case .idle:
+                    Image(systemName: "arrow.down.circle.fill")
+                        .foregroundStyle(.green).font(.callout)
+                case .running:
+                    ProgressView().controlSize(.small)
+                case .succeeded:
+                    Image(systemName: "checkmark.circle.fill")
+                        .foregroundStyle(.green).font(.callout)
+                case .failed:
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.orange).font(.callout)
+                }
+            }
+            .frame(width: 18, alignment: .center)
+
+            // Description
+            VStack(alignment: .leading, spacing: 1) {
+                switch brewUpdater.state {
+                case .idle:
+                    Text("v\(version) is available")
+                        .font(.callout.weight(.semibold))
+                case .running:
+                    Text("Updating via Homebrew\u{2026}")
+                        .font(.callout.weight(.semibold))
+                    if let last = brewUpdater.outputLines.last {
+                        Text(last)
+                            .font(.system(size: 10, design: .monospaced))
+                            .foregroundStyle(Color(white: 0.5))
+                            .lineLimit(1)
+                    }
+                case .succeeded:
+                    Text("Updated to v\(version)")
+                        .font(.callout.weight(.semibold))
+                    Text("Relaunch to apply changes")
+                        .font(.caption2).foregroundStyle(.secondary)
+                case .failed(let msg):
+                    Text("Update failed")
+                        .font(.callout.weight(.semibold))
+                    Text(msg)
+                        .font(.caption2).foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+            }
+
             Spacer()
-            Button("View Release") {
-                NSWorkspace.shared.open(URL(string: "https://github.com/chessper53/NotificationNanny/releases/latest")!)
+
+            // Action button
+            switch brewUpdater.state {
+            case .idle:
+                if InstallSource.current == .homebrew {
+                    Button("Update Now") { brewUpdater.start() }
+                        .buttonStyle(.borderedProminent).controlSize(.small)
+                } else {
+                    Button("View Release") {
+                        NSWorkspace.shared.open(URL(string: "https://github.com/chessper53/NotificationNanny/releases/latest")!)
+                    }
+                    .buttonStyle(.borderedProminent).controlSize(.small)
+                }
+            case .running:
+                EmptyView()
+            case .succeeded:
+                Button("Relaunch") { brewUpdater.relaunch() }
+                    .buttonStyle(.borderedProminent).controlSize(.small)
+            case .failed:
+                Button("View Release") {
+                    NSWorkspace.shared.open(URL(string: "https://github.com/chessper53/NotificationNanny/releases/latest")!)
+                }
+                .buttonStyle(.borderedProminent).controlSize(.small)
             }
-            .buttonStyle(.borderedProminent)
-            .controlSize(.small)
-            Button { newerVersion = nil } label: {
-                Image(systemName: "xmark").font(.caption2.weight(.bold))
+
+            // Dismiss — hidden while update is in progress
+            if brewUpdater.state != .running {
+                Button {
+                    withAnimation(.easeInOut(duration: 0.35)) { isBannerDismissed = true }
+                } label: {
+                    Image(systemName: "xmark").font(.caption2.weight(.bold))
+                }
+                .buttonStyle(.plain).foregroundStyle(Color(white: 0.5))
             }
-            .buttonStyle(.plain)
-            .foregroundStyle(Color(white: 0.5))
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 10)
-        .background(Color.green.opacity(0.12))
+        .padding(.horizontal, 16).padding(.vertical, 10)
+        .background(updateBannerAccent.opacity(0.12))
+    }
+
+    private var updateBannerAccent: Color {
+        if case .failed = brewUpdater.state { return .orange }
+        return .green
     }
 }
 
@@ -179,9 +305,9 @@ private struct WindowSizeLock: NSViewRepresentable {
         DispatchQueue.main.async {
             guard let window = view.window else { return }
             let size = NSSize(width: width, height: height)
-            window.setContentSize(size)
             window.minSize = size
             window.maxSize = size
+            window.setContentSize(size)
         }
         return view
     }
