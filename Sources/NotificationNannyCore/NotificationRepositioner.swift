@@ -150,8 +150,9 @@ package final class NotificationRepositioner: ObservableObject {
             CFRunLoopRemoveSource(CFRunLoopGetMain(), AXObserverGetRunLoopSource(observer), .defaultMode)
         }
         observer = nil; ncApp = nil; ncPid = 0
-        isObserving = false; detectedBannerInfo = nil
+        isObserving = false
         lastSelfSetPositions.removeAll()
+        dismissedKeys.removeAll()
         resolver.invalidateAll()
         customBannerManager.dismissAll()
         logger.log("Observer stopped", tag: "AX")
@@ -178,6 +179,7 @@ package final class NotificationRepositioner: ObservableObject {
             logger.log("Window destroyed\(hadOverlay ? " — overlay dismissed" : "")", tag: "AX")
             resolver.invalidate(key: key)
             lastSelfSetPositions.removeValue(forKey: key)
+            dismissedKeys.remove(key)
             stopScaleHammer()
             customBannerManager.dismiss(key: key)
             repositionVisibleWindows()
@@ -294,13 +296,15 @@ package final class NotificationRepositioner: ObservableObject {
     private static let stackGap: CGFloat = 8
     private var animationGeneration = 0
     private var lastSelfSetPositions: [CFHashCode: CGPoint] = [:]
+    // Windows we dismissed via scheduleAutoDismiss — ignored by targetOrigin so NC can't fight back.
+    private var dismissedKeys: Set<CFHashCode> = []
     // nil = not in test mode; .some(nil) = test active, screen default; .some(.some(id)) = test active, group
     private var testGroupID: UUID?? = nil
     private var testBannerWindow: AXUIElement? = nil
 
     private let customBannerManager = CustomBannerManager()
 
-    // MARK: - Display sleep / wake
+    // MARK: - Display sleep / wake / reconfiguration
 
     private var isDisplaySleeping = false
     private var pendingWakeWindows: [AXUIElement] = []
@@ -315,6 +319,23 @@ package final class NotificationRepositioner: ObservableObject {
             forName: NSWorkspace.screensDidWakeNotification,
             object: nil, queue: .main
         ) { [weak self] _ in Task { @MainActor [weak self] in self?.handleDisplayWake() } }
+
+        // Fired when a display is connected, disconnected, or mirroring changes.
+        // Re-evaluate all visible banners against the new screen layout so custom
+        // overlays don't revert to native after a display topology change.
+        NotificationCenter.default.addObserver(
+            forName: NSApplication.didChangeScreenParametersNotification,
+            object: nil, queue: .main
+        ) { [weak self] _ in Task { @MainActor [weak self] in self?.handleScreenParametersChange() } }
+    }
+
+    private func handleScreenParametersChange() {
+        logger.log("Screen configuration changed — re-evaluating banner positions", tag: "System")
+        // Brief delay mirrors the wake path: let the display and NC settle before
+        // we read NSScreen.screens and reposition.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in
+            self?.burstReposition()
+        }
     }
 
     private func handleDisplaySleep() {
@@ -371,12 +392,6 @@ package final class NotificationRepositioner: ObservableObject {
         }
     }
 
-    private struct BannerInfo {
-        let offsetInWindow: CGPoint
-        let size: CGSize
-    }
-    private var detectedBannerInfo: BannerInfo?
-
     private struct RepositionTarget {
         let windowOrigin: CGPoint
         let windowSize: CGSize
@@ -386,32 +401,15 @@ package final class NotificationRepositioner: ObservableObject {
         let bannerSize: CGSize
     }
 
-    private func detectBannerInfo(in window: AXUIElement, windowPos: CGPoint) -> BannerInfo? {
-        var ref: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(window, kAXChildrenAttribute as CFString, &ref) == .success,
-              let children = ref as? [AXUIElement] else { return nil }
-        for child in children {
-            var pRef: CFTypeRef?; var sRef: CFTypeRef?
-            guard AXUIElementCopyAttributeValue(child, kAXPositionAttribute as CFString, &pRef) == .success,
-                  AXUIElementCopyAttributeValue(child, kAXSizeAttribute as CFString, &sRef) == .success,
-                  let pv = pRef, let sv = sRef,
-                  CFGetTypeID(pv) == AXValueGetTypeID(), CFGetTypeID(sv) == AXValueGetTypeID()
-            else { continue }
-            var pos = CGPoint.zero; var size = CGSize.zero
-            AXValueGetValue(pv as! AXValue, .cgPoint, &pos)
-            AXValueGetValue(sv as! AXValue, .cgSize, &size)
-            guard size.width >= 200, size.width <= 700, size.height >= 40, size.height <= 250 else { continue }
-            let offset = CGPoint(x: pos.x - windowPos.x, y: pos.y - windowPos.y)
-            return BannerInfo(offsetInWindow: offset, size: size)
-        }
-        return nil
-    }
-
     // MARK: - Repositioning
 
     private func targetOrigin(for window: AXUIElement, stackIndex: Int = 0) -> RepositionTarget? {
         guard let settings, settings.isEnabled else {
             log.debug("targetOrigin: skipped — disabled")
+            return nil
+        }
+        guard !dismissedKeys.contains(CFHash(window)) else {
+            log.debug("targetOrigin: skipped — window was auto-dismissed")
             return nil
         }
         if settings.pauseWhileStreaming, Self.isCapturing() {
@@ -863,16 +861,10 @@ package final class NotificationRepositioner: ObservableObject {
         DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
             guard let self, self.animationGeneration == generation else { return }
             self.animationGeneration &+= 1
-            self.setWindowPosition(window, to: self.offScreenOrigin(for: info))
+            // Mark dismissed before moving so any concurrent AX event can't re-show the banner.
+            self.dismissedKeys.insert(CFHash(window))
+            self.setWindowPosition(window, to: CGPoint(x: info.windowOrigin.x, y: -9999))
         }
-    }
-
-    private func offScreenOrigin(for info: RepositionTarget) -> CGPoint {
-        let primaryHeight = NSScreen.screens.first?.frame.height ?? info.screen.frame.height
-        let visible = info.screen.visibleFrame
-        let axTop = primaryHeight - visible.maxY
-        let hiddenY = axTop - info.bannerSize.height - info.bannerOffsetInWindow.y - 10
-        return CGPoint(x: info.windowOrigin.x, y: hiddenY)
     }
 
     @discardableResult
