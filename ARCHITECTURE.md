@@ -15,6 +15,7 @@
 | 1.0     | 2026-06-05 | Claude   | Initial architecture documentation                                      |
 | 1.1     | 2026-06-05 | Claude   | Post-refactor update: BannerTint, AppNameResolver, SettingsView split, PrivateWindowAPI, animation auto-activation |
 | 1.2     | 2026-06-09 | Claude   | Added InstallSource, HomebrewUpdater; in-app Homebrew auto-updater with live output streaming |
+| 1.3     | 2026-06-10 | Claude   | Bug fixes: screen reconfiguration handler, scheduleAutoDismiss fight-back, offScreenOrigin multi-screen; dead code removal |
 
 **Status:** CURRENT
 
@@ -635,7 +636,8 @@ sequenceDiagram
 ### 3. Drift Guard (Self-Move Filter)
 
 - **Purpose:** Prevents infinite loops — when the app moves a banner, NC fires a `kAXWindowMovedNotification`, which would trigger a re-reposition, which triggers another move event, etc.
-- **Implementation:** `lastSelfSetPosition` is updated after every `setWindowPosition` call. On `kAXWindowMovedNotification`, the Euclidean distance between the current position and `lastSelfSetPosition` is computed; if it is ≤4px, the event is treated as self-induced and ignored.
+- **Implementation:** `lastSelfSetPositions: [CFHashCode: CGPoint]` is updated after every `setWindowPosition` call. On `kAXWindowMovedNotification`, the Euclidean distance between the current position and the last self-set position is computed; if it is ≤4px, the event is treated as self-induced and ignored.
+- **Companion: `dismissedKeys: Set<CFHashCode>`** — windows explicitly dismissed by `scheduleAutoDismiss` are added to this set. `targetOrigin` returns `nil` for any key in `dismissedKeys`, so NC fighting back after a user-configured auto-dismiss cannot re-show the banner. Cleared per-window on `kAXUIElementDestroyedNotification` and wholesale on `teardownObserver`.
 
 ### 4. Generation Counter (Animation Guard)
 
@@ -793,13 +795,45 @@ NotificationRepositioner (orchestrator only)
 
 ---
 
-### Additional fix applied
+### Additional fixes applied (2026-06-05)
 
 #### Animation selection now auto-activates custom renderer
 
 **Problem:** Selecting Bounce/Fade/Scale in the Banner tab had no effect because `shouldUseCustomBanner` did not consider `bannerAnimation`. The animation setting is only honoured by the custom overlay; native banners ignore it.
 
-**Fix:** `shouldUseCustomBanner(for:)` and `shouldUseCustomBanner(forGroupID:)` now return `true` when `bannerAnimation != .slide`. Slide is the system-compatible default and does not force the custom path.
+**Fix:** `shouldUseCustomBanner(for:)` and `shouldUseCustomBanner(forGroupID:)` now return `true` when `bannerAnimation != .default`. `.default` is the system-compatible slide-in and does not force the custom path. Note: `BannerAnimation` currently only has the `.default` case; other animation variants (slide, bounce, fade, scale) are reserved for future implementation.
+
+---
+
+### Additional fixes applied (2026-06-10)
+
+#### Screen reconfiguration causes custom banners to revert ✅
+
+**Problem:** When a display was connected, disconnected, or mirrored, `NSApplicationDidChangeScreenParametersNotification` fired but nothing in the app handled it. `NSScreen.screens` changed, but neither the repositioner nor the custom overlay manager re-evaluated. Users had to make a dummy settings change to trigger `burstReposition()`.
+
+**Fix:** `registerSleepWakeObservers()` now also observes `NSApplication.didChangeScreenParametersNotification`. Handler: wait 400ms (matches wake delay), then call `burstReposition()` to re-evaluate all visible banners against the new screen topology.
+
+#### `scheduleAutoDismiss` lets NC fight back ✅
+
+**Problem:** After the user-configured `autoDismissSeconds` timer fired for a native banner, the repositioner moved the NC window off-screen. NC then fired `kAXWindowMovedNotification` (it hadn't dismissed yet), the drift guard passed, and `repositionWindow` moved the banner back to the configured position — effectively un-dismissing it.
+
+**Fix:** A `dismissedKeys: Set<CFHashCode>` tracks windows dismissed by `scheduleAutoDismiss`. `targetOrigin` returns `nil` for dismissed keys, so any subsequent NC move event for that window is ignored. The key is cleared on `kAXUIElementDestroyedNotification` and `teardownObserver`.
+
+#### `offScreenOrigin` wrong for screens below the primary ✅
+
+**Problem:** The formula `hiddenY = primaryHeight - visible.maxY - bannerHeight - offset - 10` produced a large positive AX y-value when the banner's screen had a negative AppKit origin (screen physically below primary). The "hidden" position was actually on-screen.
+
+**Fix:** `scheduleAutoDismiss` now uses `y: -9999` consistently, matching the custom-banner path. `offScreenOrigin` removed.
+
+#### Dead code removed ✅
+
+Removed: `BannerInfo` struct, `detectedBannerInfo: BannerInfo?`, `detectBannerInfo(in:windowPos:)` (never called), and `AnimationPreviewButton` in `SettingsView+BannerTab.swift` (defined but never instantiated).
+
+#### Known open issue: shared `animationGeneration` counter
+
+**Problem:** `animationGeneration: Int` is a single counter for all concurrent banners. When banners A and B are repositioned in sequence, B's `repositionWindow` call increments the counter, cancelling A's pending `scheduleHolds` closures. A can then drift briefly during its slide-in animation window before NC fires a `kAXWindowMovedNotification` that triggers re-repositioning.
+
+**Status:** Open. Self-correcting via AX events but may cause a brief position flicker for simultaneous notifications. Proper fix requires per-window generation tracking (`[CFHashCode: Int]`).
 
 ---
 
@@ -821,4 +855,4 @@ NotificationRepositioner (orchestrator only)
 
 ---
 
-*Architecture document last updated 2026-06-05 (v6.4.0, post-refactor)*
+*Architecture document last updated 2026-06-10 (v6.4.0 + bug fixes)*
