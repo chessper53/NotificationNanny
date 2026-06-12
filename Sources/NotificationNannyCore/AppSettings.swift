@@ -17,6 +17,7 @@ package final class AppSettings: ObservableObject {
         static let knownApps            = "knownAppNames"
         static let pauseWhileStreaming  = "pauseWhileStreaming"
         static let avoidNCPanel         = "avoidNCPanel"
+        static let protectDesktopWidgets = "protectDesktopWidgets"
         static let bannerScale          = "bannerScale"
         static let holdWhileAsleep      = "holdWhileAsleep"
         static let bannerColorR         = "bannerColorR"
@@ -24,6 +25,7 @@ package final class AppSettings: ObservableObject {
         static let bannerColorB         = "bannerColorB"
         static let hasBannerColor       = "hasBannerColor"
         static let bannerAnimation      = "bannerAnimation"
+        static let hideMenuBarIcon      = "hideMenuBarIcon"
     }
 
     /// ~/Library/Application Support/NotificationNanny/known_apps.json
@@ -49,6 +51,10 @@ package final class AppSettings: ObservableObject {
         didSet { defaults.set(avoidNCPanel, forKey: Key.avoidNCPanel) }
     }
 
+    @Published package var protectDesktopWidgets: Bool {
+        didSet { defaults.set(protectDesktopWidgets, forKey: Key.protectDesktopWidgets) }
+    }
+
     @Published package var holdWhileAsleep: Bool {
         didSet { defaults.set(holdWhileAsleep, forKey: Key.holdWhileAsleep) }
     }
@@ -68,6 +74,10 @@ package final class AppSettings: ObservableObject {
 
     @Published package var bannerAnimation: BannerAnimation {
         didSet { defaults.set(bannerAnimation.rawValue, forKey: Key.bannerAnimation) }
+    }
+
+    @Published package var hideMenuBarIcon: Bool {
+        didSet { defaults.set(hideMenuBarIcon, forKey: Key.hideMenuBarIcon) }
     }
 
     package var bannerColor: Color {
@@ -96,17 +106,15 @@ package final class AppSettings: ObservableObject {
     package func clearBannerColor() { bannerTint = nil }
 
     package func effectiveBannerColor(for appName: String?) -> Color {
-        if let appName, let tint = group(for: appName)?.bannerTint {
-            return tint.color.opacity(0.55)
-        }
-        if let tint = bannerTint { return tint.color.opacity(0.55) }
-        return .clear
+        effectiveBannerColorImpl(groupTint: appName.flatMap { group(for: $0) }?.bannerTint)
     }
 
     package func effectiveBannerColor(forGroupID groupID: UUID?) -> Color {
-        if let groupID, let tint = appGroups.first(where: { $0.id == groupID })?.bannerTint {
-            return tint.color.opacity(0.55)
-        }
+        effectiveBannerColorImpl(groupTint: groupID.flatMap { group(by: $0) }?.bannerTint)
+    }
+
+    private func effectiveBannerColorImpl(groupTint: BannerTint?) -> Color {
+        if let tint = groupTint { return tint.color.opacity(0.55) }
         if let tint = bannerTint { return tint.color.opacity(0.55) }
         return .clear
     }
@@ -139,6 +147,7 @@ package final class AppSettings: ObservableObject {
         self.isEnabled             = (defaults.object(forKey: Key.isEnabled) as? Bool) ?? true
         self.pauseWhileStreaming    = (defaults.object(forKey: Key.pauseWhileStreaming) as? Bool) ?? false
         self.avoidNCPanel          = (defaults.object(forKey: Key.avoidNCPanel) as? Bool) ?? true
+        self.protectDesktopWidgets = (defaults.object(forKey: Key.protectDesktopWidgets) as? Bool) ?? true
         self.holdWhileAsleep       = (defaults.object(forKey: Key.holdWhileAsleep) as? Bool) ?? false
         self.autoDismissSeconds    = defaults.double(forKey: Key.autoDismiss)
         let storedScale = defaults.double(forKey: Key.bannerScale)
@@ -153,6 +162,7 @@ package final class AppSettings: ObservableObject {
         } else {
             self.bannerAnimation = .default
         }
+        self.hideMenuBarIcon = (defaults.object(forKey: Key.hideMenuBarIcon) as? Bool) ?? false
         self.targetDisplayID    = CGDirectDisplayID(max(0, defaults.integer(forKey: Key.targetDisplay)))
 
         if let data = defaults.data(forKey: Key.placements),
@@ -210,6 +220,10 @@ package final class AppSettings: ObservableObject {
         appGroups.first { $0.appNames.contains(appName) }
     }
 
+    func group(by id: UUID) -> AppGroup? {
+        appGroups.first { $0.id == id }
+    }
+
     /// Returns the group placement if the app has a rule, else the per-screen default.
     package func placement(for appName: String?, screen: NSScreen) -> ScreenPlacement {
         if let appName, let g = group(for: appName) { return g.placement }
@@ -217,7 +231,7 @@ package final class AppSettings: ObservableObject {
     }
 
     package func placement(forGroupID groupID: UUID?, screen: NSScreen) -> ScreenPlacement {
-        if let groupID, let g = appGroups.first(where: { $0.id == groupID }) { return g.placement }
+        if let groupID, let g = group(by: groupID) { return g.placement }
         return placement(for: screen)
     }
 
@@ -227,15 +241,13 @@ package final class AppSettings: ObservableObject {
     }
 
     package func targetDisplay(forGroupID groupID: UUID?) -> CGDirectDisplayID {
-        if let groupID, let g = appGroups.first(where: { $0.id == groupID }) { return g.targetDisplayID }
+        if let groupID, let g = group(by: groupID) { return g.targetDisplayID }
         return 0
     }
 
     func placementBinding(for groupID: UUID) -> Binding<ScreenPlacement> {
         Binding(
-            get: { [weak self] in
-                self?.appGroups.first(where: { $0.id == groupID })?.placement ?? .default
-            },
+            get: { [weak self] in self?.group(by: groupID)?.placement ?? .default },
             set: { [weak self] newVal in
                 guard let self, let i = self.appGroups.firstIndex(where: { $0.id == groupID }) else { return }
                 self.appGroups[i].placement = newVal
@@ -273,46 +285,45 @@ package final class AppSettings: ObservableObject {
     }
 
     package func effectiveBannerScale(for appName: String?) -> Double {
-        if let appName, let g = group(for: appName), let scale = g.bannerScale { return scale }
-        return bannerScale
+        appName.flatMap { group(for: $0) }?.bannerScale ?? bannerScale
     }
 
     package func effectiveBannerScale(forGroupID groupID: UUID?) -> Double {
-        if let groupID, let g = appGroups.first(where: { $0.id == groupID }), let scale = g.bannerScale { return scale }
-        return bannerScale
+        groupID.flatMap { group(by: $0) }?.bannerScale ?? bannerScale
     }
 
     package func effectiveBannerMode(for appName: String?) -> BannerMode? {
-        if let appName, let g = group(for: appName) { return g.bannerMode }
-        return nil
+        appName.flatMap { group(for: $0) }?.bannerMode
     }
 
     package func effectiveBannerMode(forGroupID groupID: UUID?) -> BannerMode? {
-        if let groupID, let g = appGroups.first(where: { $0.id == groupID }) { return g.bannerMode }
-        return nil
+        groupID.flatMap { group(by: $0) }?.bannerMode
     }
 
     package func shouldUseCustomBanner(for appName: String?) -> Bool {
-        switch effectiveBannerMode(for: appName) {
-        case .native: return false
-        case .custom: return true
-        case nil:
-            if abs(effectiveBannerScale(for: appName) - 1.0) > 0.001 { return true }
-            if bannerAnimation != .default { return true }
-            if let appName, let g = group(for: appName) { return g.hasBannerColor }
-            return hasBannerColor
-        }
+        shouldUseCustomBannerImpl(
+            mode: effectiveBannerMode(for: appName),
+            scale: effectiveBannerScale(for: appName),
+            resolvedGroup: appName.flatMap { group(for: $0) }
+        )
     }
 
     package func shouldUseCustomBanner(forGroupID groupID: UUID?) -> Bool {
-        switch effectiveBannerMode(forGroupID: groupID) {
+        shouldUseCustomBannerImpl(
+            mode: effectiveBannerMode(forGroupID: groupID),
+            scale: effectiveBannerScale(forGroupID: groupID),
+            resolvedGroup: groupID.flatMap { group(by: $0) }
+        )
+    }
+
+    private func shouldUseCustomBannerImpl(mode: BannerMode?, scale: Double, resolvedGroup: AppGroup?) -> Bool {
+        switch mode {
         case .native: return false
         case .custom: return true
         case nil:
-            if abs(effectiveBannerScale(forGroupID: groupID) - 1.0) > 0.001 { return true }
+            if abs(scale - 1.0) > 0.001 { return true }
             if bannerAnimation != .default { return true }
-            if let groupID, let g = appGroups.first(where: { $0.id == groupID }) { return g.hasBannerColor }
-            return hasBannerColor
+            return resolvedGroup?.hasBannerColor ?? hasBannerColor
         }
     }
 
@@ -332,6 +343,7 @@ package final class AppSettings: ObservableObject {
         var bannerScale: Double
         var pauseWhileStreaming: Bool
         var avoidNCPanel: Bool
+        var protectDesktopWidgets: Bool?   // optional: absent in backups predating this setting
         var appGroups: [AppGroup]
         var presets: [Preset]
     }
@@ -344,6 +356,7 @@ package final class AppSettings: ObservableObject {
             bannerScale: bannerScale,
             pauseWhileStreaming: pauseWhileStreaming,
             avoidNCPanel: avoidNCPanel,
+            protectDesktopWidgets: protectDesktopWidgets,
             appGroups: appGroups,
             presets: presets
         )
@@ -360,6 +373,7 @@ package final class AppSettings: ObservableObject {
         bannerScale         = imported.bannerScale
         pauseWhileStreaming  = imported.pauseWhileStreaming
         avoidNCPanel        = imported.avoidNCPanel
+        protectDesktopWidgets = imported.protectDesktopWidgets ?? true
         appGroups           = imported.appGroups
         presets             = imported.presets
     }
@@ -409,6 +423,7 @@ package final class AppSettings: ObservableObject {
         holdWhileAsleep    = false
         bannerTint         = nil
         bannerAnimation    = .default
+        hideMenuBarIcon    = false
     }
 
     // MARK: - Persistence

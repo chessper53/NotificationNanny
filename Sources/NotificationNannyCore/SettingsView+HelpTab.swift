@@ -11,10 +11,6 @@ struct HelpTabView: View {
     @State private var diagCopied = false
     @State private var logsExpanded = false
 
-    private static let timeFormatter: DateFormatter = {
-        let f = DateFormatter(); f.dateFormat = "HH:mm:ss.SSS"; return f
-    }()
-
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             Text("Need help or have an idea?").font(.subheadline.weight(.semibold))
@@ -155,7 +151,7 @@ struct HelpTabView: View {
                             Button("Clear") { logger.clear() }
                                 .buttonStyle(.borderless).font(.caption).foregroundStyle(Color.nannyAccent)
                                 .disabled(logger.entries.isEmpty)
-                            Button("Save…") { saveLog() }
+                            Button("Save…") { logger.saveToFile() }
                                 .buttonStyle(.borderless).font(.caption).foregroundStyle(Color.nannyAccent)
                                 .disabled(logger.entries.isEmpty)
                         }
@@ -167,7 +163,7 @@ struct HelpTabView: View {
                                         .font(.caption2).foregroundStyle(.tertiary).padding(10)
                                 } else {
                                     ForEach(logger.entries.reversed()) { entry in
-                                        logEntryRow(entry)
+                                        LogEntryRow(entry: entry)
                                     }
                                 }
                             }
@@ -192,61 +188,6 @@ struct HelpTabView: View {
             .foregroundStyle(.white)
             .padding(.horizontal, 5).padding(.vertical, 2)
             .background(color, in: Capsule())
-    }
-
-    private func logEntryRow(_ entry: LogEntry) -> some View {
-        HStack(alignment: .top, spacing: 6) {
-            Text(Self.timeFormatter.string(from: entry.timestamp))
-                .font(.system(size: 10, design: .monospaced))
-                .foregroundStyle(Color(white: 0.35))
-                .frame(width: 80, alignment: .leading)
-                .lineLimit(1)
-            if entry.level != .info {
-                Text(entry.level.rawValue)
-                    .font(.system(size: 9, weight: .bold))
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 4).padding(.vertical, 2)
-                    .background(entry.level == .warn ? Color.orange : Color(red: 1, green: 0.3, blue: 0.3),
-                                in: Capsule())
-            }
-            if !entry.tag.isEmpty {
-                Text(entry.tag)
-                    .font(.system(size: 9, weight: .semibold))
-                    .foregroundStyle(tagColor(entry.tag).opacity(0.9))
-                    .padding(.horizontal, 4).padding(.vertical, 2)
-                    .background(tagColor(entry.tag).opacity(0.15), in: Capsule())
-            }
-            Text(entry.message)
-                .font(.system(size: 11, design: .monospaced))
-                .foregroundStyle(Color(white: 0.78))
-                .lineLimit(5)
-                .fixedSize(horizontal: false, vertical: true)
-            Spacer(minLength: 0)
-        }
-        .padding(.vertical, 2).padding(.horizontal, 4)
-    }
-
-    private func tagColor(_ tag: String) -> Color {
-        switch tag {
-        case "AX":     return Color(red: 0.4, green: 0.6, blue: 1.0)
-        case "Banner": return Color.nannyAccent
-        case "Custom": return Color(red: 0.2, green: 0.8, blue: 0.7)
-        case "System": return Color(white: 0.6)
-        case "Test":   return Color(red: 0.3, green: 0.9, blue: 0.4)
-        default:       return Color(white: 0.55)
-        }
-    }
-
-    private func saveLog() {
-        let text = logger.exportText()
-        guard let data = text.data(using: .utf8) else { return }
-        let panel = NSSavePanel()
-        panel.nameFieldStringValue = "NotificationNanny Log.txt"
-        panel.allowedContentTypes = [.plainText]
-        panel.begin { response in
-            guard response == .OK, let url = panel.url else { return }
-            try? data.write(to: url, options: .atomic)
-        }
     }
 
     // MARK: - Help links

@@ -25,7 +25,11 @@ struct GeneralTabView: View {
                 Divider().padding(.leading, 14)
                 toggleRow("Don't move Notification Center", isOn: $settings.avoidNCPanel)
                 Divider().padding(.leading, 14)
+                toggleRow("Don't move desktop widgets", isOn: $settings.protectDesktopWidgets)
+                Divider().padding(.leading, 14)
                 toggleRow("Hold banners while display is asleep", isOn: $settings.holdWhileAsleep)
+                Divider().padding(.leading, 14)
+                toggleRow("Hide menu bar icon", isOn: $settings.hideMenuBarIcon)
             }
             .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
 

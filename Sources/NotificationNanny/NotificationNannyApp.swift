@@ -16,7 +16,7 @@ struct NotificationNannyApp: App {
 }
 
 @MainActor
-final class AppCoordinator: NSObject, ObservableObject {
+final class AppCoordinator: NSObject, ObservableObject, NSApplicationDelegate {
     let settings: AppSettings
     let repositioner: NotificationRepositioner
     let launchAtLogin: LaunchAtLogin
@@ -42,6 +42,7 @@ final class AppCoordinator: NSObject, ObservableObject {
         Task { @MainActor [weak self] in self?.autoEnableLoginItemIfNeeded() }
         setupStatusItem()
         observePermission()
+        NSApp.delegate = self
         // Auto-open settings if Accessibility permission hasn't been granted yet.
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
             guard let self, !self.repositioner.hasAccessibilityPermission else { return }
@@ -63,6 +64,10 @@ final class AppCoordinator: NSObject, ObservableObject {
         repositioner.$hasAccessibilityPermission
             .receive(on: DispatchQueue.main)
             .sink { [weak self] in self?.updateStatusIcon(hasPermission: $0) }
+            .store(in: &cancellables)
+        settings.$hideMenuBarIcon
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] hide in self?.statusItem?.isVisible = !hide }
             .store(in: &cancellables)
     }
 
@@ -133,6 +138,13 @@ final class AppCoordinator: NSObject, ObservableObject {
                                     withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
             completionHandler([.banner, .sound])
         }
+    }
+
+    // MARK: - App delegate
+
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        if settings.hideMenuBarIcon { openSettings() }
+        return true
     }
 
     // MARK: - Login item
