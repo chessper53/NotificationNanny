@@ -7,6 +7,7 @@ package protocol NotificationSettingsProviding: AnyObject {
     var isEnabled: Bool { get }
     var pauseWhileStreaming: Bool { get }
     var avoidNCPanel: Bool { get }
+    var protectDesktopWidgets: Bool { get }
     var holdWhileAsleep: Bool { get }
     var targetDisplayID: CGDirectDisplayID { get }
     var autoDismissSeconds: Double { get }

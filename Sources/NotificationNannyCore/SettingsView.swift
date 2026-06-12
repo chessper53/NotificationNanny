@@ -142,7 +142,8 @@ package struct SettingsView: View {
             if repositioner.hasAccessibilityPermission, !repositioner.isObserving {
                 repositioner.startObserving()
             }
-            Task { newerVersion = await UpdateChecker.fetchNewerVersion() }
+            // Auto-update check disabled for now.
+            // Task { newerVersion = await UpdateChecker.fetchNewerVersion() }
         }
     }
 
