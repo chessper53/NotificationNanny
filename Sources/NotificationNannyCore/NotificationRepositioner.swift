@@ -192,11 +192,7 @@ package final class NotificationRepositioner: ObservableObject {
         }
 
         if notification == kAXWindowMovedNotification as String {
-            var cur = CGPoint.zero; var ref: CFTypeRef?
-            if AXUIElementCopyAttributeValue(element, kAXPositionAttribute as CFString, &ref) == .success,
-               let v = ref, CFGetTypeID(v) == AXValueGetTypeID() {
-                AXValueGetValue(v as! AXValue, .cgPoint, &cur)
-            }
+            let cur = axPoint(of: element) ?? .zero
             let lastPos = lastSelfSetPositions[CFHash(element)] ?? .zero
             let drift = hypot(cur.x - lastPos.x, cur.y - lastPos.y)
             axLog.debug("handleAXEvent: windowMoved — cur=(\(cur.x, format: .fixed(precision: 1)),\(cur.y, format: .fixed(precision: 1))) lastSelf=(\(lastPos.x, format: .fixed(precision: 1)),\(lastPos.y, format: .fixed(precision: 1))) drift=\(drift, format: .fixed(precision: 1))")
@@ -208,16 +204,11 @@ package final class NotificationRepositioner: ObservableObject {
 
         if notification == kAXFocusedWindowChangedNotification as String ||
            notification == kAXMainWindowChangedNotification as String {
-            var sRef: CFTypeRef?
-            if AXUIElementCopyAttributeValue(element, kAXSizeAttribute as CFString, &sRef) == .success,
-               let v = sRef, CFGetTypeID(v) == AXValueGetTypeID() {
-                var sz = CGSize.zero
-                AXValueGetValue(v as! AXValue, .cgSize, &sz)
-                axLog.debug("handleAXEvent: focus/mainWindow event — window size \(sz.width, format: .fixed(precision: 0))×\(sz.height, format: .fixed(precision: 0))")
-                if sz.width > 700 || sz.height > 400 {
-                    axLog.debug("handleAXEvent: large window on focus event, skipping (likely NC panel)")
-                    return
-                }
+            let sz = axSize(of: element) ?? .zero
+            axLog.debug("handleAXEvent: focus/mainWindow event — window size \(sz.width, format: .fixed(precision: 0))×\(sz.height, format: .fixed(precision: 0))")
+            if sz.width > 700 || sz.height > 400 {
+                axLog.debug("handleAXEvent: large window on focus event, skipping (likely NC panel)")
+                return
             }
         }
 
@@ -230,7 +221,7 @@ package final class NotificationRepositioner: ObservableObject {
         repositionVisibleWindows()
         for delay in [0.03, 0.06, 0.1, 0.2, 0.4, 0.8, 1.5, 2.5] as [Double] {
             DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
-                Task { @MainActor in self?.repositionVisibleWindows() }
+                self?.repositionVisibleWindows()
             }
         }
     }
@@ -294,6 +285,8 @@ package final class NotificationRepositioner: ObservableObject {
     private static let bannerSize = CGSize(width: 372, height: 100)
     private static let bannerInsetFromTopRight = CGPoint(x: 14, y: 14)
     private static let stackGap: CGFloat = 8
+    // Used to park a window completely off-screen during display sleep.
+    private static let parkPoint = CGPoint(x: -9999, y: 0)
     private var animationGeneration = 0
     private var lastSelfSetPositions: [CFHashCode: CGPoint] = [:]
     // Windows we dismissed via scheduleAutoDismiss — ignored by targetOrigin so NC can't fight back.
@@ -349,7 +342,7 @@ package final class NotificationRepositioner: ObservableObject {
         guard AXUIElementCopyAttributeValue(ncApp, kAXWindowsAttribute as CFString, &value) == .success,
               let windows = value as? [AXUIElement] else { return }
         for window in windows {
-            setWindowPosition(window, to: CGPoint(x: -9999, y: 0))
+            setWindowPosition(window, to: Self.parkPoint)
             if !pendingWakeWindows.contains(where: { CFEqual($0, window) }) {
                 pendingWakeWindows.append(window)
             }
@@ -417,19 +410,8 @@ package final class NotificationRepositioner: ObservableObject {
             return nil
         }
 
-        var size = CGSize.zero
-        var sRef: CFTypeRef?
-        if AXUIElementCopyAttributeValue(window, kAXSizeAttribute as CFString, &sRef) == .success,
-           let v = sRef, CFGetTypeID(v) == AXValueGetTypeID() {
-            AXValueGetValue(v as! AXValue, .cgSize, &size)
-        }
-
-        var oldPos = CGPoint.zero
-        var pRef: CFTypeRef?
-        if AXUIElementCopyAttributeValue(window, kAXPositionAttribute as CFString, &pRef) == .success,
-           let v = pRef, CFGetTypeID(v) == AXValueGetTypeID() {
-            AXValueGetValue(v as! AXValue, .cgPoint, &oldPos)
-        }
+        let size   = axSize(of: window) ?? .zero
+        let oldPos = axPoint(of: window) ?? .zero
 
         log.debug("targetOrigin: window size=\(size.width, format: .fixed(precision: 0))×\(size.height, format: .fixed(precision: 0)) pos=(\(oldPos.x, format: .fixed(precision: 0)),\(oldPos.y, format: .fixed(precision: 0)))")
 
@@ -489,28 +471,27 @@ package final class NotificationRepositioner: ObservableObject {
                 }
             }
             // Size from AX — reliable, doesn't change during animation.
-            var bSRef: CFTypeRef?
-            var bSz = Self.bannerSize
-            if AXUIElementCopyAttributeValue(bannerEl, kAXSizeAttribute as CFString, &bSRef) == .success,
-               let sv = bSRef, CFGetTypeID(sv) == AXValueGetTypeID() {
-                AXValueGetValue(sv as! AXValue, .cgSize, &bSz)
-            }
+            let bSz = axSize(of: bannerEl) ?? Self.bannerSize
             // x: the banner slides in from the right during its entrance animation, so
             // its screen-x is unstable until animation ends. Derive analytically instead:
             // the banner always sits bannerInsetFromTopRight.x px from the window's right edge.
             let offsetX = size.width - bSz.width - Self.bannerInsetFromTopRight.x
             // y: banner animates horizontally only, so screen-y is stable — read from AX.
             var offsetY = Self.bannerInsetFromTopRight.y
-            var bPRef: CFTypeRef?
-            if AXUIElementCopyAttributeValue(bannerEl, kAXPositionAttribute as CFString, &bPRef) == .success,
-               let pv = bPRef, CFGetTypeID(pv) == AXValueGetTypeID() {
-                var bPos = CGPoint.zero
-                AXValueGetValue(pv as! AXValue, .cgPoint, &bPos)
+            if let bPos = axPoint(of: bannerEl) {
                 offsetY = bPos.y - oldPos.y
             }
             bannerOffset = CGPoint(x: offsetX, y: offsetY)
             bannerSz = bSz
         } else {
+            // Small NC windows aren't only banners — NC also hosts the user's
+            // desktop widgets, which appear in this same window list. Only a real
+            // notification banner carries a banner subrole; without one this is a
+            // widget (or other NC chrome) and must be left where the user put it.
+            if settings.protectDesktopWidgets, findBannerElement(in: window) == nil {
+                log.info("targetOrigin: skipped — small window, no banner subrole (desktop widget)")
+                return nil
+            }
             bannerOffset = .zero; bannerSz = size
         }
 
@@ -553,7 +534,7 @@ package final class NotificationRepositioner: ObservableObject {
                 customBannerManager.dismiss(key: CFHash(window))
             } else {
                 // Custom overlay is showing — keep the real NC banner off-screen and move our panel.
-                setWindowPosition(window, to: CGPoint(x: t.windowOrigin.x, y: -9999))
+                hideOffscreen(window, atX: t.windowOrigin.x)
                 let bannerAXOrigin = CGPoint(
                     x: t.windowOrigin.x + t.bannerOffsetInWindow.x,
                     y: t.windowOrigin.y + t.bannerOffsetInWindow.y
@@ -616,7 +597,7 @@ package final class NotificationRepositioner: ObservableObject {
 
         if settings.holdWhileAsleep, isDisplaySleeping {
             log.debug("repositionWindow: display sleeping — queuing window")
-            setWindowPosition(window, to: CGPoint(x: -9999, y: 0))
+            setWindowPosition(window, to: Self.parkPoint)
             if !pendingWakeWindows.contains(where: { CFEqual($0, window) }) {
                 pendingWakeWindows.append(window)
             }
@@ -658,14 +639,14 @@ package final class NotificationRepositioner: ObservableObject {
             // (from previous test clicks that NC never dismissed) get parked off-screen.
             if testGroupID != nil && !customBannerManager.isActive(key: key) && customBannerManager.hasActive {
                 logger.log("Test mode: extra NC window parked off-screen", tag: "Custom")
-                setWindowPosition(window, to: CGPoint(x: info.windowOrigin.x, y: -9999))
+                hideOffscreen(window, atX: info.windowOrigin.x)
                 scheduleHolds(window: window, stackIndex: stackIndex, generation: gen)
                 return
             }
 
             // If an overlay is already live for this window, just reposition it — don't recreate.
             if customBannerManager.isActive(key: key) {
-                setWindowPosition(window, to: CGPoint(x: info.windowOrigin.x, y: -9999))
+                hideOffscreen(window, atX: info.windowOrigin.x)
                 let scaledWidth = info.bannerSize.width * scale
                 let widthDelta = scaledWidth - info.bannerSize.width
                 let bannerAXOrigin = CGPoint(x: info.windowOrigin.x + info.bannerOffsetInWindow.x,
@@ -700,7 +681,7 @@ package final class NotificationRepositioner: ObservableObject {
             if let content {
                 let preview = content.title.isEmpty ? content.body.prefix(50) : content.title.prefix(50)
                 logger.log("Overlay: \(content.appName) — \"\(preview)\"", tag: "Custom")
-                setWindowPosition(window, to: CGPoint(x: info.windowOrigin.x, y: -9999))
+                hideOffscreen(window, atX: info.windowOrigin.x)
 
                 // Width grows modestly with scale so text has room; height is content-driven.
                 let scaledWidth = info.bannerSize.width * scale
@@ -724,7 +705,6 @@ package final class NotificationRepositioner: ObservableObject {
                 }
                 let finalAXOrigin = CGPoint(x: anchoredX, y: bannerAXOrigin.y)
 
-                let key = CFHash(window)
                 let capturedEl = bannerEl
                 let capturedName = content.appName
                 customBannerManager.showBanner(
@@ -863,7 +843,7 @@ package final class NotificationRepositioner: ObservableObject {
             self.animationGeneration &+= 1
             // Mark dismissed before moving so any concurrent AX event can't re-show the banner.
             self.dismissedKeys.insert(CFHash(window))
-            self.setWindowPosition(window, to: CGPoint(x: info.windowOrigin.x, y: -9999))
+            self.hideOffscreen(window, atX: info.windowOrigin.x)
         }
     }
 
@@ -872,11 +852,7 @@ package final class NotificationRepositioner: ObservableObject {
         var p = point
         guard let value = AXValueCreate(.cgPoint, &p) else { return point }
         AXUIElementSetAttributeValue(window, kAXPositionAttribute as CFString, value)
-        var ref: CFTypeRef?; var actual = point
-        if AXUIElementCopyAttributeValue(window, kAXPositionAttribute as CFString, &ref) == .success,
-           let v = ref, CFGetTypeID(v) == AXValueGetTypeID() {
-            AXValueGetValue(v as! AXValue, .cgPoint, &actual)
-        }
+        let actual = axPoint(of: window) ?? point
         lastSelfSetPositions[CFHash(window)] = actual
         return actual
     }
@@ -885,6 +861,32 @@ package final class NotificationRepositioner: ObservableObject {
         let primaryHeight = NSScreen.screens.first?.frame.height ?? 0
         let nsPoint = CGPoint(x: axPoint.x, y: primaryHeight - axPoint.y)
         return NSScreen.screens.first { $0.frame.contains(nsPoint) }
+    }
+
+    // MARK: - AX attribute helpers
+
+    private func axSize(of element: AXUIElement) -> CGSize? {
+        var ref: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(element, kAXSizeAttribute as CFString, &ref) == .success,
+              let v = ref, CFGetTypeID(v) == AXValueGetTypeID() else { return nil }
+        var size = CGSize.zero
+        AXValueGetValue(v as! AXValue, .cgSize, &size)
+        return size
+    }
+
+    private func axPoint(of element: AXUIElement,
+                         attribute: CFString = kAXPositionAttribute as CFString) -> CGPoint? {
+        var ref: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(element, attribute, &ref) == .success,
+              let v = ref, CFGetTypeID(v) == AXValueGetTypeID() else { return nil }
+        var point = CGPoint.zero
+        AXValueGetValue(v as! AXValue, .cgPoint, &point)
+        return point
+    }
+
+    @discardableResult
+    private func hideOffscreen(_ window: AXUIElement, atX x: CGFloat) -> CGPoint {
+        setWindowPosition(window, to: CGPoint(x: x, y: -9999))
     }
 }
 

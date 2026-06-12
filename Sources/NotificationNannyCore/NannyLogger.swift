@@ -1,4 +1,6 @@
+import AppKit
 import Foundation
+import UniformTypeIdentifiers
 
 package struct LogEntry: Identifiable, Sendable {
     package let id = UUID()
@@ -29,6 +31,18 @@ package final class NannyLogger: ObservableObject {
     }
 
     package func clear() { entries.removeAll() }
+
+    package func saveToFile() {
+        let text = exportText()
+        guard let data = text.data(using: .utf8) else { return }
+        let panel = NSSavePanel()
+        panel.nameFieldStringValue = "NotificationNanny Log.txt"
+        panel.allowedContentTypes = [.plainText]
+        panel.begin { response in
+            guard response == .OK, let url = panel.url else { return }
+            try? data.write(to: url, options: .atomic)
+        }
+    }
 
     package func exportText() -> String {
         let fmt = DateFormatter()

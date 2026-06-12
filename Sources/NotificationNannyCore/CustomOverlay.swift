@@ -42,6 +42,7 @@ struct CustomBannerView: View {
     @State private var viewOpacity: Double = 1
     @State private var viewScale: CGFloat = 1
     @State private var isHovered = false
+    @State private var animationsSetup = false
 
     var body: some View {
         HStack(spacing: 10 * scale) {
@@ -105,7 +106,11 @@ struct CustomBannerView: View {
         .opacity(viewOpacity)
         .scaleEffect(viewScale)
         .offset(x: slideOffset)
-        .onAppear { setupAnimations() }
+        .onAppear {
+            guard !animationsSetup else { return }
+            animationsSetup = true
+            setupAnimations()
+        }
     }
 
     private func setupAnimations() {
@@ -249,13 +254,13 @@ final class CustomBannerManager {
         entry.dismissTimer?.cancel()
         let panel      = entry.panel
         let controller = entry.controller
-        controller.dismissCompletion = {
+        controller.dismissCompletion = { [weak panel] in
             NSAnimationContext.runAnimationGroup { ctx in
                 ctx.duration = 0.2
                 ctx.timingFunction = CAMediaTimingFunction(name: .easeIn)
-                panel.animator().alphaValue = 0
+                panel?.animator().alphaValue = 0
             } completionHandler: {
-                panel.orderOut(nil)
+                panel?.orderOut(nil)
             }
         }
         if let slideOut = controller.slideOutClosure { slideOut() } else { panel.orderOut(nil) }
