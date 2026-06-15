@@ -1,6 +1,5 @@
 # NotificationNanny
-
-**Take back control of your macOS notification banners.** Move them anywhere, style them your way, set per-app rules, and never miss one while your screen is asleep.
+Control where notification banners appear, how they look, which apps get which treatment, and when they show up.
 
 ![macOS 14+](https://img.shields.io/badge/macOS-14%2B-blue) ![Swift](https://img.shields.io/badge/Swift-5.9-orange) ![Version](https://img.shields.io/badge/version-7.0.0-brightgreen) ![Downloads](https://img.shields.io/github/downloads/chessper53/NotificationNanny/total?style=flat&label=downloads&color=brightgreen&logo=apple) ![Stars](https://img.shields.io/github/stars/chessper53/NotificationNanny?style=flat&label=stars&color=yellow)
 
