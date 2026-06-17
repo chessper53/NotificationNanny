@@ -7,7 +7,7 @@ package struct SettingsView: View {
     @EnvironmentObject var repositioner: NotificationRepositioner
     @EnvironmentObject var launchAtLogin: LaunchAtLogin
 
-    enum NavTab: Hashable { case position, exceptions, presets, general, banner, backup, help }
+    enum NavTab: Hashable { case position, exceptions, presets, general, banner, backup, help, debug }
 
     @State private var activeTab: NavTab = .position
     @State private var newerVersion: String? = nil
@@ -49,6 +49,7 @@ package struct SettingsView: View {
                     sidebarItem("General",    systemImage: "gearshape",               tab: .general)
                     sidebarItem("Backup",     systemImage: "tray.and.arrow.up",       tab: .backup)
                     Spacer()
+                    sidebarItem("Diagnostics", systemImage: "stethoscope",            tab: .debug)
                     sidebarItem("Help",       systemImage: "questionmark.circle",     tab: .help)
                     Divider().padding(.horizontal, 8).padding(.vertical, 4)
                     Button {
@@ -125,6 +126,7 @@ package struct SettingsView: View {
                         case .general:    GeneralTabView()
                         case .backup:     BackupTabView()
                         case .help:       HelpTabView()
+                        case .debug:      DebugTabView()
                         }
                     }
                     .padding(16)

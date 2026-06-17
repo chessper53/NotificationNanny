@@ -5,6 +5,8 @@ struct BannerTabView: View {
     @EnvironmentObject var settings: AppSettings
     @EnvironmentObject var repositioner: NotificationRepositioner
 
+    @State private var previewReplay = 0
+
     private static let colorPresets: [(String, Color)] = [
         ("Red",    Color(red: 1.0,  green: 0.23, blue: 0.19)),
         ("Orange", Color(red: 1.0,  green: 0.58, blue: 0.0)),
@@ -95,6 +97,43 @@ struct BannerTabView: View {
             .padding(12)
             .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
 
+            // Animation
+            VStack(alignment: .leading, spacing: 10) {
+                HStack {
+                    Text("Animation").font(.caption.weight(.medium)).foregroundStyle(.secondary)
+                    Spacer()
+                    Button {
+                        previewReplay &+= 1
+                    } label: {
+                        Label("Replay", systemImage: "arrow.clockwise").font(.caption2)
+                    }
+                    .buttonStyle(.borderless).foregroundStyle(Color.nannyAccent)
+                }
+
+                // Live preview — replays on selection change, the Replay button, or a tap.
+                AnimationPreviewPane(animation: settings.bannerAnimation, replay: previewReplay,
+                                     tint: settings.hasBannerColor ? settings.bannerColor : .clear)
+                    .frame(height: 64)
+                    .frame(maxWidth: .infinity)
+                    .background(Color.black.opacity(0.22), in: RoundedRectangle(cornerRadius: 10))
+                    .clipShape(RoundedRectangle(cornerRadius: 10))
+                    .contentShape(Rectangle())
+                    .onTapGesture { previewReplay &+= 1 }
+
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 94), spacing: 8)], spacing: 8) {
+                    ForEach(BannerAnimation.allCases, id: \.self) { anim in
+                        animationChip(anim)
+                    }
+                }
+
+                Text(settings.bannerAnimation == .default
+                     ? "System-style slide-in. Other animations activate the custom renderer."
+                     : "Custom animation active — replaces the system banner.")
+                    .font(.caption2).foregroundStyle(.tertiary)
+            }
+            .padding(12)
+            .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
+
             // Per-group overrides
             if !settings.appGroups.isEmpty {
                 VStack(alignment: .leading, spacing: 8) {
@@ -121,7 +160,7 @@ struct BannerTabView: View {
     @ViewBuilder
     private func groupScaleRow(for group: AppGroup) -> some View {
         let hasCustom = settings.appGroups.first(where: { $0.id == group.id }).map {
-            $0.bannerScale != nil || $0.hasBannerColor
+            $0.bannerScale != nil || $0.hasBannerColor || $0.bannerAnimation != nil
         } ?? false
         let scaleBinding = Binding<Double>(
             get: { settings.appGroups.first(where: { $0.id == group.id })?.bannerScale ?? settings.bannerScale },
@@ -139,6 +178,7 @@ struct BannerTabView: View {
                         guard let i = settings.appGroups.firstIndex(where: { $0.id == group.id }) else { return }
                         settings.appGroups[i].bannerScale = nil
                         settings.appGroups[i].bannerTint  = nil
+                        settings.appGroups[i].bannerAnimation = nil
                     }
                     .buttonStyle(.borderless).font(.caption).foregroundStyle(Color.nannyAccent)
                 } else {
@@ -182,6 +222,7 @@ struct BannerTabView: View {
                         .buttonStyle(.borderless).font(.caption2).foregroundStyle(.secondary)
                     }
                     Spacer()
+                    groupAnimationMenu(for: group)
                     Button { repositioner.sendTestNotification(groupID: group.id) } label: {
                         Label("Test", systemImage: "paperplane.fill").font(.caption2)
                     }
@@ -192,6 +233,56 @@ struct BannerTabView: View {
         .padding(.horizontal, 14).padding(.vertical, 10)
     }
 
+    /// Compact per-group animation picker. Defaults to inheriting the global animation;
+    /// a menu keeps the row clean rather than repeating the full chip grid per group.
+    @ViewBuilder
+    private func groupAnimationMenu(for group: AppGroup) -> some View {
+        let override = settings.appGroups.first(where: { $0.id == group.id })?.bannerAnimation
+        let effective = override ?? settings.bannerAnimation
+        let setAnimation: (BannerAnimation?) -> Void = { anim in
+            guard let i = settings.appGroups.firstIndex(where: { $0.id == group.id }) else { return }
+            settings.appGroups[i].bannerAnimation = anim
+        }
+        Menu {
+            Button { setAnimation(nil) } label: {
+                Label("Default (\(settings.bannerAnimation.label))", systemImage: "arrow.uturn.backward")
+            }
+            Divider()
+            ForEach(BannerAnimation.allCases, id: \.self) { anim in
+                Button { setAnimation(anim) } label: { Label(anim.label, systemImage: anim.iconName) }
+            }
+        } label: {
+            HStack(spacing: 4) {
+                Image(systemName: effective.iconName).font(.system(size: 9))
+                Text(override == nil ? "Default" : effective.label).font(.caption2)
+            }
+        }
+        .menuStyle(.borderlessButton)
+        .fixedSize()
+        .help("Animation for this group")
+    }
+
+    @ViewBuilder
+    private func animationChip(_ anim: BannerAnimation) -> some View {
+        let selected = settings.bannerAnimation == anim
+        Button {
+            settings.bannerAnimation = anim
+            previewReplay &+= 1
+        } label: {
+            HStack(spacing: 5) {
+                Image(systemName: anim.iconName).font(.system(size: 10))
+                Text(anim.label).font(.caption)
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 10).padding(.vertical, 7)
+            .frame(maxWidth: .infinity)
+            .background(selected ? Color.nannyAccent.opacity(0.9) : Color.white.opacity(0.06),
+                        in: RoundedRectangle(cornerRadius: 8))
+            .foregroundStyle(selected ? Color.white : Color.secondary)
+        }
+        .buttonStyle(.plain)
+    }
+
     private func isColorMatch(_ a: Color, _ b: Color) -> Bool {
         let ca = NSColor(a).usingColorSpace(.sRGB)
         let cb = NSColor(b).usingColorSpace(.sRGB)
@@ -199,6 +290,65 @@ struct BannerTabView: View {
         return abs(ca.redComponent   - cb.redComponent)   < 0.03 &&
                abs(ca.greenComponent - cb.greenComponent) < 0.03 &&
                abs(ca.blueComponent  - cb.blueComponent)  < 0.03
+    }
+}
+
+/// A small stand-in banner that plays the given animation's intro curve, used as a
+/// live preview in the Banner tab. It reuses `BannerAnimation.hidden`/`intro` so the
+/// preview always matches what the real overlay does. Replays whenever `replay`
+/// changes or a different `animation` is selected.
+private struct AnimationPreviewPane: View {
+    let animation: BannerAnimation
+    let replay: Int
+    /// The tint to render the sample banner with, or `.clear` for the untinted dark banner.
+    var tint: Color = .clear
+
+    @State private var animX: CGFloat = 0
+    @State private var animY: CGFloat = 0
+    @State private var animOpacity: Double = 1
+    @State private var animScale: CGFloat = 1
+    @State private var animRotation: Double = 0
+
+    var body: some View {
+        sample
+            .opacity(animOpacity)
+            .scaleEffect(animScale)
+            .rotationEffect(.degrees(animRotation))
+            .offset(x: animX, y: animY)
+            .onAppear { play() }
+            .onChange(of: replay) { _, _ in play() }
+            .onChange(of: animation) { _, _ in play() }
+    }
+
+    private var sample: some View {
+        HStack(spacing: 8) {
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .fill(Color.white.opacity(0.25)).frame(width: 26, height: 26)
+            VStack(alignment: .leading, spacing: 4) {
+                RoundedRectangle(cornerRadius: 3).fill(Color.white.opacity(0.55)).frame(width: 64, height: 6)
+                RoundedRectangle(cornerRadius: 3).fill(Color.white.opacity(0.30)).frame(width: 104, height: 6)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 12).padding(.vertical, 10)
+        .frame(width: 220)
+        // Mirror the real overlay's chrome: a dark base with the selected tint laid over it,
+        // so the preview reflects the chosen Background Color instead of a fixed red.
+        .background {
+            ZStack {
+                Color.black.opacity(0.5)
+                if tint != .clear { tint.opacity(0.45) }
+            }
+        }
+        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+    }
+
+    private func play() {
+        let h = animation.hidden
+        animX = h.x; animY = h.y; animOpacity = h.opacity; animScale = h.scale; animRotation = h.rotation
+        withAnimation(animation.intro) {
+            animX = 0; animY = 0; animOpacity = 1; animScale = 1; animRotation = 0
+        }
     }
 }
 
