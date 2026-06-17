@@ -1,7 +1,7 @@
 # NotificationNanny — Architecture Documentation
 
 **Project:** notification-nanny  
-**Last Updated:** 2026-06-05  
+**Last Updated:** 2026-06-17  
 **Language:** English
 
 ---
@@ -16,6 +16,8 @@
 | 1.1     | 2026-06-05 | Claude   | Post-refactor update: BannerTint, AppNameResolver, SettingsView split, PrivateWindowAPI, animation auto-activation |
 | 1.2     | 2026-06-09 | Claude   | Added InstallSource, HomebrewUpdater; in-app Homebrew auto-updater with live output streaming |
 | 1.3     | 2026-06-10 | Claude   | Bug fixes: screen reconfiguration handler, scheduleAutoDismiss fight-back, offScreenOrigin multi-screen; dead code removal |
+| 1.4     | 2026-06-17 | Claude   | Back-to-back race fixes (per-window generation, test-banner identity, readiness gate, overlay content refresh, width clamp); title/body extraction via AXStaticText; per-group animation; Diagnostics tab + bug-report auto-attach |
+| 1.5     | 2026-06-17 | Claude   | AX primitives extracted to `AXUIElement` extension (`AXSupport.swift`); Snooze / pause-for-N-minutes feature; export schema versioning |
 
 **Status:** CURRENT
 
@@ -67,7 +69,8 @@ NotificationNanny (v6.4.0)
 - `AppNameResolver` — AX attribute parsing, banner-element tree walk, per-window app-name cache (extracted from `NotificationRepositioner`)
 - `CustomBannerManager` — Manages `NSPanel`-based custom overlay windows keyed by AX element hash
 - `CustomBannerView` — SwiftUI view rendered inside the custom overlay panel
-- `NannyLogger` — In-memory ring buffer (500 entries) observable by the UI; injectable into `NotificationRepositioner`
+- `NannyLogger` — In-memory ring buffer (1000 entries) observable by the UI; injectable into `NotificationRepositioner`
+- `Diagnostics` — `@MainActor` namespace that collects the health-check report and builds the prefilled GitHub bug-report URL (diagnostics + recent logs); shared by the Diagnostics tab and the Help tab's "Report a bug" action
 - `PrivateWindowAPI` — Clean Swift interface over `CGSSetWindowTransform`, `CGSSetWindowAlpha`, SkyLight SPI
 - `InstallSource` — Detects Homebrew-cask vs direct install by checking for the Caskroom directory
 - `HomebrewUpdater` — `@MainActor ObservableObject` that shells out to `brew upgrade --cask` and streams output to the UI
@@ -150,8 +153,8 @@ C4Container
         Container(settings, "AppSettings", "Swift / Combine", "Reactive settings store; @Published properties auto-persist to UserDefaults and JSON")
         Container(repositioner, "NotificationRepositioner", "Swift / AXObserver", "Observes NC process; computes banner targets; drives repositioning and custom overlays")
         Container(customMgr, "CustomBannerManager", "AppKit / SwiftUI", "Creates and manages NSPanel overlay windows; handles dismiss timers and animations")
-        Container(settingsUI, "SettingsView", "SwiftUI", "Settings panel: 8 tabs (Position, Banner, Exceptions, Presets, General, Backup, Logs, Help)")
-        Container(logger, "NannyLogger", "Swift / Combine", "In-memory ring buffer (500 log entries), observable by the Logs tab")
+        Container(settingsUI, "SettingsView", "SwiftUI", "Settings panel: 8 tabs (Position, Banner, Exceptions, Presets, General, Backup, Diagnostics, Help)")
+        Container(logger, "NannyLogger", "Swift / Combine", "In-memory ring buffer (1000 log entries), observable by the Diagnostics tab")
         ContainerDb(ud, "UserDefaults", "plist", "Stores all settings except known_apps; keyed by string constants in AppSettings.Key")
         ContainerDb(fs, "known_apps.json", "JSON file", "~/Library/Application Support/NotificationNanny/ — survives app reinstall / UD reset")
     }
@@ -203,18 +206,20 @@ NotificationNanny (SPM Package)
 │   ├── InstallSource.swift        Homebrew-vs-direct install detection
 │   ├── HomebrewUpdater.swift      In-app `brew upgrade --cask` runner
 │   ├── NannyLogger.swift          In-memory log ring buffer
+│   ├── AXSupport.swift            AXUIElement extension: size/point/string/children/staticText + cleanAXString
+│   ├── Diagnostics.swift          Health-check collection + bug-report URL builder (shared)
 │   ├── NotificationProbe.swift    Diagnostic window enumeration
 │   ├── MenuBarContent.swift       (menu bar population, if present)
 │   ├── PositionTile.swift         DraggableScreenTile + TestNotification
 │   ├── SettingsView.swift         Shell: sidebar, banner strips, WindowSizeLock, SettingsSliderRow
 │   ├── SettingsView+PositionTab.swift    Position tab (PositionTabView)
-│   ├── SettingsView+BannerTab.swift      Banner tab (BannerTabView + AnimationPreviewButton)
+│   ├── SettingsView+BannerTab.swift      Banner tab (BannerTabView — scale, tint, animation picker)
 │   ├── SettingsView+ExceptionsTab.swift  Exceptions tab (ExceptionsTabView)
 │   ├── SettingsView+PresetsTab.swift     Presets tab (PresetsTabView)
 │   ├── SettingsView+GeneralTab.swift     General tab (GeneralTabView)
 │   ├── SettingsView+BackupTab.swift      Backup tab (BackupTabView)
-│   ├── SettingsView+LogsTab.swift        Logs tab (LogsTabView)
-│   └── SettingsView+HelpTab.swift        Help + diagnostics tab (HelpTabView)
+│   ├── SettingsView+DebugTab.swift       Diagnostics tab (DebugTabView — collapsible health checks, activity log, edge-case tools)
+│   └── SettingsView+HelpTab.swift        Help tab (HelpTabView — links + "Report a bug" auto-attach)
 │
 ├── NotificationNanny              (executable target — entry point only)
 │   └── NotificationNannyApp.swift @main + AppCoordinator
@@ -270,8 +275,8 @@ NotificationNanny (SPM Package)
 
 #### AppGroup
 
-- **Purpose:** Per-app rule set. One group contains N app names and overrides: `ScreenPlacement`, `targetDisplayID`, `bannerScale?`, `bannerMode?`, `bannerTint?`.
-- **Nil-means-inherit pattern:** `bannerScale`, `bannerMode`, and `bannerTint` are all `Optional` — `nil` means "inherit global default", allowing groups to opt into only specific overrides.
+- **Purpose:** Per-app rule set. One group contains N app names and overrides: `ScreenPlacement`, `targetDisplayID`, `bannerScale?`, `bannerMode?`, `bannerTint?`, `bannerAnimation?`.
+- **Nil-means-inherit pattern:** `bannerScale`, `bannerMode`, `bannerTint`, and `bannerAnimation` are all `Optional` — `nil` means "inherit global default", allowing groups to opt into only specific overrides. `AppSettings.effectiveBanner{Scale,Mode,Animation}(for:/forGroupID:)` resolve the override-or-global value, and `shouldUseCustomBanner` keys off the *effective* animation so a per-group animation activates the custom renderer.
 - **Relationships:** `AppSettings.appGroups: [AppGroup]` (1:N); a given `appName` string belongs to at most one group (enforced by `addApp(_:toGroup:)`).
 
 #### ScreenPlacement
@@ -288,7 +293,8 @@ NotificationNanny (SPM Package)
 #### BannerContent (transient)
 
 - **Purpose:** Extracted notification content for rendering the custom overlay. Not persisted.
-- **Extraction:** Parsed from the `AXAttributedDescription` attribute of the NC banner element — comma-separated format `"AppName, Title\nBody"`.
+- **Extraction:** The app name comes from the `AXAttributedDescription` prefix (`"AppName, …"`). Title/body are resolved by `splitTitleBody`: it takes the title from the first `AXStaticText` child that prefixes the content (authoritative, handles comma-containing senders and wrapped bodies) and the remainder as the body, falling back to the legacy newline/comma heuristic only when no static-text child matches.
+- **Equatable (by text):** `BannerContent` compares on `appName/title/body` (icon ignored). `NotificationRepositioner.overlayContent[CFHashCode]` stores what each live overlay shows so a window NC *reuses* for a newer back-to-back message is detected (`overlayContentChanged`) and the overlay refreshed instead of keeping stale text.
 
 ### 4.2 Data Model Diagram
 
@@ -296,6 +302,8 @@ NotificationNanny (SPM Package)
 classDiagram
     class AppSettings {
         +Bool isEnabled
+        +Date? snoozedUntil
+        +Bool isActive
         +Double autoDismissSeconds
         +Double bannerScale
         +CGDirectDisplayID targetDisplayID
@@ -380,10 +388,10 @@ classDiagram
 
     class BannerAnimation {
         <<enumeration>>
-        slide
-        bounce
+        default
         fade
         scale
+        bounce
     }
 
     AppSettings "1" --> "0..*" AppGroup : appGroups
@@ -410,7 +418,7 @@ When a banner arrives, `NotificationRepositioner` decides the rendering path:
 Banner AX event received
         │
         ▼
-isEnabled? ──No──► ignore
+isActive? (isEnabled && !snoozed) ──No──► ignore
         │
        Yes
         ▼
@@ -540,9 +548,9 @@ sequenceDiagram
 
 ### 5.3 Scale Architecture
 
-Banner scaling is handled exclusively via the **custom banner path**. `shouldUseCustomBanner` returns `true` when any of the following is active:
+Banner scaling is handled exclusively via the **custom banner path**. `shouldUseCustomBanner` evaluates the **effective** (per-group-or-global) values and returns `true` when any of the following is active:
 - `bannerScale ≠ 1.0`
-- `bannerAnimation ≠ .slide` (all non-default animations require custom rendering)
+- `bannerAnimation ≠ .default` (all non-default animations require custom rendering)
 - `hasBannerColor` (tint is set)
 - `bannerMode == .custom` (forced)
 
@@ -638,11 +646,22 @@ sequenceDiagram
 - **Purpose:** Prevents infinite loops — when the app moves a banner, NC fires a `kAXWindowMovedNotification`, which would trigger a re-reposition, which triggers another move event, etc.
 - **Implementation:** `lastSelfSetPositions: [CFHashCode: CGPoint]` is updated after every `setWindowPosition` call. On `kAXWindowMovedNotification`, the Euclidean distance between the current position and the last self-set position is computed; if it is ≤4px, the event is treated as self-induced and ignored.
 - **Companion: `dismissedKeys: Set<CFHashCode>`** — windows explicitly dismissed by `scheduleAutoDismiss` are added to this set. `targetOrigin` returns `nil` for any key in `dismissedKeys`, so NC fighting back after a user-configured auto-dismiss cannot re-show the banner. Cleared per-window on `kAXUIElementDestroyedNotification` and wholesale on `teardownObserver`.
+- **Companion: time debounce (`lastRepositionAt: [CFHashCode: Date]`)** — `kAXWindowMovedNotification` events within 600 ms of our own move are ignored, suppressing NC's entrance-animation churn that otherwise makes native banners visibly re-layout/resize on appearance. **Exception:** when an overlay is live for the window the debounce is skipped, because NC moving a hidden window can signal a back-to-back content swap that must be handled.
 
-### 4. Generation Counter (Animation Guard)
+### 3b. Test-Banner Identity
 
-- **Purpose:** Prevents stale async closures from repositioning a banner that has already been dismissed or replaced.
-- **Implementation:** `animationGeneration` is an integer incremented before every reposition. Each scheduled closure (`scheduleHolds`, `scheduleAutoDismiss`) captures the generation at scheduling time and checks it before executing; if the stored value changed, the closure is a no-op.
+- **Purpose:** While a test is "in flight", a *real* notification arriving must not be hijacked by the test group's settings (it previously was, because `testGroupID` was a global mode flag).
+- **Implementation:** `TestNotification.send()` returns a unique title stamp; `effectiveTestGroup(for:)` binds `testBannerWindow` to the single window whose `AXAttributedDescription` contains that stamp and returns the test group only for it. `targetOrigin`, `snapWindow`, and `repositionWindow` shadow `testGroupID` with this per-window value, so real notifications during a test follow their normal app path.
+
+### 4. Per-Window Generation Counter (Animation Guard)
+
+- **Purpose:** Prevents stale async closures from repositioning a banner that has already been dismissed or replaced — without one banner's events cancelling another's scheduled work.
+- **Implementation:** `generation: [CFHashCode: Int]` holds a per-window counter. `nextGeneration(for:)` bumps and returns the window's value at the start of `repositionWindow`; each scheduled closure (`scheduleHolds`, `scheduleAutoDismiss`, the readiness/content retries) captures it and checks `isCurrentGeneration(_:for:)` before executing. Keying by window means a second concurrent banner (or the test banner alongside a real one) no longer cancels the first's holds/auto-dismiss — the long-standing single-counter race. `burstReposition` no longer bumps generation (holds re-read live settings, so a settings change needn't cancel them).
+
+### 4b. Readiness Gate (back-to-back banners)
+
+- **Purpose:** A second message arriving back-to-back can fire window events before its AX subtree (banner element + app name) is populated. Deciding custom-vs-native then would resolve a per-group override against a missing name and fall back to the global (often native) banner — the "second message wasn't custom" bug.
+- **Implementation:** `isBannerReady(_:)` (banner element present **and** app name resolvable) gates the top of `repositionWindow` for real notifications; if not ready it retries (50/150/350 ms, generation-guarded) before committing. Genuine non-banners (widgets, the NC panel) never become ready and simply proceed once the budget is spent.
 
 ### 5. CFHashCode Keying for Custom Banners
 
@@ -707,7 +726,8 @@ sequenceDiagram
 | AppNameResolver | Extracted class that owns AX attribute parsing, banner-element tree search, and the per-window app-name cache. Previously inlined in `NotificationRepositioner`. |
 | PrivateWindowAPI | Swift namespace (`enum`) isolating all `@_silgen_name` CGS declarations and runtime `dlopen`/`dlsym` SkyLight loading. Exposes `windowID(for:)`, `setTransform(_:on:)`, `setAlpha(_:on:)`. |
 | Drift Guard | The ≤4px Euclidean distance check on `kAXWindowMovedNotification` that prevents self-induced feedback loops. |
-| Generation Counter | `animationGeneration` integer used to invalidate stale async closures after a new reposition begins. |
+| Generation Counter | `generation: [CFHashCode: Int]` — a **per-window** counter used to invalidate stale async closures after a new reposition begins, without one banner cancelling another's scheduled work. |
+| Readiness Gate | `isBannerReady(_:)` check (banner element + app name present) that retries `repositionWindow` for a not-yet-populated back-to-back banner before deciding custom-vs-native. |
 | Overlay window | An `NSPanel` with `.borderless` + `.nonactivatingPanel` at `.statusBar` window level, used as the custom banner replacement. |
 | AppGroup | A named collection of app names that share position, scale, banner mode, and tint overrides. |
 | Preset | A named snapshot of the full settings state (position, scale, groups, behaviour toggles) that can be recalled in one tap. |
@@ -801,7 +821,7 @@ NotificationRepositioner (orchestrator only)
 
 **Problem:** Selecting Bounce/Fade/Scale in the Banner tab had no effect because `shouldUseCustomBanner` did not consider `bannerAnimation`. The animation setting is only honoured by the custom overlay; native banners ignore it.
 
-**Fix:** `shouldUseCustomBanner(for:)` and `shouldUseCustomBanner(forGroupID:)` now return `true` when `bannerAnimation != .default`. `.default` is the system-compatible slide-in and does not force the custom path. Note: `BannerAnimation` currently only has the `.default` case; other animation variants (slide, bounce, fade, scale) are reserved for future implementation.
+**Fix:** `shouldUseCustomBanner(for:)` and `shouldUseCustomBanner(forGroupID:)` now return `true` when `bannerAnimation != .default`. `.default` is the system-compatible slide-in and does not force the custom path. (Update 2026-06-15: the additional animation variants are now implemented — see below.)
 
 ---
 
@@ -829,11 +849,81 @@ NotificationRepositioner (orchestrator only)
 
 Removed: `BannerInfo` struct, `detectedBannerInfo: BannerInfo?`, `detectBannerInfo(in:windowPos:)` (never called), and `AnimationPreviewButton` in `SettingsView+BannerTab.swift` (defined but never instantiated).
 
-#### Known open issue: shared `animationGeneration` counter
+#### Shared `animationGeneration` counter ✅
 
-**Problem:** `animationGeneration: Int` is a single counter for all concurrent banners. When banners A and B are repositioned in sequence, B's `repositionWindow` call increments the counter, cancelling A's pending `scheduleHolds` closures. A can then drift briefly during its slide-in animation window before NC fires a `kAXWindowMovedNotification` that triggers re-repositioning.
+**Problem:** `animationGeneration: Int` was a single counter for all concurrent banners. When banners A and B were repositioned in sequence, B's `repositionWindow` call incremented the counter, cancelling A's pending `scheduleHolds` / `scheduleAutoDismiss` closures.
 
-**Status:** Open. Self-correcting via AX events but may cause a brief position flicker for simultaneous notifications. Proper fix requires per-window generation tracking (`[CFHashCode: Int]`).
+**Fix (2026-06-17):** Replaced with per-window `generation: [CFHashCode: Int]` (`nextGeneration(for:)` / `isCurrentGeneration(_:for:)`). See §8 pattern 4. Cleared per-window on destroy and wholesale on teardown.
+
+---
+
+### Additional fixes applied (2026-06-15)
+
+#### Menu-bar click did not re-surface an open-but-unfocused settings window ✅
+
+**Problem:** With the settings window already open, clicking away into another app and then clicking the menu-bar icon again left the window hidden behind the active app. `AppCoordinator.openSettings()` called the macOS 14+ cooperative `NSApp.activate()`, which deliberately refuses to pull an `LSUIElement` accessory app's window in front of the currently active app.
+
+**Fix:** Extracted `presentWindow(_:)` (used for both the existing-window and freshly-created paths). It deminiaturizes if needed, then calls `NSApp.activate(ignoringOtherApps: true)` + `window.orderFrontRegardless()` — the reliable forward-bring pattern for accessory apps.
+
+#### Banner animations implemented ✅
+
+**Problem:** `BannerAnimation` had only `.default`; the other variants were commented out, `CustomBannerView.setupAnimations()` handled only `.default`, and no UI existed to pick an animation.
+
+**Fix:**
+- `BannerAnimation` cases are now `.default`, `.fade`, `.scale`, `.bounce` (the redundant `slide` was dropped — `.default` is already the slide-in).
+- `setupAnimations()` implements each with a distinct intro spring/ease and a matching slide-out closure, sharing a `scheduleDismiss(after:)` helper for the post-outro `dismissCompletion` call.
+- A segmented **Animation** picker was added to the Banner tab (`SettingsView+BannerTab.swift`). Any non-`.default` selection activates the custom renderer via the existing `shouldUseCustomBanner` path.
+
+**No-duplicate-instance guarantees** (unchanged, relied upon): `CustomBannerManager.showBanner` calls `dismiss(key:)` first (one panel per AX element); `dismiss(key:)` is idempotent via `removeValue`; and `CustomBannerView`'s `animationsSetup` flag guards `onAppear` so the intro never restarts on panel moves. Hidden start states (opacity 0 / scaled down) are invisible on the first frame because the panel fades its own alpha 0→1 on show.
+
+---
+
+### Structural & feature work (2026-06-17, v1.5)
+
+#### AX primitives extracted to an `AXUIElement` extension ✅
+
+`AXSupport.swift` adds `size()`, `point(_:)`, `stringAttribute(_:)`, `children()`, and `staticTextValues(depth:)` on `AXUIElement`, plus a free `cleanAXString(_:)`. `NotificationRepositioner` and `AppNameResolver` now share these instead of re-spelling `AXUIElementCopyAttributeValue` / scalar-stripping, shrinking the repositioner and removing duplicated traversal/cleaning logic.
+
+#### Snooze (pause for N minutes) ✅
+
+`AppSettings.snoozedUntil: Date?` (persisted) with `isSnoozed`, `isActive` (= `isEnabled && !isSnoozed`), `snooze(minutes:)`, and `endSnooze()`. A generation-guarded `DispatchQueue.main.asyncAfter` auto-resumes at expiry (re-armed on launch if a snooze is still live). `NotificationSettingsProviding.isActive` is the new repositioning gate (`targetOrigin` checks it); `burstReposition` dismisses live overlays the moment we go inactive. Surfaced in the menu bar ("Pause for…" / "Resumes at HH:MM · Resume") and the Diagnostics report. Snooze is **not** included in backups (transient device state).
+
+#### Export schema versioning ✅
+
+`SettingsExport.schemaVersion: Int?` (`currentExportSchemaVersion = 1`). Old backups without it decode as v1; importing a newer-than-known schema logs a warning and proceeds (unknown JSON keys are ignored by `JSONDecoder`). Gives a branch point for future migrations.
+
+---
+
+### Additional fixes applied (2026-06-17)
+
+#### Back-to-back / rapid-notification races ✅
+
+A cluster of fixes for notifications arriving in quick succession (see §8 patterns 3b, 4, 4b):
+
+- **Per-window generation** replaces the single `animationGeneration` counter.
+- **Test-banner identity** (`effectiveTestGroup` + title stamp) stops real notifications being hijacked by an in-flight test.
+- **Readiness gate** (`isBannerReady`) retries until a back-to-back banner's app name resolves, so per-group overrides aren't lost to the global default (the "second message wasn't custom" bug).
+- **Overlay content refresh** (`overlayContent` + `overlayContentChanged`, `BannerContent: Equatable`) recreates the overlay when NC reuses a window for a newer message instead of showing stale text.
+- **`windowMoved` time debounce** (`lastRepositionAt`, 600 ms) suppresses NC entrance-animation churn for native banners; skipped when an overlay is live.
+- **Transient width clamp** (`maxBannerWidth = 480`): NC briefly reports an oversized banner width (~2×) while coalescing rapid same-app notifications; the overlay falls back to the default width instead of rendering giant for a frame.
+
+**Known limitation:** macOS NC *coalesces* same-app notifications fired only a few hundred ms apart into one reused banner slot, overwriting content in place. Intermediate messages in a tight burst are therefore transient by NC's design — the overlay shows the latest, matching native behaviour.
+
+#### Title/body extraction via `AXStaticText` children ✅
+
+**Problem:** Splitting the flattened `AXAttributedDescription` mis-filed long messages into the title (the newline marks NC's visual wrap, not the title/body boundary) and broke for senders whose names contain commas (e.g. "Lastname, First").
+
+**Fix:** `splitTitleBody` takes the title from the first `AXStaticText` child that prefixes the content and the remainder as the body, with the legacy heuristic as a fallback.
+
+#### Per-group banner animation ✅
+
+`AppGroup.bannerAnimation: BannerAnimation?` added (nil-inherit). `effectiveBannerAnimation(for:/forGroupID:)` resolve it; `shouldUseCustomBanner` now keys off the effective animation. A compact per-group animation menu was added to the Banner tab, and the animation preview now renders the selected tint instead of a hardcoded red.
+
+#### Diagnostics tab + bug-report auto-attach ✅
+
+- New always-visible **Diagnostics** tab (`DebugTabView`) consolidates the health checks, the activity log, and edge-case tools (AX-tree dump via `dumpBannerDiagnostics`, back-to-back burst via `sendBurstTest`) into collapsible sections. The old standalone Logs tab (`SettingsView+LogsTab.swift`) was removed.
+- Shared `Diagnostics` namespace builds the report and a prefilled GitHub issue URL (diagnostics + a capped tail of logs); the Help tab's **Report a bug** opens it and copies the full report to the clipboard (URL length can't carry a long log, so the clipboard is the fallback).
+- The **General** tab toggles are now grouped into labelled sections (Startup, Timing, Pausing, Placement & safety).
 
 ---
 
@@ -855,4 +945,4 @@ Removed: `BannerInfo` struct, `detectedBannerInfo: BannerInfo?`, `detectBannerIn
 
 ---
 
-*Architecture document last updated 2026-06-10 (v6.4.0 + bug fixes)*
+*Architecture document last updated 2026-06-17 (v1.5 — AX extension extraction, snooze, export versioning)*

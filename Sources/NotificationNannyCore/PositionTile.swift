@@ -154,10 +154,62 @@ struct BannerChip: View {
 
 // MARK: - Test notification helper
 
-enum TestNotification {
-    static func send() {
+package enum TestNotification {
+    /// Sends the test banner and returns its unique title, so the repositioner can tell
+    /// this specific banner apart from real notifications that arrive at the same time.
+    @discardableResult
+    static func send() -> String {
         let stamp = Int(Date().timeIntervalSince1970) % 100000
-        let script = "display notification \"Thank you for using NotificationNanny!\" with title \"Test #\(stamp)\""
+        let title = "Test #\(stamp)"
+        run(script: "display notification \"Thank you for using NotificationNanny!\" with title \"\(title)\"")
+        return title
+    }
+
+    /// Fires `count` notifications back-to-back from a single AppleScript run (with a short delay
+    /// between each) to reproduce the rapid-succession race. Used by the hidden Debug tab.
+    static func sendBurst(count: Int) {
+        let stamp = Int(Date().timeIntervalSince1970) % 100000
+        var lines: [String] = []
+        for i in 1...max(1, count) {
+            lines.append("display notification \"Back-to-back message \(i) of \(count)\" with title \"Burst #\(stamp)-\(i)\"")
+            if i < count { lines.append("delay 0.4") }
+        }
+        run(script: lines.joined(separator: "\n"))
+    }
+
+    /// One real-path notification with an arbitrary title/body — used by the Diagnostics tab to
+    /// exercise content extraction (`splitTitleBody`), wrapping, unicode handling, and width logic.
+    static func sendCustom(title: String, body: String) {
+        run(script: "display notification \"\(escapeAS(body))\" with title \"\(escapeAS(title))\"")
+    }
+
+    /// Escapes a Swift string for safe embedding inside an AppleScript double-quoted literal.
+    private static func escapeAS(_ s: String) -> String {
+        s.replacingOccurrences(of: "\\", with: "\\\\")
+         .replacingOccurrences(of: "\"", with: "\\\"")
+    }
+
+    /// Tricky notification shapes that have historically broken extraction or layout.
+    package struct Scenario: Identifiable {
+        package let id = UUID()
+        package let label: String
+        let title: String
+        let body: String
+    }
+
+    package static let scenarios: [Scenario] = [
+        Scenario(label: "Long message", title: "NotificationNanny",
+                 body: "This is a deliberately long notification body to exercise text wrapping, the two-line clamp, and width handling in the custom overlay renderer so overflow is easy to see."),
+        Scenario(label: "Comma in sender", title: "Stählin, Caspar",
+                 body: "Tests the comma-containing title split that broke Teams-style senders."),
+        Scenario(label: "Title only (no body)", title: "Reminder: stand up and stretch", body: ""),
+        Scenario(label: "Emoji & unicode", title: "Café ☕️ 你好 🎉",
+                 body: "Accents éàü, emoji 🔥✅🚀, and a long tail to nudge wrapping."),
+        Scenario(label: "Unbroken long word", title: "Link",
+                 body: "https://example.com/some/really/long/path/that/will/not/wrap/nicely/segment/end"),
+    ]
+
+    private static func run(script: String) {
         let task = Process()
         task.launchPath = "/usr/bin/osascript"
         task.arguments = ["-e", script]

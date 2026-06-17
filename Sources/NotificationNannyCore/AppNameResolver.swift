@@ -38,13 +38,10 @@ final class AppNameResolver {
     /// Walks the AX tree looking for a child element whose subrole is a known banner subrole.
     func findBannerElement(in el: AXUIElement, depth: Int = 0) -> AXUIElement? {
         guard depth < 7 else { return nil }
-        var srRef: CFTypeRef?
-        if AXUIElementCopyAttributeValue(el, kAXSubroleAttribute as CFString, &srRef) == .success,
-           let sr = srRef as? String, Self.bannerSubroles.contains(sr) { return el }
-        var cRef: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(el, kAXChildrenAttribute as CFString, &cRef) == .success,
-              let children = cRef as? [AXUIElement] else { return nil }
-        for child in children {
+        if let sr = el.stringAttribute(kAXSubroleAttribute as String), Self.bannerSubroles.contains(sr) {
+            return el
+        }
+        for child in el.children() {
             if let found = findBannerElement(in: child, depth: depth + 1) { return found }
         }
         return nil
@@ -53,17 +50,10 @@ final class AppNameResolver {
     // MARK: - Private
 
     private func nameFromElement(_ el: AXUIElement) -> String? {
-        var ref: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(el, "AXAttributedDescription" as CFString, &ref) == .success,
-              let val = ref, CFGetTypeID(val) == CFAttributedStringGetTypeID() else { return nil }
-        let str = CFAttributedStringGetString((val as! CFAttributedString)) as String
-        guard let first = str.components(separatedBy: ", ").first, !first.isEmpty else { return nil }
+        guard let str = el.stringAttribute("AXAttributedDescription"),
+              let first = str.components(separatedBy: ", ").first else { return nil }
         // Strip directional Unicode marks (e.g. U+200E prepended by WhatsApp).
-        let cleaned = first
-            .unicodeScalars
-            .filter { !$0.properties.isDefaultIgnorableCodePoint }
-            .reduce(into: "") { $0.append(Character($1)) }
-            .trimmingCharacters(in: .whitespaces)
+        let cleaned = cleanAXString(first)
         return cleaned.isEmpty ? nil : cleaned
     }
 }
