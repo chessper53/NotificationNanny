@@ -18,6 +18,8 @@ package final class AppSettings: ObservableObject {
         static let pauseWhileStreaming  = "pauseWhileStreaming"
         static let avoidNCPanel         = "avoidNCPanel"
         static let protectDesktopWidgets = "protectDesktopWidgets"
+        static let followActiveScreen   = "followActiveScreen"
+        static let pauseDuringFocus     = "pauseDuringFocus"
         static let bannerScale          = "bannerScale"
         static let holdWhileAsleep      = "holdWhileAsleep"
         static let bannerColorR         = "bannerColorR"
@@ -26,6 +28,7 @@ package final class AppSettings: ObservableObject {
         static let hasBannerColor       = "hasBannerColor"
         static let bannerAnimation      = "bannerAnimation"
         static let hideMenuBarIcon      = "hideMenuBarIcon"
+        static let snoozedUntil         = "snoozedUntil"
     }
 
     /// ~/Library/Application Support/NotificationNanny/known_apps.json
@@ -43,6 +46,49 @@ package final class AppSettings: ObservableObject {
         didSet { defaults.set(isEnabled, forKey: Key.isEnabled) }
     }
 
+    /// When set to a future date, repositioning is temporarily paused ("snooze"); banners fall
+    /// through to default macOS behaviour until it elapses. Persisted so a relaunch mid-snooze
+    /// still honours it. `nil`/past means not snoozed.
+    @Published package private(set) var snoozedUntil: Date? {
+        didSet {
+            if let d = snoozedUntil { defaults.set(d, forKey: Key.snoozedUntil) }
+            else { defaults.removeObject(forKey: Key.snoozedUntil) }
+        }
+    }
+
+    private var snoozeGeneration = 0
+
+    /// True while a snooze is in effect.
+    package var isSnoozed: Bool {
+        guard let until = snoozedUntil else { return false }
+        return until > Date()
+    }
+
+    /// Master gate for repositioning: the user toggle AND not currently snoozed.
+    package var isActive: Bool { isEnabled && !isSnoozed }
+
+    /// Pause repositioning for `minutes`, auto-resuming when it elapses.
+    package func snooze(minutes: Int) {
+        snoozedUntil = Date().addingTimeInterval(Double(minutes) * 60)
+        scheduleSnoozeExpiry()
+    }
+
+    /// Resume immediately, cancelling any pending auto-resume.
+    package func endSnooze() {
+        snoozeGeneration &+= 1            // invalidate any in-flight expiry
+        if snoozedUntil != nil { snoozedUntil = nil }
+    }
+
+    private func scheduleSnoozeExpiry() {
+        snoozeGeneration &+= 1
+        let gen = snoozeGeneration
+        guard let until = snoozedUntil else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + max(0, until.timeIntervalSinceNow)) { [weak self] in
+            guard let self, self.snoozeGeneration == gen else { return }
+            self.endSnooze()
+        }
+    }
+
     @Published package var pauseWhileStreaming: Bool {
         didSet { defaults.set(pauseWhileStreaming, forKey: Key.pauseWhileStreaming) }
     }
@@ -53,6 +99,17 @@ package final class AppSettings: ObservableObject {
 
     @Published package var protectDesktopWidgets: Bool {
         didSet { defaults.set(protectDesktopWidgets, forKey: Key.protectDesktopWidgets) }
+    }
+
+    /// When on, banners go to the screen under the cursor instead of the fixed
+    /// target display. A per-app/group screen override still wins over this.
+    @Published package var followActiveScreen: Bool {
+        didSet { defaults.set(followActiveScreen, forKey: Key.followActiveScreen) }
+    }
+
+    /// When on, repositioning is skipped while a macOS Focus / Do Not Disturb is active.
+    @Published package var pauseDuringFocus: Bool {
+        didSet { defaults.set(pauseDuringFocus, forKey: Key.pauseDuringFocus) }
     }
 
     @Published package var holdWhileAsleep: Bool {
@@ -145,9 +202,17 @@ package final class AppSettings: ObservableObject {
         self.defaults           = defaults
         self.knownAppsFileURL   = knownAppsFileURL ?? Self.defaultKnownAppsFileURL
         self.isEnabled             = (defaults.object(forKey: Key.isEnabled) as? Bool) ?? true
+        // Only honour a persisted snooze if it's still in the future.
+        if let d = defaults.object(forKey: Key.snoozedUntil) as? Date, d > Date() {
+            self.snoozedUntil = d
+        } else {
+            self.snoozedUntil = nil
+        }
         self.pauseWhileStreaming    = (defaults.object(forKey: Key.pauseWhileStreaming) as? Bool) ?? false
         self.avoidNCPanel          = (defaults.object(forKey: Key.avoidNCPanel) as? Bool) ?? true
         self.protectDesktopWidgets = (defaults.object(forKey: Key.protectDesktopWidgets) as? Bool) ?? true
+        self.followActiveScreen    = (defaults.object(forKey: Key.followActiveScreen) as? Bool) ?? false
+        self.pauseDuringFocus      = (defaults.object(forKey: Key.pauseDuringFocus) as? Bool) ?? false
         self.holdWhileAsleep       = (defaults.object(forKey: Key.holdWhileAsleep) as? Bool) ?? false
         self.autoDismissSeconds    = defaults.double(forKey: Key.autoDismiss)
         let storedScale = defaults.double(forKey: Key.bannerScale)
@@ -195,6 +260,9 @@ package final class AppSettings: ObservableObject {
         } else {
             self.knownAppNames = []
         }
+
+        // Re-arm the auto-resume timer if we loaded a still-active snooze.
+        if snoozedUntil != nil { scheduleSnoozeExpiry() }
     }
 
     // MARK: - Per-screen placement
@@ -300,10 +368,19 @@ package final class AppSettings: ObservableObject {
         groupID.flatMap { group(by: $0) }?.bannerMode
     }
 
+    package func effectiveBannerAnimation(for appName: String?) -> BannerAnimation {
+        appName.flatMap { group(for: $0) }?.bannerAnimation ?? bannerAnimation
+    }
+
+    package func effectiveBannerAnimation(forGroupID groupID: UUID?) -> BannerAnimation {
+        groupID.flatMap { group(by: $0) }?.bannerAnimation ?? bannerAnimation
+    }
+
     package func shouldUseCustomBanner(for appName: String?) -> Bool {
         shouldUseCustomBannerImpl(
             mode: effectiveBannerMode(for: appName),
             scale: effectiveBannerScale(for: appName),
+            animation: effectiveBannerAnimation(for: appName),
             resolvedGroup: appName.flatMap { group(for: $0) }
         )
     }
@@ -312,17 +389,19 @@ package final class AppSettings: ObservableObject {
         shouldUseCustomBannerImpl(
             mode: effectiveBannerMode(forGroupID: groupID),
             scale: effectiveBannerScale(forGroupID: groupID),
+            animation: effectiveBannerAnimation(forGroupID: groupID),
             resolvedGroup: groupID.flatMap { group(by: $0) }
         )
     }
 
-    private func shouldUseCustomBannerImpl(mode: BannerMode?, scale: Double, resolvedGroup: AppGroup?) -> Bool {
+    private func shouldUseCustomBannerImpl(mode: BannerMode?, scale: Double,
+                                           animation: BannerAnimation, resolvedGroup: AppGroup?) -> Bool {
         switch mode {
         case .native: return false
         case .custom: return true
         case nil:
             if abs(scale - 1.0) > 0.001 { return true }
-            if bannerAnimation != .default { return true }
+            if animation != .default { return true }
             return resolvedGroup?.hasBannerColor ?? hasBannerColor
         }
     }
@@ -336,7 +415,11 @@ package final class AppSettings: ObservableObject {
 
     // MARK: - Import / Export
 
+    /// Bumped whenever the export shape changes in a way that needs migration on read.
+    static let currentExportSchemaVersion = 1
+
     struct SettingsExport: Codable {
+        var schemaVersion: Int?            // optional: absent in backups predating versioning (treat as v1)
         var placements: [String: ScreenPlacement]
         var targetDisplayID: CGDirectDisplayID
         var autoDismissSeconds: Double
@@ -344,12 +427,15 @@ package final class AppSettings: ObservableObject {
         var pauseWhileStreaming: Bool
         var avoidNCPanel: Bool
         var protectDesktopWidgets: Bool?   // optional: absent in backups predating this setting
+        var followActiveScreen: Bool?      // optional: absent in older backups
+        var pauseDuringFocus: Bool?        // optional: absent in older backups
         var appGroups: [AppGroup]
         var presets: [Preset]
     }
 
     func exportData() throws -> Data {
         let export = SettingsExport(
+            schemaVersion: Self.currentExportSchemaVersion,
             placements: placements,
             targetDisplayID: targetDisplayID,
             autoDismissSeconds: autoDismissSeconds,
@@ -357,6 +443,8 @@ package final class AppSettings: ObservableObject {
             pauseWhileStreaming: pauseWhileStreaming,
             avoidNCPanel: avoidNCPanel,
             protectDesktopWidgets: protectDesktopWidgets,
+            followActiveScreen: followActiveScreen,
+            pauseDuringFocus: pauseDuringFocus,
             appGroups: appGroups,
             presets: presets
         )
@@ -367,6 +455,12 @@ package final class AppSettings: ObservableObject {
 
     func importData(_ data: Data) throws {
         let imported = try JSONDecoder().decode(SettingsExport.self, from: data)
+        let version = imported.schemaVersion ?? 1
+        if version > Self.currentExportSchemaVersion {
+            NannyLogger.shared.log(
+                "Importing backup from a newer schema (v\(version) > v\(Self.currentExportSchemaVersion)) — unknown fields ignored",
+                level: .warn, tag: "Backup")
+        }
         placements          = imported.placements
         targetDisplayID     = imported.targetDisplayID
         autoDismissSeconds  = imported.autoDismissSeconds
@@ -374,6 +468,8 @@ package final class AppSettings: ObservableObject {
         pauseWhileStreaming  = imported.pauseWhileStreaming
         avoidNCPanel        = imported.avoidNCPanel
         protectDesktopWidgets = imported.protectDesktopWidgets ?? true
+        followActiveScreen  = imported.followActiveScreen ?? false
+        pauseDuringFocus    = imported.pauseDuringFocus ?? false
         appGroups           = imported.appGroups
         presets             = imported.presets
     }

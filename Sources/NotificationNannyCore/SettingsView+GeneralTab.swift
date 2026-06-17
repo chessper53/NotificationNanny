@@ -7,31 +7,40 @@ struct GeneralTabView: View {
     @State private var showResetConfirmation = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: 16) {
             Text("App-wide settings for startup, timing, and notification behaviour. These apply globally and are not affected by presets or per-app rules.")
                 .font(.callout)
                 .foregroundStyle(Color(white: 0.55))
                 .fixedSize(horizontal: false, vertical: true)
 
-            VStack(spacing: 0) {
-                autoDismissRow
-                Divider().padding(.leading, 14)
+            section("Startup") {
                 toggleRow("Launch at login", isOn: Binding(
                     get: { launchAtLogin.isEnabled },
                     set: { launchAtLogin.setEnabled($0) }
                 ))
                 Divider().padding(.leading, 14)
+                toggleRow("Hide menu bar icon", isOn: $settings.hideMenuBarIcon)
+            }
+
+            section("Timing") {
+                autoDismissRow
+            }
+
+            section("Pausing") {
                 toggleRow("Pause while screen sharing", isOn: $settings.pauseWhileStreaming)
+                Divider().padding(.leading, 14)
+                toggleRow("Pause during Focus / Do Not Disturb", isOn: $settings.pauseDuringFocus)
+            }
+
+            section("Placement & safety") {
+                toggleRow("Send to the screen with the cursor", isOn: $settings.followActiveScreen)
                 Divider().padding(.leading, 14)
                 toggleRow("Don't move Notification Center", isOn: $settings.avoidNCPanel)
                 Divider().padding(.leading, 14)
                 toggleRow("Don't move desktop widgets", isOn: $settings.protectDesktopWidgets)
                 Divider().padding(.leading, 14)
                 toggleRow("Hold banners while display is asleep", isOn: $settings.holdWhileAsleep)
-                Divider().padding(.leading, 14)
-                toggleRow("Hide menu bar icon", isOn: $settings.hideMenuBarIcon)
             }
-            .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
 
             if let error = launchAtLogin.lastError {
                 Text(error).font(.caption2).foregroundStyle(.red)
@@ -52,6 +61,17 @@ struct GeneralTabView: View {
             } message: {
                 Text("This will clear all positions, exceptions, presets and restore defaults. This cannot be undone.")
             }
+        }
+    }
+
+    @ViewBuilder
+    private func section<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(title.uppercased())
+                .font(.caption2.weight(.semibold)).foregroundStyle(.tertiary).kerning(0.5)
+                .padding(.leading, 4)
+            VStack(spacing: 0) { content() }
+                .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
         }
     }
 

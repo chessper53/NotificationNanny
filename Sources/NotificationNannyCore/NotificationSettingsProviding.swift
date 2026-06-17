@@ -5,9 +5,13 @@ import SwiftUI
 @MainActor
 package protocol NotificationSettingsProviding: AnyObject {
     var isEnabled: Bool { get }
+    /// Master gate: `isEnabled` and not currently snoozed.
+    var isActive: Bool { get }
     var pauseWhileStreaming: Bool { get }
     var avoidNCPanel: Bool { get }
     var protectDesktopWidgets: Bool { get }
+    var followActiveScreen: Bool { get }
+    var pauseDuringFocus: Bool { get }
     var holdWhileAsleep: Bool { get }
     var targetDisplayID: CGDirectDisplayID { get }
     var autoDismissSeconds: Double { get }
@@ -33,4 +37,7 @@ package protocol NotificationSettingsProviding: AnyObject {
     func shouldUseCustomBanner(for appName: String?) -> Bool
     func shouldUseCustomBanner(forGroupID groupID: UUID?) -> Bool
     var bannerAnimation: BannerAnimation { get }
+    /// Returns the group's bannerAnimation if set, otherwise the global bannerAnimation.
+    func effectiveBannerAnimation(for appName: String?) -> BannerAnimation
+    func effectiveBannerAnimation(forGroupID groupID: UUID?) -> BannerAnimation
 }

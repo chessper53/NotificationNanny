@@ -26,6 +26,10 @@ package struct MenuBarContent: View {
     package var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             header
+            if settings.isEnabled {
+                Divider()
+                snoozeSection
+            }
             if screens.count > 1 {
                 Divider()
                 screenPickerSection
@@ -90,6 +94,45 @@ package struct MenuBarContent: View {
             Label("Idle", systemImage: "pause.circle")
         }
     }
+
+    // MARK: - Snooze
+
+    @ViewBuilder
+    private var snoozeSection: some View {
+        if settings.isSnoozed, let until = settings.snoozedUntil {
+            HStack(spacing: 8) {
+                Image(systemName: "moon.zzz.fill").foregroundStyle(.orange)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("Paused").font(.caption.weight(.medium))
+                    Text("Resumes at \(Self.timeFormatter.string(from: until))")
+                        .font(.caption2).foregroundStyle(.secondary)
+                }
+                Spacer()
+                Button("Resume") { settings.endSnooze() }
+                    .controlSize(.small)
+            }
+        } else {
+            HStack(spacing: 8) {
+                Image(systemName: "moon.zzz").foregroundStyle(.secondary)
+                Text("Pause repositioning").font(.caption).foregroundStyle(.secondary)
+                Spacer()
+                Menu("Pause for…") {
+                    Button("15 minutes") { settings.snooze(minutes: 15) }
+                    Button("30 minutes") { settings.snooze(minutes: 30) }
+                    Button("1 hour")     { settings.snooze(minutes: 60) }
+                    Button("4 hours")    { settings.snooze(minutes: 240) }
+                }
+                .menuStyle(.borderlessButton).fixedSize().controlSize(.small)
+            }
+        }
+    }
+
+    private static let timeFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.timeStyle = .short
+        f.dateStyle = .none
+        return f
+    }()
 
     // MARK: - Screen picker
 

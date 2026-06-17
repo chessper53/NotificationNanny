@@ -34,13 +34,15 @@ struct AppGroup: Identifiable, Codable, Equatable {
     var bannerMode: BannerMode?
     /// nil means inherit the global banner color from AppSettings.
     var bannerTint: BannerTint?
+    /// nil means inherit the global banner animation from AppSettings.
+    var bannerAnimation: BannerAnimation?
 
     var hasBannerColor: Bool { bannerTint != nil }
 
     init(id: UUID = UUID(), name: String, appNames: [String] = [],
          placement: ScreenPlacement = .default, targetDisplayID: CGDirectDisplayID = 0,
          bannerScale: Double? = nil, bannerMode: BannerMode? = nil,
-         bannerTint: BannerTint? = nil) {
+         bannerTint: BannerTint? = nil, bannerAnimation: BannerAnimation? = nil) {
         self.id = id
         self.name = name
         self.appNames = appNames
@@ -49,11 +51,12 @@ struct AppGroup: Identifiable, Codable, Equatable {
         self.bannerScale = bannerScale
         self.bannerMode = bannerMode
         self.bannerTint = bannerTint
+        self.bannerAnimation = bannerAnimation
     }
 
     private enum CodingKeys: String, CodingKey {
         case id, name, appNames, placement, targetDisplayID, bannerScale, bannerMode
-        case bannerTint
+        case bannerTint, bannerAnimation
         // Legacy keys — read-only, for migrating data written by older versions
         case bannerColorR, bannerColorG, bannerColorB
     }
@@ -67,6 +70,7 @@ struct AppGroup: Identifiable, Codable, Equatable {
         targetDisplayID = try c.decodeIfPresent(CGDirectDisplayID.self, forKey: .targetDisplayID) ?? 0
         bannerScale     = try c.decodeIfPresent(Double.self, forKey: .bannerScale)
         bannerMode      = try c.decodeIfPresent(BannerMode.self, forKey: .bannerMode)
+        bannerAnimation = try c.decodeIfPresent(BannerAnimation.self, forKey: .bannerAnimation)
         // Prefer new bannerTint key; fall back to legacy separate R/G/B keys.
         if let tint = try c.decodeIfPresent(BannerTint.self, forKey: .bannerTint) {
             bannerTint = tint
@@ -89,5 +93,6 @@ struct AppGroup: Identifiable, Codable, Equatable {
         try c.encodeIfPresent(bannerScale, forKey: .bannerScale)
         try c.encodeIfPresent(bannerMode,  forKey: .bannerMode)
         try c.encodeIfPresent(bannerTint,  forKey: .bannerTint)
+        try c.encodeIfPresent(bannerAnimation, forKey: .bannerAnimation)
     }
 }
