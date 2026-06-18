@@ -87,8 +87,15 @@ No data is collected, transmitted, or stored outside your device. The Accessibil
 
 ## Documentation
 
-- [CHANGELOG.md](CHANGELOG.md) — release history and per-version changes
-- [ARCHITECTURE.md](ARCHITECTURE.md) — internals, design patterns, and module structure
+**For users**
+- [Troubleshooting](docs/TROUBLESHOOTING.md) — common questions, permission fixes, uninstall
+- [Changelog](docs/CHANGELOG.md) — release history and per-version changes
+
+**For contributors**
+- [Contributing](docs/CONTRIBUTING.md) — setup, conventions, how to submit a change
+- [Architecture](docs/ARCHITECTURE.md) — internals, design patterns, and module structure
+- [Debugging](docs/DEBUGGING.md) — local build / run / debug loop
+- [Releasing](docs/RELEASING.md) — how to cut and publish a release
 
 ## License
 
@@ -96,7 +103,7 @@ Released under the [MIT License](LICENSE).
 
 ## Issues and feature requests
 
-Open an issue. I read them all and work through them when I can. I have a full-time job so responses may take a little while, but nothing goes unread. [Open an issue here](https://github.com/chessper53/NotificationNanny/issues).
+Check [Troubleshooting](docs/TROUBLESHOOTING.md) first. Otherwise, open an issue. I read them all and work through them when I can. I have a full-time job so responses may take a little while, but nothing goes unread. [Open an issue here](https://github.com/chessper53/NotificationNanny/issues).
 
 ## Star History
 
