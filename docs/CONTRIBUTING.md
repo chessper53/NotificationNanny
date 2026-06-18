@@ -59,9 +59,8 @@ and private SPI are validated manually (they need a live system).
 ## Reporting bugs
 
 Use **Help → Report a bug** in the app — it pre-fills diagnostics and recent logs.
-Otherwise, see [TROUBLESHOOTING.md](TROUBLESHOOTING.md) first, then
-[open an issue](https://github.com/chessper53/NotificationNanny/issues) with your
-macOS version and steps to reproduce.
+Otherwise, [open an issue](https://github.com/chessper53/NotificationNanny/issues)
+with your macOS version and steps to reproduce.
 
 ## Releases
 
