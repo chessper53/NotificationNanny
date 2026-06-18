@@ -1,7 +1,7 @@
 # NotificationNanny — Architecture Documentation
 
 **Project:** notification-nanny  
-**Last Updated:** 2026-06-17  
+**Last Updated:** 2026-06-18  
 **Language:** English
 
 ---
@@ -18,6 +18,7 @@
 | 1.3     | 2026-06-10 | Claude   | Bug fixes: screen reconfiguration handler, scheduleAutoDismiss fight-back, offScreenOrigin multi-screen; dead code removal |
 | 1.4     | 2026-06-17 | Claude   | Back-to-back race fixes (per-window generation, test-banner identity, readiness gate, overlay content refresh, width clamp); title/body extraction via AXStaticText; per-group animation; Diagnostics tab + bug-report auto-attach |
 | 1.5     | 2026-06-17 | Claude   | AX primitives extracted to `AXUIElement` extension (`AXSupport.swift`); Snooze / pause-for-N-minutes feature; export schema versioning |
+| 1.6     | 2026-06-18 | Claude   | Desktop-widget protection (`protectDesktopWidgets`); pause-during-Focus (`FocusModeMonitor`, `pauseDuringFocus`); `LogEntryRow` view extraction; export schema carries the new toggles; CHANGELOG.md added |
 
 **Status:** CURRENT
 
@@ -28,7 +29,7 @@
 ### Workspace Structure
 
 ```
-NotificationNanny (v6.4.0)
+NotificationNanny (v7.5.0)
 ├── Sources/NotificationNanny/     — Thin @main executable entry point
 ├── Sources/NotificationNannyCore/ — All app logic (library target, testable)
 └── Tests/NotificationNannyTests/  — Swift Testing unit tests
@@ -74,6 +75,7 @@ NotificationNanny (v6.4.0)
 - `PrivateWindowAPI` — Clean Swift interface over `CGSSetWindowTransform`, `CGSSetWindowAlpha`, SkyLight SPI
 - `InstallSource` — Detects Homebrew-cask vs direct install by checking for the Caskroom directory
 - `HomebrewUpdater` — `@MainActor ObservableObject` that shells out to `brew upgrade --cask` and streams output to the UI
+- `FocusModeMonitor` — `@MainActor` singleton that reads the user's Focus/DND assertion store (`~/Library/DoNotDisturb/DB/Assertions.json`) and caches the result (1s TTL) so the repositioner can cheaply skip work while a Focus is active; fails open if the store moves
 
 ---
 
@@ -205,7 +207,9 @@ NotificationNanny (SPM Package)
 │   ├── UpdateChecker.swift        GitHub Releases version check
 │   ├── InstallSource.swift        Homebrew-vs-direct install detection
 │   ├── HomebrewUpdater.swift      In-app `brew upgrade --cask` runner
+│   ├── FocusModeMonitor.swift     Focus/DND detection (reads Assertions.json, 1s cache)
 │   ├── NannyLogger.swift          In-memory log ring buffer
+│   ├── LogEntryRow.swift          SwiftUI row view for a single log entry (Diagnostics tab)
 │   ├── AXSupport.swift            AXUIElement extension: size/point/string/children/staticText + cleanAXString
 │   ├── Diagnostics.swift          Health-check collection + bug-report URL builder (shared)
 │   ├── NotificationProbe.swift    Diagnostic window enumeration
@@ -265,7 +269,7 @@ NotificationNanny (SPM Package)
 
 - **Persistence:** `UserDefaults.standard` for all fields except `knownAppNames` which is additionally written to `~/Library/Application Support/NotificationNanny/known_apps.json`.
 - **Lifecycle:** Instantiated once by `AppCoordinator`; lives for the app lifetime.
-- **Export format:** `SettingsExport` struct (Codable JSON) — excludes `knownApps` (device-specific) and `isEnabled`/`holdWhileAsleep` (not currently in export schema).
+- **Export format:** `SettingsExport` struct (Codable JSON) — excludes `knownApps` (device-specific), `snoozedUntil` (transient), and `isEnabled` (not in export schema). `protectDesktopWidgets` and `pauseDuringFocus` are `Optional` in the export struct so backups written before those toggles existed still decode (absent → restored to their defaults: `true` / `false`).
 
 #### BannerTint
 
@@ -309,6 +313,8 @@ classDiagram
         +CGDirectDisplayID targetDisplayID
         +Bool holdWhileAsleep
         +Bool pauseWhileStreaming
+        +Bool protectDesktopWidgets
+        +Bool pauseDuringFocus
         +Bool avoidNCPanel
         +BannerAnimation bannerAnimation
         +[String] knownAppNames
@@ -423,6 +429,14 @@ isActive? (isEnabled && !snoozed) ──No──► ignore
        Yes
         ▼
 pauseWhileStreaming && isCapturing()? ──Yes──► ignore
+        │
+       No
+        ▼
+pauseDuringFocus && FocusModeMonitor.isActive? ──Yes──► ignore
+        │
+       No
+        ▼
+protectDesktopWidgets && no banner child (desktop widget)? ──Yes──► leave in place
         │
        No
         ▼
@@ -927,11 +941,36 @@ A cluster of fixes for notifications arriving in quick succession (see §8 patte
 
 ---
 
+### Structural & feature work (2026-06-18, v1.6)
+
+#### Desktop-widget protection ✅
+
+**Problem:** Desktop widgets (clock, calendar, etc.) are delivered as windows in the same NC-adjacent window list as banners. The repositioner could grab a small widget window and yank it to the configured banner position.
+
+**Fix:** `AppSettings.protectDesktopWidgets: Bool` (persisted, **default `true`**). In `targetOrigin`, a small window with **no banner subrole child** (`findBannerElement(in:) == nil`) is treated as a desktop widget / NC chrome and left where the user placed it. Exposed as "Don't move desktop widgets" in the General tab. The readiness gate (§8 pattern 4b) already declines to act on windows that never become "ready", so genuine non-banners are doubly safe.
+
+#### Pause during Focus / Do Not Disturb ✅
+
+**Feature:** `AppSettings.pauseDuringFocus: Bool` (persisted, **default `false`**). When on, `targetOrigin` short-circuits while a macOS Focus/DND mode is active, so banners that do slip through are left untouched rather than repositioned.
+
+**Implementation:** `FocusModeMonitor` (new `@MainActor` singleton) reads the user's own Focus-assertion store (`~/Library/DoNotDisturb/DB/Assertions.json` — readable because the app is non-sandboxed) and treats a non-empty `storeAssertionRecords` array as "a Focus is asserted". The result is cached for 1s (`cacheTTL`) so the 60×/sec reposition path never hits disk repeatedly. Detection is isolated in `readActiveState()`; if Apple relocates the store (e.g. on a future macOS) the monitor **fails open** (returns "no Focus") so repositioning keeps working instead of silently pausing.
+
+#### `LogEntryRow` extracted ✅
+
+The per-entry log row (timestamp, level capsule, tag capsule, message) was extracted from the Diagnostics tab into its own `LogEntryRow` SwiftUI view (`LogEntryRow.swift`), keeping `SettingsView+DebugTab.swift` focused on section layout.
+
+#### Export schema carries the new toggles ✅
+
+`SettingsExport` gains `protectDesktopWidgets: Bool?` and `pauseDuringFocus: Bool?` (both `Optional` so older backups still decode). On import, absent values fall back to the live defaults (`true` / `false`). Schema version remains `1` — the optional-field strategy needs no bump.
+
+---
+
 ## 12. References & Related Documents
 
 ### Internal
 
 - [README.md](README.md) — User-facing feature documentation and installation guide
+- [CHANGELOG.md](CHANGELOG.md) — Release history and per-version change summary
 - [VERSION](VERSION) — Single source of truth for the version string
 - [Makefile](Makefile) — Common development commands
 - [build-app.sh](build-app.sh) — Release bundle assembly script
@@ -945,4 +984,4 @@ A cluster of fixes for notifications arriving in quick succession (see §8 patte
 
 ---
 
-*Architecture document last updated 2026-06-17 (v1.5 — AX extension extraction, snooze, export versioning)*
+*Architecture document last updated 2026-06-18 (v1.6 — desktop-widget protection, pause-during-Focus, LogEntryRow extraction)*
