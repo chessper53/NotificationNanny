@@ -88,7 +88,6 @@ No data is collected, transmitted, or stored outside your device. The Accessibil
 ## Documentation
 
 **For users**
-- [Troubleshooting](docs/TROUBLESHOOTING.md) — common questions, permission fixes, uninstall
 - [Changelog](docs/CHANGELOG.md) — release history and per-version changes
 
 **For contributors**
@@ -103,7 +102,7 @@ Released under the [MIT License](LICENSE).
 
 ## Issues and feature requests
 
-Check [Troubleshooting](docs/TROUBLESHOOTING.md) first. Otherwise, open an issue. I read them all and work through them when I can. I have a full-time job so responses may take a little while, but nothing goes unread. [Open an issue here](https://github.com/chessper53/NotificationNanny/issues).
+Open an issue. I read them all and work through them when I can. I have a full-time job so responses may take a little while, but nothing goes unread. [Open an issue here](https://github.com/chessper53/NotificationNanny/issues).
 
 ## Star History
 
