@@ -90,6 +90,10 @@ No data is collected, transmitted, or stored outside your device. The Accessibil
 - [CHANGELOG.md](CHANGELOG.md) — release history and per-version changes
 - [ARCHITECTURE.md](ARCHITECTURE.md) — internals, design patterns, and module structure
 
+## License
+
+Released under the [MIT License](LICENSE).
+
 ## Issues and feature requests
 
 Open an issue. I read them all and work through them when I can. I have a full-time job so responses may take a little while, but nothing goes unread. [Open an issue here](https://github.com/chessper53/NotificationNanny/issues).
