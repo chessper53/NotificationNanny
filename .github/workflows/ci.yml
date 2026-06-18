@@ -3,15 +3,18 @@ name: CI
 on:
   push:
     branches: [main]
-    tags: ['v*']
   pull_request:
     branches: [main]
+
+# Cancel superseded runs on the same branch/PR.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   test:
     name: Build & Test
     runs-on: macos-15
-
     steps:
       - uses: actions/checkout@v4
 
@@ -22,8 +25,61 @@ jobs:
           sudo xcode-select -s "$XCODE"
           swift --version
 
+      - name: Cache SwiftPM build
+        uses: actions/cache@v4
+        with:
+          path: .build
+          key: ${{ runner.os }}-spm-test-${{ hashFiles('Package.swift', 'Sources/**/*.swift', 'Tests/**/*.swift') }}
+          restore-keys: |
+            ${{ runner.os }}-spm-test-
+
       - name: Build
         run: swift build
 
-      - name: Test
-        run: swift test
+      - name: Test (with coverage)
+        run: swift test --enable-code-coverage
+
+      # Best-effort coverage summary printed to the job log. Non-blocking: never
+      # fails the build if the toolchain lays out artifacts differently.
+      - name: Coverage summary
+        continue-on-error: true
+        run: |
+          PROF=$(find .build -name '*.profdata' | head -1)
+          BIN=$(find .build -name 'NotificationNannyPackageTests' -type f | head -1)
+          if [ -n "$PROF" ] && [ -n "$BIN" ]; then
+            xcrun llvm-cov report "$BIN" \
+              -instr-profile "$PROF" \
+              -ignore-filename-regex='Tests|\.build' \
+              Sources/NotificationNannyCore
+          else
+            echo "Coverage artifacts not found (PROF='$PROF' BIN='$BIN') — skipping."
+          fi
+
+  bundle:
+    name: Bundle smoke build
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select latest Xcode
+        run: |
+          XCODE=$(ls -d /Applications/Xcode*.app 2>/dev/null | sort -V | tail -1)
+          sudo xcode-select -s "$XCODE"
+
+      - name: Cache SwiftPM build
+        uses: actions/cache@v4
+        with:
+          path: .build
+          key: ${{ runner.os }}-spm-release-${{ hashFiles('Package.swift', 'Sources/**/*.swift') }}
+          restore-keys: |
+            ${{ runner.os }}-spm-release-
+
+      # Assembles and ad-hoc signs NotificationNanny.app — catches packaging /
+      # Info.plist / entitlements breakage that `swift build` alone won't.
+      - name: Build .app bundle
+        run: ./build-app.sh
+
+      - name: Verify bundle
+        run: |
+          test -d build/NotificationNanny.app
+          codesign --verify --verbose build/NotificationNanny.app

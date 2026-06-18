@@ -232,10 +232,15 @@ NotificationNanny (SPM Package)
     ├── AppGroupTests.swift
     ├── AppSettingsPersistenceTests.swift
     ├── AppSettingsTests.swift
+    ├── AXStringTests.swift              cleanAXString stripping/trimming
+    ├── BannerDecisionTests.swift        custom-vs-native decision tree + effective values
+    ├── ExportSchemaTests.swift          backup schema versioning + toggle migration
     ├── NotificationPositionGeometryTests.swift
     ├── NotificationPositionTests.swift
     ├── PresetTests.swift
-    └── ScreenPlacementTests.swift
+    ├── ScreenPlacementTests.swift
+    ├── SnoozeTests.swift                snooze / isActive gate
+    └── TintMigrationTests.swift         legacy bannerColorR/G/B → bannerTint
 ```
 
 ### Target Responsibilities
@@ -398,6 +403,10 @@ classDiagram
         fade
         scale
         bounce
+        drop
+        slideLeft
+        rise
+        swing
     }
 
     AppSettings "1" --> "0..*" AppGroup : appGroups
@@ -718,6 +727,11 @@ sequenceDiagram
 | `NotificationPositionGeometryTests.swift` | Edge-case geometry (offset clamping, screen boundaries) |
 | `PresetTests.swift` | Save/apply/delete preset, field preservation |
 | `ScreenPlacementTests.swift` | `ScreenPlacement.default`, Codable round-trip |
+| `BannerDecisionTests.swift` | `shouldUseCustomBanner` decision tree; per-group `effective*` override-vs-inherit |
+| `AXStringTests.swift` | `cleanAXString` default-ignorable stripping (U+200E) + trimming |
+| `TintMigrationTests.swift` | Legacy `bannerColorR/G/B` → `bannerTint` migration (AppGroup + Preset) |
+| `ExportSchemaTests.swift` | Export schema version stamp; legacy/newer backup import + toggle defaults |
+| `SnoozeTests.swift` | `snooze`/`endSnooze`, `isActive` gate, expired-vs-live snooze on init |
 
 **Not covered (integration/manual):**
 - AX observation loop (requires live system process)
@@ -754,13 +768,13 @@ sequenceDiagram
 
 ## 11. Architectural Improvement Areas
 
-Items marked ✅ have been resolved. Remaining items are open.
+Resolved items are labelled "resolved" below; the rest are open.
 
 ---
 
 ### P1 — Critical / High Impact
 
-#### 1. `NotificationRepositioner` is a God Class — partial ✅
+#### 1. `NotificationRepositioner` is a God Class — partially resolved
 
 **Resolved:** `AppNameResolver` extracted (AX attribute parsing, banner-element tree walk, per-window cache). `PrivateWindowAPI` extracted (all private SPI). The class is now ~750 lines (down from ~1050).
 
@@ -771,11 +785,11 @@ NotificationRepositioner (orchestrator only)
 └── BannerGeometryEngine   — targetOrigin, stacking, screen resolution (not yet extracted)
 ```
 
-#### 2. Scale Gauntlet ✅
+#### 2. Scale Gauntlet — resolved
 
 **Resolved:** The dead `applyScale` method (never called) has been removed. The scale hammer (`startScaleHammer`) is simplified — it no longer logs at debug verbosity on every tick. The `PrivateWindowAPI` module retains the underlying CGS/SkyLight symbols for future use.
 
-#### 3. `SettingsView` is 1600+ Lines in One File ✅
+#### 3. `SettingsView` is 1600+ Lines in One File — resolved
 
 **Resolved:** Split into 8 per-tab `View` structs in separate files (`SettingsView+PositionTab.swift` … `SettingsView+HelpTab.swift`). Each tab owns its own `@State`. `SettingsView.swift` is now a ~160-line shell containing only the sidebar, update/permission banners, and `WindowSizeLock`.
 
@@ -789,7 +803,7 @@ NotificationRepositioner (orchestrator only)
 
 **Suggestion:** Add a `presetsIncludeGroups: Bool` flag the user can opt in to. At minimum, version the export schema.
 
-#### 5. `AppGroup` / `Preset` Color Anti-Pattern ✅
+#### 5. `AppGroup` / `Preset` Color Anti-Pattern — resolved
 
 **Resolved:** `BannerTint: Codable` value type introduced (`r, g, b: Double`). `AppGroup.bannerTint: BannerTint?` replaces the three-optional fields. `Preset.bannerTint: BannerTint?` replaces the `bannerColorR/G/B + hasBannerColor` quad. `AppSettings` exposes `bannerTint: BannerTint?` as a computed property while retaining separate R/G/B UserDefaults keys for storage compatibility. Both `AppGroup` and `Preset` decoders silently migrate old data on first read.
 
@@ -797,7 +811,7 @@ NotificationRepositioner (orchestrator only)
 
 **Status:** UNUserNotificationCenter was attempted but requires the app to have notification permission granted before the first test — unreliable on fresh installs. osascript is retained. `terminationHandler` now logs the exit code and stderr to the Logs tab so failures are visible.
 
-#### 7. `pgrep` Subprocess as NC Process Fallback ✅
+#### 7. `pgrep` Subprocess as NC Process Fallback — resolved
 
 **Resolved:** `pgrepFirst(name:)` removed. `findNotificationProcessPid` now uses (1) exact bundle ID match, (2) any running app whose bundle ID contains "notification", (3) CGWindowList scan for a window owner whose name contains "notification". No subprocess is spawned.
 
@@ -805,7 +819,7 @@ NotificationRepositioner (orchestrator only)
 
 ### P3 — Lower Impact / Code Quality
 
-#### 8. `windowAppNameCache` Never Expires ✅
+#### 8. `windowAppNameCache` Never Expires — resolved
 
 **Resolved:** Cache is now owned by `AppNameResolver`. `invalidate(key:)` is called on every `kAXUIElementDestroyedNotification` before the custom-banner dismiss. `invalidateAll()` is called when the observer tears down.
 
@@ -815,15 +829,15 @@ NotificationRepositioner (orchestrator only)
 
 **Suggestion:** `@Published var appGroupsByID: [UUID: AppGroup]` alongside the ordered array, or use `$settings.appGroups` element bindings in SwiftUI.
 
-#### 10. Private SPI Declarations Scattered in the Repositioner ✅
+#### 10. Private SPI Declarations Scattered in the Repositioner — resolved
 
 **Resolved:** All `@_silgen_name` declarations and `dlopen`/`dlsym` SkyLight loading extracted to `PrivateWindowAPI.swift`. Callers use `PrivateWindowAPI.setTransform(_:on:)`, `.setAlpha(_:on:)`, `.windowID(for:)`.
 
-#### 11. Icon Lookup Hardcodes Four Directory Paths ✅
+#### 11. Icon Lookup Hardcodes Four Directory Paths — resolved
 
 **Resolved:** `lookupIcon(for:)` now checks (1) running app list, (2) `NSWorkspace.urlForApplication(withBundleIdentifier:)` for any running app that matches the display name, (3) directory scan as last resort. Same improvement applied to `cachedIcon(for:)` in `ExceptionsTabView`.
 
-#### 12. `NannyLogger` is a Global Singleton with No Injection Path ✅
+#### 12. `NannyLogger` is a Global Singleton with No Injection Path — resolved
 
 **Resolved:** `NotificationRepositioner.init(logger: NannyLogger? = nil)` accepts an injected logger; defaults to `.shared`. All `NannyLogger.shared.log(...)` calls inside the repositioner now go through `self.logger`.
 
@@ -841,29 +855,29 @@ NotificationRepositioner (orchestrator only)
 
 ### Additional fixes applied (2026-06-10)
 
-#### Screen reconfiguration causes custom banners to revert ✅
+#### Screen reconfiguration causes custom banners to revert — resolved
 
 **Problem:** When a display was connected, disconnected, or mirrored, `NSApplicationDidChangeScreenParametersNotification` fired but nothing in the app handled it. `NSScreen.screens` changed, but neither the repositioner nor the custom overlay manager re-evaluated. Users had to make a dummy settings change to trigger `burstReposition()`.
 
 **Fix:** `registerSleepWakeObservers()` now also observes `NSApplication.didChangeScreenParametersNotification`. Handler: wait 400ms (matches wake delay), then call `burstReposition()` to re-evaluate all visible banners against the new screen topology.
 
-#### `scheduleAutoDismiss` lets NC fight back ✅
+#### `scheduleAutoDismiss` lets NC fight back — resolved
 
 **Problem:** After the user-configured `autoDismissSeconds` timer fired for a native banner, the repositioner moved the NC window off-screen. NC then fired `kAXWindowMovedNotification` (it hadn't dismissed yet), the drift guard passed, and `repositionWindow` moved the banner back to the configured position — effectively un-dismissing it.
 
 **Fix:** A `dismissedKeys: Set<CFHashCode>` tracks windows dismissed by `scheduleAutoDismiss`. `targetOrigin` returns `nil` for dismissed keys, so any subsequent NC move event for that window is ignored. The key is cleared on `kAXUIElementDestroyedNotification` and `teardownObserver`.
 
-#### `offScreenOrigin` wrong for screens below the primary ✅
+#### `offScreenOrigin` wrong for screens below the primary — resolved
 
 **Problem:** The formula `hiddenY = primaryHeight - visible.maxY - bannerHeight - offset - 10` produced a large positive AX y-value when the banner's screen had a negative AppKit origin (screen physically below primary). The "hidden" position was actually on-screen.
 
 **Fix:** `scheduleAutoDismiss` now uses `y: -9999` consistently, matching the custom-banner path. `offScreenOrigin` removed.
 
-#### Dead code removed ✅
+#### Dead code removed — resolved
 
 Removed: `BannerInfo` struct, `detectedBannerInfo: BannerInfo?`, `detectBannerInfo(in:windowPos:)` (never called), and `AnimationPreviewButton` in `SettingsView+BannerTab.swift` (defined but never instantiated).
 
-#### Shared `animationGeneration` counter ✅
+#### Shared `animationGeneration` counter — resolved
 
 **Problem:** `animationGeneration: Int` was a single counter for all concurrent banners. When banners A and B were repositioned in sequence, B's `repositionWindow` call incremented the counter, cancelling A's pending `scheduleHolds` / `scheduleAutoDismiss` closures.
 
@@ -873,13 +887,13 @@ Removed: `BannerInfo` struct, `detectedBannerInfo: BannerInfo?`, `detectBannerIn
 
 ### Additional fixes applied (2026-06-15)
 
-#### Menu-bar click did not re-surface an open-but-unfocused settings window ✅
+#### Menu-bar click did not re-surface an open-but-unfocused settings window — resolved
 
 **Problem:** With the settings window already open, clicking away into another app and then clicking the menu-bar icon again left the window hidden behind the active app. `AppCoordinator.openSettings()` called the macOS 14+ cooperative `NSApp.activate()`, which deliberately refuses to pull an `LSUIElement` accessory app's window in front of the currently active app.
 
 **Fix:** Extracted `presentWindow(_:)` (used for both the existing-window and freshly-created paths). It deminiaturizes if needed, then calls `NSApp.activate(ignoringOtherApps: true)` + `window.orderFrontRegardless()` — the reliable forward-bring pattern for accessory apps.
 
-#### Banner animations implemented ✅
+#### Banner animations implemented — resolved
 
 **Problem:** `BannerAnimation` had only `.default`; the other variants were commented out, `CustomBannerView.setupAnimations()` handled only `.default`, and no UI existed to pick an animation.
 
@@ -894,15 +908,15 @@ Removed: `BannerInfo` struct, `detectedBannerInfo: BannerInfo?`, `detectBannerIn
 
 ### Structural & feature work (2026-06-17, v1.5)
 
-#### AX primitives extracted to an `AXUIElement` extension ✅
+#### AX primitives extracted to an `AXUIElement` extension — resolved
 
 `AXSupport.swift` adds `size()`, `point(_:)`, `stringAttribute(_:)`, `children()`, and `staticTextValues(depth:)` on `AXUIElement`, plus a free `cleanAXString(_:)`. `NotificationRepositioner` and `AppNameResolver` now share these instead of re-spelling `AXUIElementCopyAttributeValue` / scalar-stripping, shrinking the repositioner and removing duplicated traversal/cleaning logic.
 
-#### Snooze (pause for N minutes) ✅
+#### Snooze (pause for N minutes) — resolved
 
 `AppSettings.snoozedUntil: Date?` (persisted) with `isSnoozed`, `isActive` (= `isEnabled && !isSnoozed`), `snooze(minutes:)`, and `endSnooze()`. A generation-guarded `DispatchQueue.main.asyncAfter` auto-resumes at expiry (re-armed on launch if a snooze is still live). `NotificationSettingsProviding.isActive` is the new repositioning gate (`targetOrigin` checks it); `burstReposition` dismisses live overlays the moment we go inactive. Surfaced in the menu bar ("Pause for…" / "Resumes at HH:MM · Resume") and the Diagnostics report. Snooze is **not** included in backups (transient device state).
 
-#### Export schema versioning ✅
+#### Export schema versioning — resolved
 
 `SettingsExport.schemaVersion: Int?` (`currentExportSchemaVersion = 1`). Old backups without it decode as v1; importing a newer-than-known schema logs a warning and proceeds (unknown JSON keys are ignored by `JSONDecoder`). Gives a branch point for future migrations.
 
@@ -910,7 +924,7 @@ Removed: `BannerInfo` struct, `detectedBannerInfo: BannerInfo?`, `detectBannerIn
 
 ### Additional fixes applied (2026-06-17)
 
-#### Back-to-back / rapid-notification races ✅
+#### Back-to-back / rapid-notification races — resolved
 
 A cluster of fixes for notifications arriving in quick succession (see §8 patterns 3b, 4, 4b):
 
@@ -923,17 +937,17 @@ A cluster of fixes for notifications arriving in quick succession (see §8 patte
 
 **Known limitation:** macOS NC *coalesces* same-app notifications fired only a few hundred ms apart into one reused banner slot, overwriting content in place. Intermediate messages in a tight burst are therefore transient by NC's design — the overlay shows the latest, matching native behaviour.
 
-#### Title/body extraction via `AXStaticText` children ✅
+#### Title/body extraction via `AXStaticText` children — resolved
 
 **Problem:** Splitting the flattened `AXAttributedDescription` mis-filed long messages into the title (the newline marks NC's visual wrap, not the title/body boundary) and broke for senders whose names contain commas (e.g. "Lastname, First").
 
 **Fix:** `splitTitleBody` takes the title from the first `AXStaticText` child that prefixes the content and the remainder as the body, with the legacy heuristic as a fallback.
 
-#### Per-group banner animation ✅
+#### Per-group banner animation — resolved
 
 `AppGroup.bannerAnimation: BannerAnimation?` added (nil-inherit). `effectiveBannerAnimation(for:/forGroupID:)` resolve it; `shouldUseCustomBanner` now keys off the effective animation. A compact per-group animation menu was added to the Banner tab, and the animation preview now renders the selected tint instead of a hardcoded red.
 
-#### Diagnostics tab + bug-report auto-attach ✅
+#### Diagnostics tab + bug-report auto-attach — resolved
 
 - New always-visible **Diagnostics** tab (`DebugTabView`) consolidates the health checks, the activity log, and edge-case tools (AX-tree dump via `dumpBannerDiagnostics`, back-to-back burst via `sendBurstTest`) into collapsible sections. The old standalone Logs tab (`SettingsView+LogsTab.swift`) was removed.
 - Shared `Diagnostics` namespace builds the report and a prefilled GitHub issue URL (diagnostics + a capped tail of logs); the Help tab's **Report a bug** opens it and copies the full report to the clipboard (URL length can't carry a long log, so the clipboard is the fallback).
@@ -943,25 +957,29 @@ A cluster of fixes for notifications arriving in quick succession (see §8 patte
 
 ### Structural & feature work (2026-06-18, v1.6)
 
-#### Desktop-widget protection ✅
+#### Desktop-widget protection — resolved
 
 **Problem:** Desktop widgets (clock, calendar, etc.) are delivered as windows in the same NC-adjacent window list as banners. The repositioner could grab a small widget window and yank it to the configured banner position.
 
 **Fix:** `AppSettings.protectDesktopWidgets: Bool` (persisted, **default `true`**). In `targetOrigin`, a small window with **no banner subrole child** (`findBannerElement(in:) == nil`) is treated as a desktop widget / NC chrome and left where the user placed it. Exposed as "Don't move desktop widgets" in the General tab. The readiness gate (§8 pattern 4b) already declines to act on windows that never become "ready", so genuine non-banners are doubly safe.
 
-#### Pause during Focus / Do Not Disturb ✅
+#### Pause during Focus / Do Not Disturb — resolved
 
 **Feature:** `AppSettings.pauseDuringFocus: Bool` (persisted, **default `false`**). When on, `targetOrigin` short-circuits while a macOS Focus/DND mode is active, so banners that do slip through are left untouched rather than repositioned.
 
 **Implementation:** `FocusModeMonitor` (new `@MainActor` singleton) reads the user's own Focus-assertion store (`~/Library/DoNotDisturb/DB/Assertions.json` — readable because the app is non-sandboxed) and treats a non-empty `storeAssertionRecords` array as "a Focus is asserted". The result is cached for 1s (`cacheTTL`) so the 60×/sec reposition path never hits disk repeatedly. Detection is isolated in `readActiveState()`; if Apple relocates the store (e.g. on a future macOS) the monitor **fails open** (returns "no Focus") so repositioning keeps working instead of silently pausing.
 
-#### `LogEntryRow` extracted ✅
+#### `LogEntryRow` extracted — resolved
 
 The per-entry log row (timestamp, level capsule, tag capsule, message) was extracted from the Diagnostics tab into its own `LogEntryRow` SwiftUI view (`LogEntryRow.swift`), keeping `SettingsView+DebugTab.swift` focused on section layout.
 
-#### Export schema carries the new toggles ✅
+#### Export schema carries the new toggles — resolved
 
 `SettingsExport` gains `protectDesktopWidgets: Bool?` and `pauseDuringFocus: Bool?` (both `Optional` so older backups still decode). On import, absent values fall back to the live defaults (`true` / `false`). Schema version remains `1` — the optional-field strategy needs no bump.
+
+#### Banner animation set expanded — resolved
+
+`BannerAnimation` now has **eight** cases (superseding the four listed in the 2026-06-15 note above): `.default`, `.fade`, `.scale`, `.bounce`, `.drop`, `.slideLeft`, `.rise`, `.swing`. `rawValue` is persisted so the strings are stable; `slideLeft` is surfaced to users as "Slide" via the `label` computed property, and each case maps to an SF Symbol via `iconName`. `setupAnimations()` drives every case from a single `hidden`-transform table so all share the same resting frame.
 
 ---
 
