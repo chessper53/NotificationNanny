@@ -48,11 +48,11 @@ NotificationNanny (v7.5.0)
 
 ### Entry Points
 
-- **Main App:** [NotificationNannyApp.swift](Sources/NotificationNanny/NotificationNannyApp.swift)
-- **App Coordinator:** [NotificationNannyApp.swift:19](Sources/NotificationNanny/NotificationNannyApp.swift#L19)
-- **Core Settings:** [AppSettings.swift](Sources/NotificationNannyCore/AppSettings.swift)
-- **Banner Engine:** [NotificationRepositioner.swift](Sources/NotificationNannyCore/NotificationRepositioner.swift)
-- **Settings UI:** [SettingsView.swift](Sources/NotificationNannyCore/SettingsView.swift)
+- **Main App:** [NotificationNannyApp.swift](../Sources/NotificationNanny/NotificationNannyApp.swift)
+- **App Coordinator:** [NotificationNannyApp.swift:19](../Sources/NotificationNanny/NotificationNannyApp.swift#L19)
+- **Core Settings:** [AppSettings.swift](../Sources/NotificationNannyCore/AppSettings.swift)
+- **Banner Engine:** [NotificationRepositioner.swift](../Sources/NotificationNannyCore/NotificationRepositioner.swift)
+- **Settings UI:** [SettingsView.swift](../Sources/NotificationNannyCore/SettingsView.swift)
 
 ### Key Files & Directories
 
@@ -969,12 +969,15 @@ The per-entry log row (timestamp, level capsule, tag capsule, message) was extra
 
 ### Internal
 
-- [README.md](README.md) — User-facing feature documentation and installation guide
+- [README.md](../README.md) — User-facing feature documentation and installation guide
 - [CHANGELOG.md](CHANGELOG.md) — Release history and per-version change summary
-- [VERSION](VERSION) — Single source of truth for the version string
-- [Makefile](Makefile) — Common development commands
-- [build-app.sh](build-app.sh) — Release bundle assembly script
-- [.github/workflows/ci.yml](.github/workflows/ci.yml) — CI configuration
+- [RELEASING.md](RELEASING.md) — How to cut and publish a release
+- [DEBUGGING.md](DEBUGGING.md) — Local build / run / debug loop
+- [CONTRIBUTING.md](CONTRIBUTING.md) — Contributor guide
+- [VERSION](../VERSION) — Single source of truth for the version string
+- [Makefile](../Makefile) — Common development commands
+- [build-app.sh](../build-app.sh) — Release bundle assembly script
+- [.github/workflows/ci.yml](../.github/workflows/ci.yml) — CI configuration
 
 ### External
 
