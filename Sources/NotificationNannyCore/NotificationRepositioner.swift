@@ -156,6 +156,7 @@ package final class NotificationRepositioner: ObservableObject {
         generation.removeAll()
         overlayContent.removeAll()
         dismissedKeys.removeAll()
+        loggedWidgetKeys.removeAll()
         resolver.invalidateAll()
         customBannerManager.dismissAll()
         logger.log("Observer stopped", tag: "AX")
@@ -186,6 +187,7 @@ package final class NotificationRepositioner: ObservableObject {
             generation.removeValue(forKey: key)
             overlayContent.removeValue(forKey: key)
             dismissedKeys.remove(key)
+            loggedWidgetKeys.remove(key)
             if let bound = testBannerWindow, CFEqual(bound, element) { testBannerWindow = nil }
             stopScaleHammer()
             customBannerManager.dismiss(key: key)
@@ -372,6 +374,10 @@ package final class NotificationRepositioner: ObservableObject {
     private var overlayContent: [CFHashCode: BannerContent] = [:]
     // Windows we dismissed via scheduleAutoDismiss — ignored by targetOrigin so NC can't fight back.
     private var dismissedKeys: Set<CFHashCode> = []
+    // Widget windows we've already logged as "protected", so targetOrigin (called on every
+    // reposition pass) emits one user-visible log line per widget instead of flooding the
+    // ring buffer. Cleared per-window on destroy and wholesale on teardown.
+    private var loggedWidgetKeys: Set<CFHashCode> = []
     // nil = not in test mode; .some(nil) = test active, screen default; .some(.some(id)) = test active, group
     private var testGroupID: UUID?? = nil
     private var testBannerWindow: AXUIElement? = nil
@@ -425,12 +431,22 @@ package final class NotificationRepositioner: ObservableObject {
         var value: CFTypeRef?
         guard AXUIElementCopyAttributeValue(ncApp, kAXWindowsAttribute as CFString, &value) == .success,
               let windows = value as? [AXUIElement] else { return }
+        var parkedBanners = 0
+        var skippedWidgets = 0
         for window in windows {
+            // NC hosts the user's desktop widgets in this same window list. Parking a
+            // widget off-screen would orphan it: the wake path repositions via targetOrigin,
+            // which skips widgets when protectDesktopWidgets is on, so it would never come
+            // back (it reappears only when the user re-edits the widget shelf). Only park
+            // real banners — leave widgets where the user put them.
+            if isProtectedWidget(window) { skippedWidgets += 1; continue }
             setWindowPosition(window, to: Self.parkPoint)
+            parkedBanners += 1
             if !pendingWakeWindows.contains(where: { CFEqual($0, window) }) {
                 pendingWakeWindows.append(window)
             }
         }
+        logger.log("Display sleep — parked \(parkedBanners) banner(s), left \(skippedWidgets) desktop widget(s) in place", tag: "Widget")
     }
 
     private func handleDisplayWake() {
@@ -614,12 +630,8 @@ package final class NotificationRepositioner: ObservableObject {
             // The NC panel (opened by clicking the clock) immediately becomes the app's
             // focused window. System-delivered notification banners don't take focus.
             // Skip repositioning if this window is already the NC process's focused window.
-            if settings.avoidNCPanel, let app = ncApp {
-                var focusRef: CFTypeRef?
-                if AXUIElementCopyAttributeValue(app, kAXFocusedWindowAttribute as CFString, &focusRef) == .success,
-                   let fw = focusRef, CFEqual(fw, window) {
-                    return nil
-                }
+            if settings.avoidNCPanel, isNCFocusedPanel(window) {
+                return nil
             }
             // Size from AX — reliable, doesn't change during animation.
             var bSz = bannerEl.size() ?? Self.bannerSize
@@ -643,6 +655,7 @@ package final class NotificationRepositioner: ObservableObject {
             // widget (or other NC chrome) and must be left where the user put it.
             if settings.protectDesktopWidgets, findBannerElement(in: window) == nil {
                 log.info("targetOrigin: skipped — small window, no banner subrole (desktop widget)")
+                logWidgetProtectedOnce(window, size: size, pos: oldPos)
                 return nil
             }
             bannerOffset = .zero; bannerSz = size
@@ -801,7 +814,7 @@ package final class NotificationRepositioner: ObservableObject {
         log.debug("repositionWindow: generation=\(gen) target=(\(info.windowOrigin.x, format: .fixed(precision: 1)),\(info.windowOrigin.y, format: .fixed(precision: 1))) bannerSize=\(info.bannerSize.width, format: .fixed(precision: 0))×\(info.bannerSize.height, format: .fixed(precision: 0))")
 
         let scale: Double
-        let useCustomBanner: Bool
+        var useCustomBanner: Bool
         let animation: BannerAnimation
         if let testGroup = testGroupID {
             scale = settings.effectiveBannerScale(forGroupID: testGroup)
@@ -812,6 +825,14 @@ package final class NotificationRepositioner: ObservableObject {
             scale = settings.effectiveBannerScale(for: name)
             useCustomBanner = settings.shouldUseCustomBanner(for: name)
             animation = settings.effectiveBannerAnimation(for: name)
+        }
+        // The Notification Center panel (clock click) must always use the native move path.
+        // Replacing it with a custom overlay would hide the real panel and show a single
+        // stale banner instead. When avoidNCPanel is off we still *reposition* it — just
+        // natively, so the genuine Notification Center appears at the configured position.
+        if isNCFocusedPanel(window) {
+            useCustomBanner = false
+            logger.log("Notification Center panel — forcing native move (no custom overlay)", tag: "Banner")
         }
         let resolvedName: String
         if testGroupID != nil { resolvedName = "Test" } else { resolvedName = appName(for: window) ?? "unknown" }
@@ -1106,7 +1127,43 @@ package final class NotificationRepositioner: ObservableObject {
 
     @discardableResult
     private func hideOffscreen(_ window: AXUIElement, atX x: CGFloat) -> CGPoint {
-        setWindowPosition(window, to: CGPoint(x: x, y: -9999))
+        // Central safety net for every off-screen park. A protected widget that gets
+        // parked here can never be restored (the reposition/wake path skips widgets and
+        // we don't store original positions), so refuse — leave it where the user put it.
+        if isProtectedWidget(window) {
+            logger.log("Refused to park a desktop widget off-screen — left it in place", level: .warn, tag: "Widget")
+            return window.point() ?? .zero
+        }
+        return setWindowPosition(window, to: CGPoint(x: x, y: -9999))
+    }
+
+    /// A desktop widget the user has asked us to protect. NC hosts widgets in the same
+    /// window list as banners; only a real banner carries a banner child element. Used to
+    /// gate every off-screen park so a widget is never stranded out of view.
+    private func isProtectedWidget(_ window: AXUIElement) -> Bool {
+        settings?.protectDesktopWidgets == true && findBannerElement(in: window) == nil
+    }
+
+    /// True when `window` is the Notification Center panel (opened by clicking the clock).
+    /// The panel immediately becomes the NC process's focused window; system-delivered
+    /// banners never take focus. Used both to skip it when avoidNCPanel is on and to force
+    /// the native move path (never a custom overlay) when it is off.
+    private func isNCFocusedPanel(_ window: AXUIElement) -> Bool {
+        guard let app = ncApp else { return false }
+        var focusRef: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(app, kAXFocusedWindowAttribute as CFString, &focusRef) == .success,
+              let fw = focusRef else { return false }
+        return CFEqual(fw, window)
+    }
+
+    /// Emits one user-visible (bug-report-attached) log line the first time we protect a
+    /// given widget window, so a recurrence of "my widgets disappeared" leaves a trail
+    /// without flooding the ring buffer on every reposition pass.
+    private func logWidgetProtectedOnce(_ window: AXUIElement, size: CGSize, pos: CGPoint) {
+        let key = CFHash(window)
+        guard !loggedWidgetKeys.contains(key) else { return }
+        loggedWidgetKeys.insert(key)
+        logger.log("Protected desktop widget — \(Int(size.width))×\(Int(size.height)) at (\(Int(pos.x)),\(Int(pos.y))), left in place", tag: "Widget")
     }
 }
 
