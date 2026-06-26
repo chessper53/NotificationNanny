@@ -5,6 +5,21 @@ All notable changes to NotificationNanny are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [7.6.0] — 2026-06-26
+
+### Added
+- **Apply a report** (Diagnostics → Developer) — paste a diagnostics report and the app takes over the settings it describes (default position, behavior toggles, auto-dismiss, banner scale) for local reproduction of a user's configuration.
+- Diagnostics report now includes the user's **default position** and a **Behavior** summary of every key toggle (`protectDesktopWidgets`, `holdWhileAsleep`, `avoidNCPanel`, `followActiveScreen`, `pauseWhileStreaming`, `pauseDuringFocus`), so bug reports state up front whether a given path is even active.
+- User-visible (`Widget`-tagged) logging when desktop widgets are protected, when a display-sleep park leaves them in place, and when the safety net refuses to park one.
+
+### Changed
+- Simplified the Diagnostics tab to a single **Copy Diagnostics** action (settings + system info + activity log in one paste); moved the activity log and edge-case tools under a collapsed **Developer** section.
+
+### Fixed
+- **Desktop widgets disappearing after display sleep** — `handleDisplaySleep` parked every Notification Center window off-screen, including desktop widgets, which the wake path then refused to restore (the widget-protection guard skips them), stranding them until the widget shelf was re-edited. Sleep now leaves protected widgets in place.
+- **Notification Center panel replaced by a stale custom banner** — with "don't move Notification Center" off, the panel was rendered through the custom-overlay path and showed the last notification instead of the real panel. The panel now always uses the native move path, so it appears genuinely at the configured position.
+- Added a central guard so no off-screen park can ever strand a protected widget, regardless of code path.
+
 ## [7.5.0] — 2026-06-18
 
 ### Added
