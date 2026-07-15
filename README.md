@@ -104,12 +104,6 @@ Released under the [MIT License](LICENSE).
 
 Open an issue. I read them all and work through them when I can. I have a full-time job so responses may take a little while, but nothing goes unread. [Open an issue here](https://github.com/chessper53/NotificationNanny/issues).
 
-## Star History
-
-[![Star History Chart](https://api.star-history.com/svg?repos=chessper53/NotificationNanny&type=Date)](https://star-history.com/#chessper53/NotificationNanny&Date)
-
----
-
 <details>
 <summary>Tags</summary>
 
