@@ -5,6 +5,18 @@ All notable changes to NotificationNanny are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [7.6.1] — 2026-07-17
+
+### Fixed
+- **Saved position silently reverting to the default corner** — per-screen placements and the forced-display override were keyed by the raw `CGDirectDisplayID`, which macOS can reassign to the same physical monitor across sleep/wake or a dock reconnect. When that happened the saved entry was orphaned and lookups fell back to the default position. Placements and display overrides are now keyed by a persistent per-monitor identifier (`CGDisplayCreateUUIDFromDisplayID`) that survives those reassignments, with a one-time migration of existing settings.
+- **Dismissing a custom banner revealed the native notification underneath** — the custom overlay only parked the real Notification Center banner off-screen under a few short-lived holds, so once the overlay was closed (✕, tap-to-open, or auto-dismiss) the native banner popped back into view. Dismissing the overlay now retires the underlying banner too.
+
+### Added
+- Display-topology logging (`Display`-tagged) on every screen-configuration change and wake — records each connected display's ID and stable key so a diagnostics report reveals whether macOS reassigned a monitor's display ID, and a one-time log line when legacy settings are migrated to the stable keys.
+
+### Changed
+- `didChangeScreenParametersNotification` handling is now debounced, collapsing the 2–3 events macOS fires per topology change into a single repositioning sweep against the settled layout.
+
 ## [7.6.0] — 2026-06-26
 
 ### Added
@@ -79,7 +91,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 Initial public releases: menu-bar app that repositions macOS notification banners to a
 user-chosen anchor on any display via the Accessibility API.
 
-[7.5.0]: https://github.com/chessper53/NotificationNanny/releases/latest
+[7.6.1]: https://github.com/chessper53/NotificationNanny/releases/latest
 [7.3.x]: https://github.com/chessper53/NotificationNanny/releases
 [7.0.0 – 7.2.1]: https://github.com/chessper53/NotificationNanny/releases
 [6.x]: https://github.com/chessper53/NotificationNanny/releases
