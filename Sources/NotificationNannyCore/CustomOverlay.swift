@@ -329,6 +329,11 @@ final class CustomBannerManager {
         let panel: NSPanel
         let controller: BannerAnimationController
         var dismissTimer: DispatchSourceTimer?
+        /// Retires the real NC banner hidden behind this overlay. Run only when the overlay
+        /// dismisses itself (user close, tap-to-open, auto-dismiss timer) — not when the
+        /// repositioner tears it down to swap in a native banner. nil for overlays with no
+        /// backing NC window to retire.
+        let onUnderlyingDismiss: (() -> Void)?
     }
 
     private var active: [CFHashCode: Entry] = [:]
@@ -342,13 +347,14 @@ final class CustomBannerManager {
         autoDismissSeconds: Double,
         animation: BannerAnimation = .default,
         onOpen: @escaping () -> Void,
+        onUnderlyingDismiss: (() -> Void)? = nil,
         key: CFHashCode
     ) {
         dismiss(key: key)
 
         let controller = BannerAnimationController()
-        let onDismissAction: () -> Void = { [weak self] in self?.dismiss(key: key) }
-        let onOpenAction:   () -> Void = { [weak self] in onOpen(); self?.dismiss(key: key) }
+        let onDismissAction: () -> Void = { [weak self] in self?.dismissFromUser(key: key) }
+        let onOpenAction:   () -> Void = { [weak self] in onOpen(); self?.dismissFromUser(key: key) }
 
         let s = CGFloat(scale)
         let bannerHeight: CGFloat = 62 * s
@@ -373,14 +379,24 @@ final class CustomBannerManager {
         panel.alphaValue = 1
         panel.orderFront(nil)
 
-        var entry = Entry(panel: panel, controller: controller)
+        var entry = Entry(panel: panel, controller: controller, onUnderlyingDismiss: onUnderlyingDismiss)
         let timeout = autoDismissSeconds > 0 ? autoDismissSeconds : 8
         let timer = DispatchSource.makeTimerSource(queue: .main)
         timer.schedule(deadline: .now() + timeout)
-        timer.setEventHandler { [weak self] in self?.dismiss(key: key) }
+        timer.setEventHandler { [weak self] in self?.dismissFromUser(key: key) }
         timer.resume()
         entry.dismissTimer = timer
         active[key] = entry
+    }
+
+    /// Dismissal originating from the overlay itself — the user closed it, tapped it to open,
+    /// or its auto-dismiss timer fired. Unlike `dismiss(key:)` (used when the repositioner
+    /// tears the overlay down to swap in a native banner), this first retires the real NC
+    /// banner behind the overlay, so dismissing the custom banner doesn't reveal the native
+    /// one underneath.
+    private func dismissFromUser(key: CFHashCode) {
+        active[key]?.onUnderlyingDismiss?()
+        dismiss(key: key)
     }
 
     func dismiss(key: CFHashCode) {

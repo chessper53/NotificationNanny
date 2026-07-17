@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import Testing
 @testable import NotificationNannyCore
@@ -223,6 +224,57 @@ struct AppSettingsTests {
         let id = s.addGroup(name: "G")
         s.addApp("Slack", toGroup: id)
         #expect(s.targetDisplay(for: "Slack") == 0)
+    }
+
+    // MARK: - Stable-key display resolution (survives displayID reassignment)
+
+    @Test func setGroupTargetDisplay_mirrorsStableKeyForConnectedScreen() {
+        guard let screen = NSScreen.main else { return }
+        let (s, _) = makeSettings()
+        let id = s.addGroup(name: "G")
+        s.setGroupTargetDisplay(screen.displayID, forGroupID: id)
+        #expect(s.appGroups.first?.targetDisplayUUID == screen.stableDisplayKey)
+        #expect(s.resolvedTargetScreen(forGroupID: id) === screen)
+    }
+
+    @Test func setGroupTargetDisplay_auto_clearsStableKey() {
+        guard let screen = NSScreen.main else { return }
+        let (s, _) = makeSettings()
+        let id = s.addGroup(name: "G")
+        s.setGroupTargetDisplay(screen.displayID, forGroupID: id)
+        s.setGroupTargetDisplay(0, forGroupID: id)
+        #expect(s.appGroups.first?.targetDisplayUUID == nil)
+        #expect(s.resolvedTargetScreen(forGroupID: id) == nil)
+    }
+
+    @Test func resolvedTargetScreen_forApp_usesGroupOverride() {
+        guard let screen = NSScreen.main else { return }
+        let (s, _) = makeSettings()
+        let id = s.addGroup(name: "Work")
+        s.addApp("Slack", toGroup: id)
+        s.setGroupTargetDisplay(screen.displayID, forGroupID: id)
+        #expect(s.resolvedTargetScreen(for: "Slack") === screen)
+        #expect(s.resolvedTargetScreen(for: "Mail") == nil, "app not in the group must not inherit its override")
+    }
+
+    @Test func resolvedTargetScreen_global_nilByDefault() {
+        let (s, _) = makeSettings()
+        #expect(s.resolvedTargetScreen() == nil)
+        #expect(s.resolvedTargetScreen(for: nil) == nil)
+        #expect(s.resolvedTargetScreen(forGroupID: nil) == nil)
+    }
+
+    @Test func targetDisplayID_settingToDisconnectedID_clearsStaleStableKey() {
+        guard let screen = NSScreen.main else { return }
+        let (s, _) = makeSettings()
+        s.targetDisplayID = screen.displayID
+        #expect(s.resolvedTargetScreen() === screen)
+
+        // A displayID with no currently-connected match (e.g. importing a backup from
+        // another Mac) must not leave the previous screen's stable key resolvable —
+        // that would silently point at the wrong, unrelated display.
+        s.targetDisplayID = 999_999
+        #expect(s.resolvedTargetScreen() == nil)
     }
 
     // MARK: - Presets

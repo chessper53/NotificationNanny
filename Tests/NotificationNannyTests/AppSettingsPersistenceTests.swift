@@ -60,6 +60,79 @@ struct AppSettingsPersistenceTests {
         #expect(read.yOffset == -3)
     }
 
+    // Reproduces the "position reverts to default" bug: a placement saved under the
+    // old raw-CGDirectDisplayID key (pre-migration installs, or a displayID that got
+    // reassigned by macOS) must still be found and self-heal onto the new stable key.
+    @Test func placements_migrateFromLegacyDisplayIDKey() throws {
+        guard let screen = NSScreen.main else { return }
+        let store = Store(); defer { store.cleanup() }
+        let defaults = UserDefaults(suiteName: store.suiteName)!
+        let legacy = ScreenPlacement(position: .bottomLeft, xOffset: 5, yOffset: -3)
+        let legacyDict = [String(screen.displayID): legacy]
+        defaults.set(try JSONEncoder().encode(legacyDict), forKey: "placementsByDisplayID")
+
+        let settings = AppSettings(defaults: defaults, knownAppsFileURL: store.fileURL)
+        #expect(settings.placement(for: screen) == legacy)
+
+        // The lookup above should have migrated the entry onto the stable key, so a
+        // fresh instance backed by the same store finds it without the legacy key.
+        let reloaded = AppSettings(defaults: defaults, knownAppsFileURL: store.fileURL)
+        #expect(reloaded.placement(for: screen) == legacy)
+    }
+
+    @Test func resolvedTargetScreen_matchesCurrentScreenViaStableKey() {
+        guard let screen = NSScreen.main else { return }
+        let store = Store(); defer { store.cleanup() }
+        let settings = store.make()
+        settings.targetDisplayID = screen.displayID
+        #expect(settings.resolvedTargetScreen() === screen)
+    }
+
+    @Test func resolvedTargetScreen_nilWhenAuto() {
+        let store = Store(); defer { store.cleanup() }
+        let settings = store.make()
+        settings.targetDisplayID = 0
+        #expect(settings.resolvedTargetScreen() == nil)
+    }
+
+    // Reproduces the upgrade path for an existing user: a targetDisplayID written by a
+    // version predating the stable key must get one backfilled at load time, not just the
+    // next time the user re-picks the display — otherwise the global override stays exactly
+    // as fragile as before the fix until they touch it again.
+    @Test func targetDisplayID_backfillsStableKeyOnInit() {
+        guard let screen = NSScreen.main else { return }
+        let store = Store(); defer { store.cleanup() }
+        let defaults = UserDefaults(suiteName: store.suiteName)!
+        defaults.set(Int(screen.displayID), forKey: "targetDisplayID")   // pre-fix: no UUID key written
+
+        let settings = AppSettings(defaults: defaults, knownAppsFileURL: store.fileURL)
+        #expect(settings.resolvedTargetScreen() === screen)
+        #expect(defaults.string(forKey: "targetDisplayUUID") == screen.stableDisplayKey)
+    }
+
+    // Same as above, for a per-exception-group override written before AppGroup.targetDisplayUUID existed.
+    @Test func appGroup_backfillsStableKeyOnInit() throws {
+        guard let screen = NSScreen.main else { return }
+        let store = Store(); defer { store.cleanup() }
+        let defaults = UserDefaults(suiteName: store.suiteName)!
+        let json = """
+        {
+            "id": "00000000-0000-0000-0000-000000000002",
+            "name": "Legacy",
+            "appNames": [],
+            "placement": {"position": "topRight", "xOffset": 0, "yOffset": 0},
+            "targetDisplayID": \(screen.displayID)
+        }
+        """.data(using: .utf8)!
+        let legacyGroup = try JSONDecoder().decode(AppGroup.self, from: json)
+        #expect(legacyGroup.targetDisplayUUID == nil)
+        defaults.set(try JSONEncoder().encode([legacyGroup]), forKey: "appGroups")
+
+        let settings = AppSettings(defaults: defaults, knownAppsFileURL: store.fileURL)
+        #expect(settings.appGroups.first?.targetDisplayUUID == screen.stableDisplayKey)
+        #expect(settings.resolvedTargetScreen(forGroupID: legacyGroup.id) === screen)
+    }
+
     @Test func presets_persistAcrossInit() {
         let store = Store(); defer { store.cleanup() }
         let a = store.make()

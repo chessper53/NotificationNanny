@@ -28,6 +28,11 @@ struct AppGroup: Identifiable, Codable, Equatable {
     var appNames: [String]
     var placement: ScreenPlacement
     var targetDisplayID: CGDirectDisplayID
+    /// Stable per-monitor key (see `NSScreen.stableDisplayKey`) for `targetDisplayID`,
+    /// mirrored via `AppSettings.setGroupTargetDisplay` so the override survives a
+    /// displayID reassignment (sleep/wake, dock reconnect). nil means either "auto"
+    /// (targetDisplayID == 0) or data written before this field existed.
+    var targetDisplayUUID: String?
     /// nil means inherit the global banner scale from AppSettings.
     var bannerScale: Double?
     /// nil means derive from the effective scale (custom if scale != 1.0, native otherwise).
@@ -41,6 +46,7 @@ struct AppGroup: Identifiable, Codable, Equatable {
 
     init(id: UUID = UUID(), name: String, appNames: [String] = [],
          placement: ScreenPlacement = .default, targetDisplayID: CGDirectDisplayID = 0,
+         targetDisplayUUID: String? = nil,
          bannerScale: Double? = nil, bannerMode: BannerMode? = nil,
          bannerTint: BannerTint? = nil, bannerAnimation: BannerAnimation? = nil) {
         self.id = id
@@ -48,6 +54,7 @@ struct AppGroup: Identifiable, Codable, Equatable {
         self.appNames = appNames
         self.placement = placement
         self.targetDisplayID = targetDisplayID
+        self.targetDisplayUUID = targetDisplayUUID
         self.bannerScale = bannerScale
         self.bannerMode = bannerMode
         self.bannerTint = bannerTint
@@ -55,8 +62,8 @@ struct AppGroup: Identifiable, Codable, Equatable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case id, name, appNames, placement, targetDisplayID, bannerScale, bannerMode
-        case bannerTint, bannerAnimation
+        case id, name, appNames, placement, targetDisplayID, targetDisplayUUID
+        case bannerScale, bannerMode, bannerTint, bannerAnimation
         // Legacy keys — read-only, for migrating data written by older versions
         case bannerColorR, bannerColorG, bannerColorB
     }
@@ -68,6 +75,7 @@ struct AppGroup: Identifiable, Codable, Equatable {
         appNames        = try c.decode([String].self, forKey: .appNames)
         placement       = try c.decode(ScreenPlacement.self, forKey: .placement)
         targetDisplayID = try c.decodeIfPresent(CGDirectDisplayID.self, forKey: .targetDisplayID) ?? 0
+        targetDisplayUUID = try c.decodeIfPresent(String.self, forKey: .targetDisplayUUID)
         bannerScale     = try c.decodeIfPresent(Double.self, forKey: .bannerScale)
         bannerMode      = try c.decodeIfPresent(BannerMode.self, forKey: .bannerMode)
         bannerAnimation = try c.decodeIfPresent(BannerAnimation.self, forKey: .bannerAnimation)
@@ -90,6 +98,7 @@ struct AppGroup: Identifiable, Codable, Equatable {
         try c.encode(appNames,        forKey: .appNames)
         try c.encode(placement,       forKey: .placement)
         try c.encode(targetDisplayID, forKey: .targetDisplayID)
+        try c.encodeIfPresent(targetDisplayUUID, forKey: .targetDisplayUUID)
         try c.encodeIfPresent(bannerScale, forKey: .bannerScale)
         try c.encodeIfPresent(bannerMode,  forKey: .bannerMode)
         try c.encodeIfPresent(bannerTint,  forKey: .bannerTint)
