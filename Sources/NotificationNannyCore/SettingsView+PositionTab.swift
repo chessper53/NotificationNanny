@@ -8,9 +8,7 @@ struct PositionTabView: View {
     private var screens: [NSScreen] { NSScreen.screens }
 
     private var defaultScreen: NSScreen {
-        if settings.targetDisplayID != 0,
-           let s = screens.first(where: { $0.displayID == settings.targetDisplayID }) { return s }
-        return NSScreen.main ?? screens[0]
+        settings.resolvedTargetScreen() ?? NSScreen.main ?? screens[0]
     }
 
     private var defaultPlacementBinding: Binding<ScreenPlacement> {

@@ -6,6 +6,21 @@ import os
 private let log    = Logger(subsystem: "com.notificationnanny", category: "repositioner")
 private let axLog  = Logger(subsystem: "com.notificationnanny", category: "ax")
 
+/// Coalesces a burst of same-source events into a single delayed action: each `schedule`
+/// call cancels any not-yet-fired action and reschedules, so only the last call in a burst
+/// (within `delay` of the previous one) actually runs.
+@MainActor
+private final class Debouncer {
+    private var pending: DispatchWorkItem?
+
+    func schedule(delay: TimeInterval, action: @escaping () -> Void) {
+        pending?.cancel()
+        let item = DispatchWorkItem(block: action)
+        pending = item
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: item)
+    }
+}
+
 @MainActor
 package final class NotificationRepositioner: ObservableObject {
     @Published package private(set) var hasAccessibilityPermission: Bool
@@ -180,7 +195,16 @@ package final class NotificationRepositioner: ObservableObject {
         if notification == kAXUIElementDestroyedNotification as String {
             let key = CFHash(element)
             let hadOverlay = customBannerManager.isActive(key: key)
-            logger.log("Window destroyed\(hadOverlay ? " — overlay dismissed" : "")", tag: "AX")
+            // Desktop widgets / the clock tear down and re-create constantly (bursts of 6-9
+            // destroys per minute). Only record destroys that mattered — an overlay we owned
+            // or a banner we'd repositioned — so widget churn doesn't flood the activity log
+            // and evict the events worth seeing.
+            let wasTrackedBanner = lastSelfSetPositions[key] != nil
+            if hadOverlay || wasTrackedBanner {
+                logger.log("Window destroyed\(hadOverlay ? " — overlay dismissed" : "")", tag: "AX")
+            } else {
+                axLog.debug("Window destroyed — untracked (widget/chrome churn)")
+            }
             resolver.invalidate(key: key)
             lastSelfSetPositions.removeValue(forKey: key)
             lastRepositionAt.removeValue(forKey: key)
@@ -191,7 +215,10 @@ package final class NotificationRepositioner: ObservableObject {
             if let bound = testBannerWindow, CFEqual(bound, element) { testBannerWindow = nil }
             stopScaleHammer()
             customBannerManager.dismiss(key: key)
-            repositionVisibleWindows()
+            // Coalesce the restack sweep: a widget-destroy burst would otherwise fire 6-9 full
+            // repositionVisibleWindows() passes a minute. One delayed sweep per burst is
+            // imperceptible for restacking real banners and stops the churn-driven hammering.
+            scheduleDestroySweep()
             return
         }
 
@@ -234,6 +261,14 @@ package final class NotificationRepositioner: ObservableObject {
 
         axLog.debug("handleAXEvent: proceeding to repositionWindow")
         repositionWindow(element)
+    }
+
+    // Debounces the post-destroy restack sweep so a burst of widget/clock destroy events
+    // collapses into a single sweep instead of one per event.
+    private let destroySweepDebouncer = Debouncer()
+
+    private func scheduleDestroySweep() {
+        destroySweepDebouncer.schedule(delay: 0.12) { [weak self] in self?.repositionVisibleWindows() }
     }
 
     private func burstReposition() {
@@ -412,12 +447,31 @@ package final class NotificationRepositioner: ObservableObject {
         ) { [weak self] _ in Task { @MainActor [weak self] in self?.handleScreenParametersChange() } }
     }
 
+    // Debounces the post-reconfig sweep: display topology changes often fire this
+    // notification 2-3 times in quick succession while things settle (e.g. dock
+    // connect/disconnect), and running a full burstReposition() per event resolves
+    // screens against a still-changing layout. Collapse to one sweep per burst.
+    private let screenParamsDebouncer = Debouncer()
+
     private func handleScreenParametersChange() {
         logger.log("Screen configuration changed — re-evaluating banner positions", tag: "System")
+        logScreenTopology(reason: "screen change")
         // Brief delay mirrors the wake path: let the display and NC settle before
         // we read NSScreen.screens and reposition.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in
-            self?.burstReposition()
+        screenParamsDebouncer.schedule(delay: 0.4) { [weak self] in self?.burstReposition() }
+    }
+
+    /// Snapshots the connected-display topology (per-screen displayID + short stable key)
+    /// to the activity log. Logged on every reconfig/wake so a support diagnostics dump
+    /// shows whether macOS reassigned a physical panel's displayID across the event — the
+    /// signature of the "custom position reverted to default" bug. Deliberately user-visible
+    /// (not os_log) so it survives into the exported diagnostics the reporter sends back.
+    private func logScreenTopology(reason: String) {
+        let screens = NSScreen.screens
+        let forced = settings?.targetDisplayID ?? 0
+        logger.log("Displays after \(reason): \(screens.count) — forced target id=\(forced)", tag: "Display")
+        for screen in screens {
+            logger.log("  · \(screen.nannyLogDescriptor)", tag: "Display")
         }
     }
 
@@ -455,6 +509,7 @@ package final class NotificationRepositioner: ObservableObject {
         let queued = pendingWakeWindows
         pendingWakeWindows = []
         logger.log("Display woke — repositioning \(queued.count) held banner(s)", tag: "System")
+        logScreenTopology(reason: "wake")
         // Brief delay to let the display fully initialise before repositioning.
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in
             guard let self else { return }
@@ -590,18 +645,16 @@ package final class NotificationRepositioner: ObservableObject {
 
         // Screen priority: exception override > follow-active-screen > global override
         //                  > banner's current screen.
-        let groupDisplayID = testGroupID != nil
-            ? settings.targetDisplay(forGroupID: testGroupID!)
-            : settings.targetDisplay(for: appNameStr)
+        let groupScreen = testGroupID != nil
+            ? settings.resolvedTargetScreen(forGroupID: testGroupID!)
+            : settings.resolvedTargetScreen(for: appNameStr)
 
         let screen: NSScreen
-        if groupDisplayID != 0,
-           let forced = NSScreen.screens.first(where: { $0.displayID == groupDisplayID }) {
+        if let forced = groupScreen {
             screen = forced
         } else if settings.followActiveScreen, let active = Self.activeScreen() {
             screen = active
-        } else if settings.targetDisplayID != 0,
-           let forced = NSScreen.screens.first(where: { $0.displayID == settings.targetDisplayID }) {
+        } else if let forced = settings.resolvedTargetScreen() {
             screen = forced
         } else {
             guard let s = screenContainingAxPoint(oldPos) ?? NSScreen.main else { return nil }
@@ -929,6 +982,7 @@ package final class NotificationRepositioner: ObservableObject {
                     autoDismissSeconds: settings.autoDismissSeconds,
                     animation: animation,
                     onOpen: { [weak self] in self?.handleBannerTap(appName: capturedName, bannerElement: capturedEl) },
+                    onUnderlyingDismiss: { [weak self] in self?.retireUnderlyingWindow(window) },
                     key: key
                 )
                 if testGroupID == nil { overlayContent[key] = content }
@@ -1092,6 +1146,29 @@ package final class NotificationRepositioner: ObservableObject {
             // Mark dismissed before moving so any concurrent AX event can't re-show the banner.
             self.dismissedKeys.insert(CFHash(window))
             self.hideOffscreen(window, atX: info.windowOrigin.x)
+        }
+    }
+
+    /// Retires the real NC banner backing a custom overlay that has just dismissed itself
+    /// (user close, tap-to-open, or auto-dismiss timer). Without this, the overlay hid the
+    /// native banner only by parking it off-screen under a handful of short-lived holds — so
+    /// once the overlay vanished the native banner was still alive and popped back into view.
+    /// Mirrors scheduleAutoDismiss's native teardown: bump the generation so pending holds
+    /// can't re-show it, flag it dismissed so targetOrigin/AX events won't reposition it, and
+    /// park it off-screen. The follow-up re-parks cover NC re-showing the banner in the brief
+    /// window before it tears the window down for good.
+    private func retireUnderlyingWindow(_ window: AXUIElement) {
+        let key = CFHash(window)
+        let gen = nextGeneration(for: key)
+        dismissedKeys.insert(key)
+        let x = window.point()?.x ?? Self.parkPoint.x
+        hideOffscreen(window, atX: x)
+        for delay in [0.05, 0.2, 0.5, 1.0] as [Double] {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+                guard let self, self.isCurrentGeneration(gen, for: key),
+                      self.dismissedKeys.contains(key) else { return }
+                self.hideOffscreen(window, atX: x)
+            }
         }
     }
 

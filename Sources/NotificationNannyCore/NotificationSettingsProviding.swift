@@ -14,6 +14,14 @@ package protocol NotificationSettingsProviding: AnyObject {
     var pauseDuringFocus: Bool { get }
     var holdWhileAsleep: Bool { get }
     var targetDisplayID: CGDirectDisplayID { get }
+    /// Resolves `targetDisplayID` to a live screen, tolerating displayID reassignment
+    /// across sleep/wake or a dock reconnect. Nil when set to auto (0) or genuinely
+    /// disconnected.
+    func resolvedTargetScreen() -> NSScreen?
+    /// Per-app-group variant: resolves the group's forced display (if any), with the same
+    /// displayID-reassignment tolerance. Nil when not grouped or the group has no override.
+    func resolvedTargetScreen(for appName: String?) -> NSScreen?
+    func resolvedTargetScreen(forGroupID groupID: UUID?) -> NSScreen?
     var autoDismissSeconds: Double { get }
     /// 1.0 = native size. Applied via private CGSSetWindowTransform.
     var bannerScale: Double { get }

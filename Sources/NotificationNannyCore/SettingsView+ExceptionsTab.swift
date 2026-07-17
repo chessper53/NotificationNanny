@@ -82,13 +82,9 @@ struct ExceptionsTabView: View {
     @ViewBuilder
     private func exceptionDetail(for group: AppGroup) -> some View {
         let screens = NSScreen.screens
-        let exScreen: NSScreen = {
-            if group.targetDisplayID != 0,
-               let s = screens.first(where: { $0.displayID == group.targetDisplayID }) { return s }
-            if settings.targetDisplayID != 0,
-               let s = screens.first(where: { $0.displayID == settings.targetDisplayID }) { return s }
-            return NSScreen.main ?? screens[0]
-        }()
+        let exScreen: NSScreen = settings.resolvedTargetScreen(forGroupID: group.id)
+            ?? settings.resolvedTargetScreen()
+            ?? NSScreen.main ?? screens[0]
         let placementBinding = settings.placementBinding(for: group.id)
         let visible = exScreen.visibleFrame
         let isDefault = placementBinding.wrappedValue.xOffset == 0 && placementBinding.wrappedValue.yOffset == 0
@@ -100,10 +96,7 @@ struct ExceptionsTabView: View {
                 if screens.count > 1 {
                     let displayBinding = Binding<CGDirectDisplayID>(
                         get: { settings.appGroups.first(where: { $0.id == group.id })?.targetDisplayID ?? 0 },
-                        set: { newVal in
-                            guard let i = settings.appGroups.firstIndex(where: { $0.id == group.id }) else { return }
-                            settings.appGroups[i].targetDisplayID = newVal
-                        }
+                        set: { newVal in settings.setGroupTargetDisplay(newVal, forGroupID: group.id) }
                     )
                     HStack(spacing: 4) {
                         Text("Screen:").font(.caption).foregroundStyle(.secondary)

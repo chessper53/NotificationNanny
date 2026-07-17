@@ -12,6 +12,7 @@ package final class AppSettings: ObservableObject {
         static let placements           = "placementsByDisplayID"
         static let autoDismiss          = "autoDismissSeconds"
         static let targetDisplay        = "targetDisplayID"
+        static let targetDisplayUUID    = "targetDisplayUUID"
         static let presets              = "presets"
         static let appGroups            = "appGroups"
         static let knownApps            = "knownAppNames"
@@ -178,7 +179,70 @@ package final class AppSettings: ObservableObject {
 
     /// 0 = auto (follow macOS), non-zero = force to this display.
     @Published package var targetDisplayID: CGDirectDisplayID {
-        didSet { defaults.set(Int(targetDisplayID), forKey: Key.targetDisplay) }
+        didSet {
+            defaults.set(Int(targetDisplayID), forKey: Key.targetDisplay)
+            // Mirror the choice as a stable per-monitor key (nil for "auto" or a display
+            // that isn't currently connected — e.g. importing a backup from another Mac)
+            // so resolvedTargetScreen() can still find the right physical display after
+            // displayID gets reassigned (sleep/wake, dock reconnect). A stale leftover key
+            // is explicitly cleared rather than kept, so it can't resolve to the wrong
+            // (previously selected) display.
+            if let key = Self.stableKey(forDisplayID: targetDisplayID) {
+                defaults.set(key, forKey: Key.targetDisplayUUID)
+            } else {
+                defaults.removeObject(forKey: Key.targetDisplayUUID)
+            }
+        }
+    }
+
+    /// Resolves the forced target display (`targetDisplayID`), preferring the persisted
+    /// stable key so a displayID reassignment (sleep/wake, dock reconnect) doesn't make
+    /// the forced screen appear to vanish. Returns nil when set to auto (0) or when the
+    /// display genuinely isn't connected.
+    package func resolvedTargetScreen() -> NSScreen? {
+        Self.resolveScreen(displayID: targetDisplayID, stableKey: defaults.string(forKey: Key.targetDisplayUUID))
+    }
+
+    /// Resolves the forced display for a per-app group override (see `AppGroup.targetDisplayID`).
+    /// Nil when the app isn't in a group, or the group has no override (auto).
+    package func resolvedTargetScreen(for appName: String?) -> NSScreen? {
+        guard let appName, let g = group(for: appName) else { return nil }
+        return Self.resolveScreen(displayID: g.targetDisplayID, stableKey: g.targetDisplayUUID)
+    }
+
+    /// Group-ID variant of `resolvedTargetScreen(for:)`.
+    package func resolvedTargetScreen(forGroupID groupID: UUID?) -> NSScreen? {
+        guard let groupID, let g = group(by: groupID) else { return nil }
+        return Self.resolveScreen(displayID: g.targetDisplayID, stableKey: g.targetDisplayUUID)
+    }
+
+    /// Derives the stable per-monitor key for a currently-connected display, or nil for
+    /// "auto" (id == 0) or a display that isn't connected right now.
+    private static func stableKey(forDisplayID id: CGDirectDisplayID) -> String? {
+        guard id != 0 else { return nil }
+        return NSScreen.screens.first(where: { $0.displayID == id })?.stableDisplayKey
+    }
+
+    /// Shared resolution behind every `resolvedTargetScreen…` variant: prefer the stable
+    /// key (survives displayID reassignment), fall back to a direct ID match for data
+    /// written before the stable key existed.
+    private static func resolveScreen(displayID: CGDirectDisplayID, stableKey: String?) -> NSScreen? {
+        guard displayID != 0 else { return nil }
+        if let stableKey, let screen = NSScreen.screens.first(where: { $0.stableDisplayKey == stableKey }) {
+            return screen
+        }
+        return NSScreen.screens.first(where: { $0.displayID == displayID })
+    }
+
+    /// Sets a group's forced display, mirroring the stable per-monitor key alongside the
+    /// raw ID the same way the global `targetDisplayID` does. Use instead of mutating
+    /// `appGroups[i].targetDisplayID` directly.
+    func setGroupTargetDisplay(_ displayID: CGDirectDisplayID, forGroupID groupID: UUID) {
+        guard let i = appGroups.firstIndex(where: { $0.id == groupID }) else { return }
+        var group = appGroups[i]
+        group.targetDisplayID = displayID
+        group.targetDisplayUUID = Self.stableKey(forDisplayID: displayID)
+        appGroups[i] = group
     }
 
     @Published private var placements: [String: ScreenPlacement] {
@@ -263,16 +327,40 @@ package final class AppSettings: ObservableObject {
 
         // Re-arm the auto-resume timer if we loaded a still-active snooze.
         if snoozedUntil != nil { scheduleSnoozeExpiry() }
+
+        // One-time best-effort cleanup for data written before the stable per-monitor key
+        // (NSScreen.stableDisplayKey) existed: mirror it onto everything still keyed by the
+        // old, sleep/wake-fragile raw displayID, for every screen that happens to be
+        // connected right now. `placement(for:)` and `resolvedTargetScreen…` already fall
+        // back to the raw key on every read regardless, so correctness never depends on
+        // this running — it just stops the fallback from being needed again after the next
+        // reassignment. Explicit save calls rather than relying on didSet, since property
+        // observers aren't invoked for `self.x = …` performed directly inside `init`.
+        migrateLegacyPlacementKeys()
+        backfillTargetDisplayUUID()
+        backfillGroupTargetDisplayUUIDs()
     }
 
     // MARK: - Per-screen placement
 
     func placement(for screen: NSScreen) -> ScreenPlacement {
-        placements[String(screen.displayID)] ?? .default
+        // Legacy raw-displayID fallback: that ID can be reassigned to the same physical
+        // monitor across sleep/wake or a dock reconnect, which would otherwise orphan an
+        // entry still sitting under the old key (pre-migration installs, or a legacy-format
+        // backup restored via importData/applyPreset) and make a custom placement look like
+        // it silently reset to default. A pure read — no mutation — so it's safe to call
+        // from a SwiftUI Binding getter; init()'s one-time migration keeps this fallback
+        // from being needed for long, but correctness never depends on that having run.
+        placements[screen.stableDisplayKey] ?? placements[String(screen.displayID)] ?? .default
     }
 
     func setPlacement(_ placement: ScreenPlacement, for screen: NSScreen) {
-        placements[String(screen.displayID)] = placement
+        // Single assignment to `placements` (rather than two dictionary mutations) so this
+        // triggers exactly one didSet — one disk write, one objectWillChange — instead of two.
+        var updated = placements
+        updated[screen.stableDisplayKey] = placement
+        updated.removeValue(forKey: String(screen.displayID))
+        placements = updated
     }
 
     func placementBinding(for screen: NSScreen) -> Binding<ScreenPlacement> {
@@ -541,6 +629,58 @@ package final class AppSettings: ObservableObject {
         if let data = try? JSONEncoder().encode(knownAppNames) {
             try? data.write(to: self.knownAppsFileURL, options: .atomic)
         }
+    }
+
+    // MARK: - Stable-key migration (init-time, best-effort)
+
+    /// Moves any placement still stored under the legacy raw-displayID key onto the stable
+    /// per-monitor key, for every screen connected right now. `placement(for:)` falls back
+    /// to the legacy key on every read regardless, so this is cleanup, not a correctness
+    /// dependency — it just narrows how often that fallback is needed.
+    private func migrateLegacyPlacementKeys() {
+        var updated = placements
+        var migrated = 0
+        for screen in NSScreen.screens {
+            let legacyKey = String(screen.displayID)
+            guard let legacy = updated[legacyKey] else { continue }
+            let stableKey = screen.stableDisplayKey
+            if updated[stableKey] == nil { updated[stableKey] = legacy }
+            updated.removeValue(forKey: legacyKey)
+            migrated += 1
+        }
+        guard migrated > 0 else { return }
+        placements = updated
+        savePlacements()
+        // User-visible: on the reporter's next diagnostics dump, this line's presence proves
+        // their saved positions were in the pre-fix, displayID-keyed (bug-vulnerable) format.
+        NannyLogger.shared.log("Migrated \(migrated) placement(s) to stable per-display keys", tag: "Display")
+    }
+
+    /// Backfills `targetDisplayUUID` for a `targetDisplayID` set by a version predating the
+    /// stable key, so the global forced-display override doesn't need one more sleep/wake
+    /// or dock reconnect (to trip over a reassigned raw ID) before it becomes resilient.
+    private func backfillTargetDisplayUUID() {
+        guard defaults.string(forKey: Key.targetDisplayUUID) == nil,
+              let key = Self.stableKey(forDisplayID: targetDisplayID) else { return }
+        defaults.set(key, forKey: Key.targetDisplayUUID)
+        NannyLogger.shared.log("Backfilled stable key for forced display id=\(targetDisplayID)", tag: "Display")
+    }
+
+    /// Group-level equivalent of `backfillTargetDisplayUUID()`, for `AppGroup.targetDisplayID`
+    /// overrides set before `targetDisplayUUID` existed.
+    private func backfillGroupTargetDisplayUUIDs() {
+        var updated = appGroups
+        var changed = false
+        for i in updated.indices {
+            guard updated[i].targetDisplayID != 0, updated[i].targetDisplayUUID == nil,
+                  let key = Self.stableKey(forDisplayID: updated[i].targetDisplayID) else { continue }
+            updated[i].targetDisplayUUID = key
+            changed = true
+        }
+        guard changed else { return }
+        appGroups = updated
+        saveAppGroups()
+        NannyLogger.shared.log("Backfilled stable key(s) for exception-group forced displays", tag: "Display")
     }
 }
 
