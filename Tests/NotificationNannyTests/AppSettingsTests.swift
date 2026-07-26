@@ -174,6 +174,35 @@ struct AppSettingsTests {
         #expect(a != b, "Two groups with different UUIDs must not be equal")
     }
 
+    // MARK: - Global banner text color
+
+    @Test func bannerTextTint_defaultsToWhiteWithoutOverride() {
+        let (settings, _) = makeSettings()
+        #expect(settings.bannerTextTint == nil)
+    }
+
+    @Test func bannerTextTint_persistsAcrossSettingsInstances() {
+        let (settings, suiteName) = makeSettings()
+        let tint = BannerTint(r: 0.2, g: 0.4, b: 0.6)
+        settings.bannerTextTint = tint
+
+        let defaults = UserDefaults(suiteName: suiteName)!
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("\(suiteName)-restored.json")
+        let restored = AppSettings(defaults: defaults, knownAppsFileURL: url)
+        #expect(restored.bannerTextTint == tint)
+    }
+
+    @Test func customTextTint_activatesCustomBanner() {
+        let (settings, _) = makeSettings()
+        #expect(!settings.shouldUseCustomBanner(for: nil))
+
+        settings.bannerTextTint = BannerTint(r: 1.0, g: 0.3, b: 0.2)
+        #expect(settings.shouldUseCustomBanner(for: nil))
+
+        settings.clearBannerTextColor()
+        #expect(!settings.shouldUseCustomBanner(for: nil))
+    }
+
     // MARK: - Per-exception screen overrides
 
     @Test func targetDisplay_noGroup_returnsZero() {

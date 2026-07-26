@@ -114,6 +114,7 @@ struct CustomBannerView: View {
     let scale: CGFloat
     let animation: BannerAnimation
     let tint: Color
+    let textColor: Color
     let controller: BannerAnimationController
     let onDismiss: () -> Void
     let onOpen: () -> Void
@@ -127,13 +128,14 @@ struct CustomBannerView: View {
     @State private var animationsSetup = false
     @State private var cursorPushed = false
 
-    init(content: BannerContent, scale: CGFloat, animation: BannerAnimation, tint: Color,
+    init(content: BannerContent, scale: CGFloat, animation: BannerAnimation, tint: Color, textColor: Color,
          controller: BannerAnimationController,
          onDismiss: @escaping () -> Void, onOpen: @escaping () -> Void) {
         self.content = content
         self.scale = scale
         self.animation = animation
         self.tint = tint
+        self.textColor = textColor
         self.controller = controller
         self.onDismiss = onDismiss
         self.onOpen = onOpen
@@ -155,24 +157,24 @@ struct CustomBannerView: View {
                 HStack(alignment: .firstTextBaseline) {
                     Text(content.appName.uppercased())
                         .font(.system(size: 11 * scale, weight: .semibold))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(textColor.opacity(0.65))
                         .kerning(0.4)
                         .lineLimit(1)
                     Spacer()
                     Text("now")
                         .font(.system(size: 11 * scale))
-                        .foregroundStyle(.tertiary)
+                        .foregroundStyle(textColor.opacity(0.55))
                 }
                 if !content.title.isEmpty {
                     Text(content.title)
                         .font(.system(size: 13 * scale, weight: .semibold))
-                        .foregroundStyle(.primary)
+                        .foregroundStyle(textColor)
                         .lineLimit(1)
                 }
                 if !content.body.isEmpty {
                     Text(content.body)
                         .font(.system(size: 13 * scale))
-                        .foregroundStyle(.primary.opacity(0.85))
+                        .foregroundStyle(textColor.opacity(0.85))
                         .lineLimit(2)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -344,6 +346,7 @@ final class CustomBannerManager {
         width: CGFloat,
         scale: Double,
         backgroundColor: Color,
+        textColor: Color,
         autoDismissSeconds: Double,
         animation: BannerAnimation = .default,
         onOpen: @escaping () -> Void,
@@ -366,6 +369,7 @@ final class CustomBannerManager {
         // with a transparent background; the panel's drop shadow follows the rounded box.
         let bannerView = CustomBannerView(
             content: content, scale: s, animation: animation, tint: backgroundColor,
+            textColor: textColor,
             controller: controller, onDismiss: onDismissAction, onOpen: onOpenAction)
         let hosting = NSHostingView(rootView: bannerView)
         hosting.frame = bounds

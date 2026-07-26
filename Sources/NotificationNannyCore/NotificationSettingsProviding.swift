@@ -26,6 +26,7 @@ package protocol NotificationSettingsProviding: AnyObject {
     /// 1.0 = native size. Applied via private CGSSetWindowTransform.
     var bannerScale: Double { get }
     var bannerColor: Color { get }
+    var effectiveBannerTextColor: Color { get }
     func effectiveBannerColor(for appName: String?) -> Color
     func effectiveBannerColor(forGroupID groupID: UUID?) -> Color
     /// Fires (on the main actor) whenever any setting changes.

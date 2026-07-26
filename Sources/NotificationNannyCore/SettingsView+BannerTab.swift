@@ -97,6 +97,36 @@ struct BannerTabView: View {
             .padding(12)
             .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
 
+            // Text color
+            VStack(alignment: .leading, spacing: 10) {
+                HStack {
+                    Text("Text Color").font(.caption.weight(.medium)).foregroundStyle(.secondary)
+                    Spacer()
+                    Button("Reset") { settings.clearBannerTextColor() }
+                        .buttonStyle(.borderless).font(.caption).foregroundStyle(Color.nannyAccent)
+                        .disabled(!settings.hasBannerTextColor)
+                }
+                HStack(spacing: 8) {
+                    ColorPicker("Text", selection: Binding(
+                        get: { settings.bannerTextTint?.color ?? .white },
+                        set: { newColor in
+                            let color = NSColor(newColor).usingColorSpace(.sRGB) ?? .white
+                            settings.bannerTextTint = BannerTint(
+                                r: Double(color.redComponent),
+                                g: Double(color.greenComponent),
+                                b: Double(color.blueComponent))
+                        }
+                    ), supportsOpacity: false)
+                    Spacer()
+                }
+                Text(settings.hasBannerTextColor
+                     ? "Custom text color active — custom renderer on"
+                     : "Default — white")
+                    .font(.caption2).foregroundStyle(.tertiary)
+            }
+            .padding(12)
+            .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
+
             // Animation
             VStack(alignment: .leading, spacing: 10) {
                 HStack {
@@ -112,7 +142,8 @@ struct BannerTabView: View {
 
                 // Live preview — replays on selection change, the Replay button, or a tap.
                 AnimationPreviewPane(animation: settings.bannerAnimation, replay: previewReplay,
-                                     tint: settings.hasBannerColor ? settings.bannerColor : .clear)
+                                     tint: settings.hasBannerColor ? settings.bannerColor : .clear,
+                                     textColor: settings.effectiveBannerTextColor)
                     .frame(height: 64)
                     .frame(maxWidth: .infinity)
                     .background(Color.black.opacity(0.22), in: RoundedRectangle(cornerRadius: 10))
@@ -302,6 +333,8 @@ private struct AnimationPreviewPane: View {
     let replay: Int
     /// The tint to render the sample banner with, or `.clear` for the untinted dark banner.
     var tint: Color = .clear
+    /// The text color to render the sample banner with.
+    var textColor: Color = .white
 
     @State private var animX: CGFloat = 0
     @State private var animY: CGFloat = 0
@@ -325,8 +358,8 @@ private struct AnimationPreviewPane: View {
             RoundedRectangle(cornerRadius: 6, style: .continuous)
                 .fill(Color.white.opacity(0.25)).frame(width: 26, height: 26)
             VStack(alignment: .leading, spacing: 4) {
-                RoundedRectangle(cornerRadius: 3).fill(Color.white.opacity(0.55)).frame(width: 64, height: 6)
-                RoundedRectangle(cornerRadius: 3).fill(Color.white.opacity(0.30)).frame(width: 104, height: 6)
+                RoundedRectangle(cornerRadius: 3).fill(textColor.opacity(0.85)).frame(width: 64, height: 6)
+                RoundedRectangle(cornerRadius: 3).fill(textColor.opacity(0.55)).frame(width: 104, height: 6)
             }
             Spacer(minLength: 0)
         }
@@ -351,4 +384,3 @@ private struct AnimationPreviewPane: View {
         }
     }
 }
-

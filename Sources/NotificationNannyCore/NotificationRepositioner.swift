@@ -979,6 +979,7 @@ package final class NotificationRepositioner: ObservableObject {
                     backgroundColor: testGroupID != nil
                         ? settings.effectiveBannerColor(forGroupID: testGroupID!)
                         : settings.effectiveBannerColor(for: appName(for: window)),
+                    textColor: settings.effectiveBannerTextColor,
                     autoDismissSeconds: settings.autoDismissSeconds,
                     animation: animation,
                     onOpen: { [weak self] in self?.handleBannerTap(appName: capturedName, bannerElement: capturedEl) },
