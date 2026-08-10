@@ -27,6 +27,10 @@ package final class AppSettings: ObservableObject {
         static let bannerColorG         = "bannerColorG"
         static let bannerColorB         = "bannerColorB"
         static let hasBannerColor       = "hasBannerColor"
+        static let bannerTextColorR     = "bannerTextColorR"
+        static let bannerTextColorG     = "bannerTextColorG"
+        static let bannerTextColorB     = "bannerTextColorB"
+        static let hasBannerTextColor   = "hasBannerTextColor"
         static let bannerAnimation      = "bannerAnimation"
         static let hideMenuBarIcon      = "hideMenuBarIcon"
         static let snoozedUntil         = "snoozedUntil"
@@ -130,6 +134,11 @@ package final class AppSettings: ObservableObject {
     @Published private var bannerColorB: Double { didSet { defaults.set(bannerColorB, forKey: Key.bannerColorB) } }
     @Published package private(set) var hasBannerColor: Bool { didSet { defaults.set(hasBannerColor, forKey: Key.hasBannerColor) } }
 
+    @Published private var bannerTextColorR: Double { didSet { defaults.set(bannerTextColorR, forKey: Key.bannerTextColorR) } }
+    @Published private var bannerTextColorG: Double { didSet { defaults.set(bannerTextColorG, forKey: Key.bannerTextColorG) } }
+    @Published private var bannerTextColorB: Double { didSet { defaults.set(bannerTextColorB, forKey: Key.bannerTextColorB) } }
+    @Published package private(set) var hasBannerTextColor: Bool { didSet { defaults.set(hasBannerTextColor, forKey: Key.hasBannerTextColor) } }
+
     @Published package var bannerAnimation: BannerAnimation {
         didSet { defaults.set(bannerAnimation.rawValue, forKey: Key.bannerAnimation) }
     }
@@ -162,6 +171,36 @@ package final class AppSettings: ObservableObject {
     }
 
     package func clearBannerColor() { bannerTint = nil }
+
+    /// Optional global text-color override for the custom banner renderer. `nil` (the
+    /// default) means "no override" — callers should fall back to the adaptive system
+    /// text styles (`.primary`/`.secondary`/`.tertiary`), not a hardcoded color, so text
+    /// stays legible against the custom banner's own appearance-adaptive background.
+    package var bannerTextTint: BannerTint? {
+        get {
+            hasBannerTextColor
+                ? BannerTint(r: bannerTextColorR, g: bannerTextColorG, b: bannerTextColorB)
+                : nil
+        }
+        set {
+            if let tint = newValue {
+                bannerTextColorR = tint.r
+                bannerTextColorG = tint.g
+                bannerTextColorB = tint.b
+                hasBannerTextColor = true
+            } else {
+                bannerTextColorR = 0
+                bannerTextColorG = 0
+                bannerTextColorB = 0
+                hasBannerTextColor = false
+            }
+        }
+    }
+
+    /// `nil` means "no override" — render with the adaptive system text styles.
+    package var effectiveBannerTextColor: Color? { bannerTextTint?.color }
+
+    package func clearBannerTextColor() { bannerTextTint = nil }
 
     package func effectiveBannerColor(for appName: String?) -> Color {
         effectiveBannerColorImpl(groupTint: appName.flatMap { group(for: $0) }?.bannerTint)
@@ -285,6 +324,10 @@ package final class AppSettings: ObservableObject {
         self.bannerColorG = defaults.object(forKey: Key.bannerColorG) as? Double ?? 0.0
         self.bannerColorB = defaults.object(forKey: Key.bannerColorB) as? Double ?? 0.0
         self.hasBannerColor = (defaults.object(forKey: Key.hasBannerColor) as? Bool) ?? false
+        self.bannerTextColorR = defaults.object(forKey: Key.bannerTextColorR) as? Double ?? 0.0
+        self.bannerTextColorG = defaults.object(forKey: Key.bannerTextColorG) as? Double ?? 0.0
+        self.bannerTextColorB = defaults.object(forKey: Key.bannerTextColorB) as? Double ?? 0.0
+        self.hasBannerTextColor = (defaults.object(forKey: Key.hasBannerTextColor) as? Bool) ?? false
         if let raw = defaults.string(forKey: Key.bannerAnimation),
            let anim = BannerAnimation(rawValue: raw) {
             self.bannerAnimation = anim
@@ -490,6 +533,7 @@ package final class AppSettings: ObservableObject {
         case nil:
             if abs(scale - 1.0) > 0.001 { return true }
             if animation != .default { return true }
+            if hasBannerTextColor { return true }
             return resolvedGroup?.hasBannerColor ?? hasBannerColor
         }
     }
@@ -606,6 +650,7 @@ package final class AppSettings: ObservableObject {
         bannerScale        = 1.0
         holdWhileAsleep    = false
         bannerTint         = nil
+        bannerTextTint     = nil
         bannerAnimation    = .default
         hideMenuBarIcon    = false
     }
