@@ -171,7 +171,7 @@ package final class NotificationRepositioner: ObservableObject {
         generation.removeAll()
         overlayContent.removeAll()
         dismissedKeys.removeAll()
-        loggedWidgetKeys.removeAll()
+        loggedSkippedKeys.removeAll()
         resolver.invalidateAll()
         customBannerManager.dismissAll()
         logger.log("Observer stopped", tag: "AX")
@@ -211,7 +211,7 @@ package final class NotificationRepositioner: ObservableObject {
             generation.removeValue(forKey: key)
             overlayContent.removeValue(forKey: key)
             dismissedKeys.remove(key)
-            loggedWidgetKeys.remove(key)
+            loggedSkippedKeys.remove(key)
             if let bound = testBannerWindow, CFEqual(bound, element) { testBannerWindow = nil }
             stopScaleHammer()
             customBannerManager.dismiss(key: key)
@@ -223,8 +223,16 @@ package final class NotificationRepositioner: ObservableObject {
         }
 
         if notification == kAXWindowCreatedNotification as String {
-            let name = appName(for: element) ?? "unknown"
-            logger.log("Window created — \(name)", tag: "AX")
+            let name = appName(for: element)
+            if let name {
+                logger.log("Window created — \(name)", tag: "AX")
+            } else {
+                // Include the subrole so an unrecognised banner subrole (e.g. a new
+                // notification style Apple introduces) is diagnosable from a pasted
+                // diagnostics report alone, without needing a live AX-tree dump.
+                let subrole = element.stringAttribute(kAXSubroleAttribute as String) ?? "none"
+                logger.log("Window created — unknown (subrole: \(subrole))", tag: "AX")
+            }
         }
 
         if notification == kAXWindowMovedNotification as String {
@@ -409,10 +417,11 @@ package final class NotificationRepositioner: ObservableObject {
     private var overlayContent: [CFHashCode: BannerContent] = [:]
     // Windows we dismissed via scheduleAutoDismiss — ignored by targetOrigin so NC can't fight back.
     private var dismissedKeys: Set<CFHashCode> = []
-    // Widget windows we've already logged as "protected", so targetOrigin (called on every
-    // reposition pass) emits one user-visible log line per widget instead of flooding the
-    // ring buffer. Cleared per-window on destroy and wholesale on teardown.
-    private var loggedWidgetKeys: Set<CFHashCode> = []
+    // Windows we've already logged as "skipped" (protected widget or unrecognised large NC
+    // window), so targetOrigin (called on every reposition pass) emits one user-visible log
+    // line per window instead of flooding the ring buffer. Cleared per-window on destroy and
+    // wholesale on teardown.
+    private var loggedSkippedKeys: Set<CFHashCode> = []
     // nil = not in test mode; .some(nil) = test active, screen default; .some(.some(id)) = test active, group
     private var testGroupID: UUID?? = nil
     private var testBannerWindow: AXUIElement? = nil
@@ -426,6 +435,13 @@ package final class NotificationRepositioner: ObservableObject {
 
     private var isDisplaySleeping = false
     private var pendingWakeWindows: [AXUIElement] = []
+    // Timestamps of the two events most likely to correlate with a readiness-gate
+    // give-up (see logReadinessGateExhausted): a display wake or a topology change
+    // can leave the AX service itself still warming up, which looks identical in
+    // the log to an unrecognised banner subrole unless we record how recently one
+    // of these fired.
+    private var lastWakeAt: Date?
+    private var lastScreenChangeAt: Date?
 
     private func registerSleepWakeObservers() {
         NSWorkspace.shared.notificationCenter.addObserver(
@@ -454,6 +470,7 @@ package final class NotificationRepositioner: ObservableObject {
     private let screenParamsDebouncer = Debouncer()
 
     private func handleScreenParametersChange() {
+        lastScreenChangeAt = Date()
         logger.log("Screen configuration changed — re-evaluating banner positions", tag: "System")
         logScreenTopology(reason: "screen change")
         // Brief delay mirrors the wake path: let the display and NC settle before
@@ -473,6 +490,25 @@ package final class NotificationRepositioner: ObservableObject {
         for screen in screens {
             logger.log("  · \(screen.nannyLogDescriptor)", tag: "Display")
         }
+    }
+
+    /// Reports how recently a wake or screen-topology change fired, if within the last
+    /// 5s — the window where the AX service can plausibly still be settling. Attached to
+    /// the readiness-gate exhaustion log so a recurrence tells us whether it's clustering
+    /// around display events (a timing issue) or happening independently of them (more
+    /// likely a genuine unrecognised-subrole gap).
+    private func recentDisplayEventDescription() -> String? {
+        let now = Date()
+        let candidates: [(String, Date?)] = [("wake", lastWakeAt), ("screen change", lastScreenChangeAt)]
+        let recent = candidates
+            .compactMap { label, date -> (String, TimeInterval)? in
+                guard let date else { return nil }
+                let elapsed = now.timeIntervalSince(date)
+                return elapsed <= 5 ? (label, elapsed) : nil
+            }
+            .min { $0.1 < $1.1 }
+        guard let (label, elapsed) = recent else { return nil }
+        return "\(Int(elapsed * 1000))ms since last \(label)"
     }
 
     private func handleDisplaySleep() {
@@ -504,6 +540,7 @@ package final class NotificationRepositioner: ObservableObject {
     }
 
     private func handleDisplayWake() {
+        lastWakeAt = Date()
         isDisplaySleeping = false
         guard !pendingWakeWindows.isEmpty else { return }
         let queued = pendingWakeWindows
@@ -678,6 +715,8 @@ package final class NotificationRepositioner: ObservableObject {
             // if the AX tree contains an actual notification banner element.
             guard let bannerEl = findBannerElement(in: window) else {
                 log.info("targetOrigin: skipped — large window, no banner child (NC panel/widget)")
+                logSkippedOnce(window, reason: "Large NC window with no recognised banner child",
+                              tag: "Banner", size: size, pos: oldPos)
                 return nil
             }
             // The NC panel (opened by clicking the clock) immediately becomes the app's
@@ -708,7 +747,8 @@ package final class NotificationRepositioner: ObservableObject {
             // widget (or other NC chrome) and must be left where the user put it.
             if settings.protectDesktopWidgets, findBannerElement(in: window) == nil {
                 log.info("targetOrigin: skipped — small window, no banner subrole (desktop widget)")
-                logWidgetProtectedOnce(window, size: size, pos: oldPos)
+                logSkippedOnce(window, reason: "Protected desktop widget, left in place",
+                              tag: "Widget", size: size, pos: oldPos)
                 return nil
             }
             bannerOffset = .zero; bannerSz = size
@@ -842,6 +882,18 @@ package final class NotificationRepositioner: ObservableObject {
             }
             return
         }
+        if testGroupID == nil, attempt >= 3, !isBannerReady(window) {
+            // Distinguishes two very different failure modes from the same "gave up" silence:
+            // subrole == "none" (AX subtree genuinely never populated — a timing issue, e.g.
+            // AX service still warming up right after display wake) vs. a populated subrole
+            // that findBannerElement doesn't recognise (a recognition gap, same class of bug
+            // as the AXNotificationCenterAlert/Persistent-style case fixed above). Without this
+            // line the give-up was invisible — the retry lines just stopped and nothing else
+            // followed, indistinguishable from success in a pasted diagnostics report.
+            let subrole = window.stringAttribute(kAXSubroleAttribute as String) ?? "none"
+            let context = recentDisplayEventDescription().map { ", \($0)" } ?? ""
+            logger.log("Readiness gate exhausted after 3 retries — proceeding as non-banner (window subrole: \(subrole)\(context))", tag: "Banner")
+        }
 
         log.debug("repositionWindow: computing base target (stackIndex=0)")
         guard let baseInfo = targetOrigin(for: window, stackIndex: 0), let settings else {
@@ -971,14 +1023,23 @@ package final class NotificationRepositioner: ObservableObject {
 
                 let capturedEl = bannerEl
                 let capturedName = content.appName
+                let bannerBackground = testGroupID != nil
+                    ? settings.effectiveBannerColor(forGroupID: testGroupID!)
+                    : settings.effectiveBannerColor(for: appName(for: window))
+                if bannerBackground == .clear {
+                    // No tint set — this overlay exists solely for scale/animation, so it
+                    // renders with the system's real vibrancy appearance rather than a tint.
+                    // Logged so a future "banner color looks off" report can be matched to
+                    // this exact path (vs. an explicit tint) without needing a repro.
+                    logger.log("Custom overlay untinted — rendering with system appearance (scale=\(String(format: "%.2f", scale))×, animation=\(animation.rawValue))", tag: "Custom")
+                }
                 customBannerManager.showBanner(
                     content: content,
                     axTopLeft: finalAXOrigin,
                     width: scaledWidth,
                     scale: scale,
-                    backgroundColor: testGroupID != nil
-                        ? settings.effectiveBannerColor(forGroupID: testGroupID!)
-                        : settings.effectiveBannerColor(for: appName(for: window)),
+                    backgroundColor: bannerBackground,
+                    textColor: settings.effectiveBannerTextColor,
                     autoDismissSeconds: settings.autoDismissSeconds,
                     animation: animation,
                     onOpen: { [weak self] in self?.handleBannerTap(appName: capturedName, bannerElement: capturedEl) },
@@ -1233,14 +1294,17 @@ package final class NotificationRepositioner: ObservableObject {
         return CFEqual(fw, window)
     }
 
-    /// Emits one user-visible (bug-report-attached) log line the first time we protect a
-    /// given widget window, so a recurrence of "my widgets disappeared" leaves a trail
-    /// without flooding the ring buffer on every reposition pass.
-    private func logWidgetProtectedOnce(_ window: AXUIElement, size: CGSize, pos: CGPoint) {
+    /// Emits one user-visible (bug-report-attached) log line the first time a given window is
+    /// left unrepositioned, so a recurrence leaves a diagnosable trail without flooding the ring
+    /// buffer on every reposition pass. Always includes the AX subrole — the detail that tells
+    /// us apart "genuinely non-banner NC chrome" (widget/panel) from "a banner subrole we don't
+    /// recognise yet" (the same class of gap as the AXNotificationCenterAlert case).
+    private func logSkippedOnce(_ window: AXUIElement, reason: String, tag: String, size: CGSize, pos: CGPoint) {
         let key = CFHash(window)
-        guard !loggedWidgetKeys.contains(key) else { return }
-        loggedWidgetKeys.insert(key)
-        logger.log("Protected desktop widget — \(Int(size.width))×\(Int(size.height)) at (\(Int(pos.x)),\(Int(pos.y))), left in place", tag: "Widget")
+        guard !loggedSkippedKeys.contains(key) else { return }
+        loggedSkippedKeys.insert(key)
+        let subrole = window.stringAttribute(kAXSubroleAttribute as String) ?? "none"
+        logger.log("\(reason) — \(Int(size.width))×\(Int(size.height)) at (\(Int(pos.x)),\(Int(pos.y))), subrole=\(subrole)", tag: tag)
     }
 }
 
