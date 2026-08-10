@@ -114,6 +114,10 @@ struct CustomBannerView: View {
     let scale: CGFloat
     let animation: BannerAnimation
     let tint: Color
+    /// `nil` means no override — fall back to the adaptive `.primary`/`.secondary`/
+    /// `.tertiary` system styles (see the `*Style` helpers below) so text stays legible
+    /// against the background's own light/dark-adaptive appearance.
+    let textColor: Color?
     let controller: BannerAnimationController
     let onDismiss: () -> Void
     let onOpen: () -> Void
@@ -128,12 +132,13 @@ struct CustomBannerView: View {
     @State private var cursorPushed = false
 
     init(content: BannerContent, scale: CGFloat, animation: BannerAnimation, tint: Color,
-         controller: BannerAnimationController,
+         textColor: Color?, controller: BannerAnimationController,
          onDismiss: @escaping () -> Void, onOpen: @escaping () -> Void) {
         self.content = content
         self.scale = scale
         self.animation = animation
         self.tint = tint
+        self.textColor = textColor
         self.controller = controller
         self.onDismiss = onDismiss
         self.onOpen = onOpen
@@ -155,24 +160,24 @@ struct CustomBannerView: View {
                 HStack(alignment: .firstTextBaseline) {
                     Text(content.appName.uppercased())
                         .font(.system(size: 11 * scale, weight: .semibold))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(appNameStyle)
                         .kerning(0.4)
                         .lineLimit(1)
                     Spacer()
                     Text("now")
                         .font(.system(size: 11 * scale))
-                        .foregroundStyle(.tertiary)
+                        .foregroundStyle(timestampStyle)
                 }
                 if !content.title.isEmpty {
                     Text(content.title)
                         .font(.system(size: 13 * scale, weight: .semibold))
-                        .foregroundStyle(.primary)
+                        .foregroundStyle(titleStyle)
                         .lineLimit(1)
                 }
                 if !content.body.isEmpty {
                     Text(content.body)
                         .font(.system(size: 13 * scale))
-                        .foregroundStyle(.primary.opacity(0.85))
+                        .foregroundStyle(bodyStyle)
                         .lineLimit(2)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -187,7 +192,6 @@ struct CustomBannerView: View {
         .background {
             ZStack {
                 VisualEffectBackground(cornerRadius: 14 * scale)
-                Color.black.opacity(0.28)
                 if tint != .clear { tint.opacity(0.45) }
             }
         }
@@ -229,6 +233,24 @@ struct CustomBannerView: View {
             animationsSetup = true
             setupAnimations()
         }
+    }
+
+    // MARK: - Text styles
+    // AnyShapeStyle unifies the two branches: a concrete Color (explicit override) and
+    // the hierarchical system styles (.secondary/.tertiary/.primary, adaptive fallback)
+    // don't share a static type, so foregroundStyle can't pick between them directly.
+
+    private var appNameStyle: AnyShapeStyle {
+        textColor.map { AnyShapeStyle($0.opacity(0.65)) } ?? AnyShapeStyle(.secondary)
+    }
+    private var timestampStyle: AnyShapeStyle {
+        textColor.map { AnyShapeStyle($0.opacity(0.55)) } ?? AnyShapeStyle(.tertiary)
+    }
+    private var titleStyle: AnyShapeStyle {
+        textColor.map { AnyShapeStyle($0) } ?? AnyShapeStyle(.primary)
+    }
+    private var bodyStyle: AnyShapeStyle {
+        textColor.map { AnyShapeStyle($0.opacity(0.85)) } ?? AnyShapeStyle(Color.primary.opacity(0.85))
     }
 
     private func setupAnimations() {
@@ -297,7 +319,10 @@ private struct VisualEffectBackground: NSViewRepresentable {
         v.material = .hudWindow
         v.blendingMode = .behindWindow
         v.state = .active
-        v.appearance = NSAppearance(named: .darkAqua)
+        // No forced appearance: leaving it nil lets the view inherit the system's
+        // current light/dark appearance (like the real NC banner does), instead of
+        // this overlay always rendering as a dark HUD panel while the rest of the
+        // system is in Light Mode.
         v.maskImage = Self.maskImage(cornerRadius: cornerRadius)
         return v
     }
@@ -344,6 +369,7 @@ final class CustomBannerManager {
         width: CGFloat,
         scale: Double,
         backgroundColor: Color,
+        textColor: Color? = nil,
         autoDismissSeconds: Double,
         animation: BannerAnimation = .default,
         onOpen: @escaping () -> Void,
@@ -366,6 +392,7 @@ final class CustomBannerManager {
         // with a transparent background; the panel's drop shadow follows the rounded box.
         let bannerView = CustomBannerView(
             content: content, scale: s, animation: animation, tint: backgroundColor,
+            textColor: textColor,
             controller: controller, onDismiss: onDismissAction, onOpen: onOpenAction)
         let hosting = NSHostingView(rootView: bannerView)
         hosting.frame = bounds

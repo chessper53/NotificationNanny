@@ -28,6 +28,9 @@ package protocol NotificationSettingsProviding: AnyObject {
     var bannerColor: Color { get }
     func effectiveBannerColor(for appName: String?) -> Color
     func effectiveBannerColor(forGroupID groupID: UUID?) -> Color
+    /// `nil` means no override — render the custom banner's text with the adaptive
+    /// system styles rather than a hardcoded color.
+    var effectiveBannerTextColor: Color? { get }
     /// Fires (on the main actor) whenever any setting changes.
     var settingsDidChange: AnyPublisher<Void, Never> { get }
     func placement(for appName: String?, screen: NSScreen) -> ScreenPlacement
