@@ -6,9 +6,6 @@ import os
 private let log    = Logger(subsystem: "com.notificationnanny", category: "repositioner")
 private let axLog  = Logger(subsystem: "com.notificationnanny", category: "ax")
 
-/// Coalesces a burst of same-source events into a single delayed action: each `schedule`
-/// call cancels any not-yet-fired action and reschedules, so only the last call in a burst
-/// (within `delay` of the previous one) actually runs.
 @MainActor
 private final class Debouncer {
     private var pending: DispatchWorkItem?
@@ -56,7 +53,6 @@ package final class NotificationRepositioner: ObservableObject {
     }
 
     deinit {
-        // Remove the run loop source so the C callback can't fire on a dangling pointer.
         if let observer {
             CFRunLoopRemoveSource(CFRunLoopGetMain(), AXObserverGetRunLoopSource(observer), .defaultMode)
         }
@@ -69,8 +65,6 @@ package final class NotificationRepositioner: ObservableObject {
             .throttle(for: .milliseconds(16), scheduler: DispatchQueue.main, latest: true)
             .sink { [weak self] in self?.burstReposition() }
             .store(in: &cancellables)
-        // Fast path for live test-banner drag — snaps the stored element directly
-        // rather than querying the ncApp window list, which can be stale.
         settings.settingsDidChange
             .throttle(for: .milliseconds(8), scheduler: DispatchQueue.main, latest: true)
             .sink { [weak self] in
@@ -80,8 +74,6 @@ package final class NotificationRepositioner: ObservableObject {
             .store(in: &cancellables)
         startObserving()
     }
-
-    // MARK: - Accessibility permission
 
     func refreshAccessibilityStatus() {
         permissionMonitor.refresh()
@@ -96,8 +88,6 @@ package final class NotificationRepositioner: ObservableObject {
             self?.startObserving()
         }
     }
-
-    // MARK: - Observation
 
     func startObserving() {
         guard hasAccessibilityPermission else {
@@ -137,19 +127,15 @@ package final class NotificationRepositioner: ObservableObject {
     }
 
     private func findNotificationProcessPid() -> pid_t {
-        // Primary: exact bundle ID match.
         if let app = NSRunningApplication
             .runningApplications(withBundleIdentifier: "com.apple.notificationcenterui").first {
             return app.processIdentifier
         }
-        // Secondary: any running app whose bundle ID contains "notification".
         for app in NSWorkspace.shared.runningApplications {
             if app.bundleIdentifier?.localizedCaseInsensitiveContains("notification") == true {
                 return app.processIdentifier
             }
         }
-        // Fallback: find a window owner whose name contains "notification" via CGWindowList.
-        // Avoids spawning subprocesses and works across macOS versions.
         let windows = CGWindowListCopyWindowInfo([.optionAll], kCGNullWindowID) as? [[String: Any]] ?? []
         for info in windows {
             guard let ownerName = info[kCGWindowOwnerName as String] as? String,
@@ -177,8 +163,6 @@ package final class NotificationRepositioner: ObservableObject {
         logger.log("Observer stopped", tag: "AX")
     }
 
-    // MARK: - App name extraction (delegated to AppNameResolver)
-
     private func findBannerElement(in el: AXUIElement, depth: Int = 0) -> AXUIElement? {
         resolver.findBannerElement(in: el, depth: depth)
     }
@@ -187,18 +171,12 @@ package final class NotificationRepositioner: ObservableObject {
         resolver.appName(for: window)
     }
 
-    // MARK: - Event handling
-
     fileprivate func handleAXEvent(element: AXUIElement, notification: String) {
         axLog.debug("── AX event: \(notification, privacy: .public)")
 
         if notification == kAXUIElementDestroyedNotification as String {
             let key = CFHash(element)
             let hadOverlay = customBannerManager.isActive(key: key)
-            // Desktop widgets / the clock tear down and re-create constantly (bursts of 6-9
-            // destroys per minute). Only record destroys that mattered — an overlay we owned
-            // or a banner we'd repositioned — so widget churn doesn't flood the activity log
-            // and evict the events worth seeing.
             let wasTrackedBanner = lastSelfSetPositions[key] != nil
             if hadOverlay || wasTrackedBanner {
                 logger.log("Window destroyed\(hadOverlay ? " — overlay dismissed" : "")", tag: "AX")
@@ -215,9 +193,6 @@ package final class NotificationRepositioner: ObservableObject {
             if let bound = testBannerWindow, CFEqual(bound, element) { testBannerWindow = nil }
             stopScaleHammer()
             customBannerManager.dismiss(key: key)
-            // Coalesce the restack sweep: a widget-destroy burst would otherwise fire 6-9 full
-            // repositionVisibleWindows() passes a minute. One delayed sweep per burst is
-            // imperceptible for restacking real banners and stops the churn-driven hammering.
             scheduleDestroySweep()
             return
         }
@@ -227,21 +202,12 @@ package final class NotificationRepositioner: ObservableObject {
             if let name {
                 logger.log("Window created — \(name)", tag: "AX")
             } else {
-                // Include the subrole so an unrecognised banner subrole (e.g. a new
-                // notification style Apple introduces) is diagnosable from a pasted
-                // diagnostics report alone, without needing a live AX-tree dump.
                 let subrole = element.stringAttribute(kAXSubroleAttribute as String) ?? "none"
                 logger.log("Window created — unknown (subrole: \(subrole))", tag: "AX")
             }
         }
 
         if notification == kAXWindowMovedNotification as String {
-            // Ignore NC's own entrance-animation moves: shortly after we reposition a window,
-            // NC keeps animating it (which fires windowMoved with large drift). Reacting re-reads
-            // the still-changing size and re-anchors, making native banners visibly resize on
-            // appearance. The scheduled holds remain the backstop for genuine drift.
-            // Exception: when an overlay is live for this window, NC moving it can signal a
-            // back-to-back content swap, so we must still react (and refresh the overlay).
             if !customBannerManager.isActive(key: CFHash(element)),
                let movedAt = lastRepositionAt[CFHash(element)], Date().timeIntervalSince(movedAt) < 0.6 {
                 axLog.debug("handleAXEvent: windowMoved within 0.6s of self-move — ignoring (animation churn)")
@@ -271,8 +237,6 @@ package final class NotificationRepositioner: ObservableObject {
         repositionWindow(element)
     }
 
-    // Debounces the post-destroy restack sweep so a burst of widget/clock destroy events
-    // collapses into a single sweep instead of one per event.
     private let destroySweepDebouncer = Debouncer()
 
     private func scheduleDestroySweep() {
@@ -280,9 +244,6 @@ package final class NotificationRepositioner: ObservableObject {
     }
 
     private func burstReposition() {
-        // No generation bump here: holds/auto-dismiss re-read live settings at fire time, so a
-        // settings change doesn't need to cancel them (and shouldn't cancel pending auto-dismiss).
-        // If we've just been disabled or snoozed, clear any live overlays for an immediate effect.
         if let settings, !settings.isActive {
             customBannerManager.dismissAll()
             overlayContent.removeAll()
@@ -307,7 +268,6 @@ package final class NotificationRepositioner: ObservableObject {
             return
         }
         log.debug("repositionVisibleWindows: \(windows.count) window(s) from ncApp")
-        // Two-pass: resolve each window's anchor first, then stack only within same-anchor groups.
         let baseTargets: [(AXUIElement, RepositionTarget)] = windows.compactMap { w in
             guard let t = targetOrigin(for: w, stackIndex: 0) else { return nil }
             return (w, t)
@@ -338,11 +298,6 @@ package final class NotificationRepositioner: ObservableObject {
         a.screen.displayID == b.screen.displayID && a.placement.position == b.placement.position
     }
 
-    // MARK: - Per-window generation
-
-    /// Bumps and returns the current generation for `key`. Scheduled work (holds, retries,
-    /// auto-dismiss) captures the value and bails if it's no longer current — without
-    /// disturbing other windows' in-flight work.
     private func nextGeneration(for key: CFHashCode) -> Int {
         let g = (generation[key] ?? 0) &+ 1
         generation[key] = g
@@ -353,18 +308,11 @@ package final class NotificationRepositioner: ObservableObject {
         generation[key] == gen
     }
 
-    // MARK: - Test-banner identity
-
-    /// Resolves whether `window` is the banner spawned by the most recent test, returning the
-    /// test group to apply to it. Real notifications that arrive while a test is in flight are
-    /// *not* hijacked — only the window matching the test's unique title stamp is bound as the
-    /// test banner. Returns the outer `nil` when the window should follow the normal app path.
     private func effectiveTestGroup(for window: AXUIElement) -> UUID?? {
-        guard let pending = testGroupID else { return nil }     // no test in flight
+        guard let pending = testGroupID else { return nil }
         if let bound = testBannerWindow {
-            return CFEqual(bound, window) ? pending : nil        // only the bound window is the test
+            return CFEqual(bound, window) ? pending : nil
         }
-        // Not yet bound — identify the test banner by its unique title stamp.
         if let title = pendingTestTitle, bannerDescription(of: window)?.contains(title) == true {
             testBannerWindow = window
             return pending
@@ -372,7 +320,6 @@ package final class NotificationRepositioner: ObservableObject {
         return nil
     }
 
-    /// Raw `AXAttributedDescription` string of a window's banner element, used for identity checks.
     private func bannerDescription(of window: AXUIElement) -> String? {
         let el = findBannerElement(in: window) ?? window
         var ref: CFTypeRef?
@@ -381,9 +328,6 @@ package final class NotificationRepositioner: ObservableObject {
         return CFAttributedStringGetString((val as! CFAttributedString)) as String
     }
 
-    // Detects common screen-sharing/recording scenarios. Called only when the setting is on.
-    // Covers built-in macOS screen sharing; third-party apps (Zoom, Teams) suppress
-    // notifications themselves in most cases.
     private static func isCapturing() -> Bool {
         if !NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.screensharing.agent").isEmpty {
             return true
@@ -392,54 +336,25 @@ package final class NotificationRepositioner: ObservableObject {
         return windows.contains { ($0[kCGWindowOwnerName as String] as? String) == "screensharing" }
     }
 
-    // MARK: - Banner geometry
-
     private static let bannerSize = CGSize(width: 372, height: 100)
-    // NC briefly reports an oversized banner width (≈2× seen in the wild) while coalescing rapid
-    // same-app notifications. Real banners are a stable ~344 wide, so any width past this is a
-    // transient artifact and we fall back to the default width instead of building a giant overlay.
     private static let maxBannerWidth: CGFloat = 480
     private static let bannerInsetFromTopRight = CGPoint(x: 14, y: 14)
     private static let stackGap: CGFloat = 8
-    // Used to park a window completely off-screen during display sleep.
     private static let parkPoint = CGPoint(x: -9999, y: 0)
-    // Per-window animation generation. A single global counter would let one banner's events
-    // cancel another's scheduled holds/auto-dismiss (real notifications and the test banner
-    // fighting each other); keying by window isolates each banner's lifecycle.
     private var generation: [CFHashCode: Int] = [:]
     private var lastSelfSetPositions: [CFHashCode: CGPoint] = [:]
-    // When we last moved a window ourselves — used to ignore NC's own entrance-animation
-    // `windowMoved` churn so native banners don't visibly re-layout/resize on appearance.
     private var lastRepositionAt: [CFHashCode: Date] = [:]
-    // The content currently shown by each live overlay, so we can detect when NC reuses a
-    // window for a newer message (back-to-back) and refresh the overlay instead of keeping
-    // the stale text.
     private var overlayContent: [CFHashCode: BannerContent] = [:]
-    // Windows we dismissed via scheduleAutoDismiss — ignored by targetOrigin so NC can't fight back.
     private var dismissedKeys: Set<CFHashCode> = []
-    // Windows we've already logged as "skipped" (protected widget or unrecognised large NC
-    // window), so targetOrigin (called on every reposition pass) emits one user-visible log
-    // line per window instead of flooding the ring buffer. Cleared per-window on destroy and
-    // wholesale on teardown.
     private var loggedSkippedKeys: Set<CFHashCode> = []
-    // nil = not in test mode; .some(nil) = test active, screen default; .some(.some(id)) = test active, group
     private var testGroupID: UUID?? = nil
     private var testBannerWindow: AXUIElement? = nil
-    // Unique title of the in-flight test banner, used to bind `testBannerWindow` to the exact
-    // window the test spawned (so a real notification arriving mid-test isn't treated as the test).
     private var pendingTestTitle: String? = nil
 
     private let customBannerManager = CustomBannerManager()
 
-    // MARK: - Display sleep / wake / reconfiguration
-
     private var isDisplaySleeping = false
     private var pendingWakeWindows: [AXUIElement] = []
-    // Timestamps of the two events most likely to correlate with a readiness-gate
-    // give-up (see logReadinessGateExhausted): a display wake or a topology change
-    // can leave the AX service itself still warming up, which looks identical in
-    // the log to an unrecognised banner subrole unless we record how recently one
-    // of these fired.
     private var lastWakeAt: Date?
     private var lastScreenChangeAt: Date?
 
@@ -454,35 +369,21 @@ package final class NotificationRepositioner: ObservableObject {
             object: nil, queue: .main
         ) { [weak self] _ in Task { @MainActor [weak self] in self?.handleDisplayWake() } }
 
-        // Fired when a display is connected, disconnected, or mirroring changes.
-        // Re-evaluate all visible banners against the new screen layout so custom
-        // overlays don't revert to native after a display topology change.
         NotificationCenter.default.addObserver(
             forName: NSApplication.didChangeScreenParametersNotification,
             object: nil, queue: .main
         ) { [weak self] _ in Task { @MainActor [weak self] in self?.handleScreenParametersChange() } }
     }
 
-    // Debounces the post-reconfig sweep: display topology changes often fire this
-    // notification 2-3 times in quick succession while things settle (e.g. dock
-    // connect/disconnect), and running a full burstReposition() per event resolves
-    // screens against a still-changing layout. Collapse to one sweep per burst.
     private let screenParamsDebouncer = Debouncer()
 
     private func handleScreenParametersChange() {
         lastScreenChangeAt = Date()
         logger.log("Screen configuration changed — re-evaluating banner positions", tag: "System")
         logScreenTopology(reason: "screen change")
-        // Brief delay mirrors the wake path: let the display and NC settle before
-        // we read NSScreen.screens and reposition.
         screenParamsDebouncer.schedule(delay: 0.4) { [weak self] in self?.burstReposition() }
     }
 
-    /// Snapshots the connected-display topology (per-screen displayID + short stable key)
-    /// to the activity log. Logged on every reconfig/wake so a support diagnostics dump
-    /// shows whether macOS reassigned a physical panel's displayID across the event — the
-    /// signature of the "custom position reverted to default" bug. Deliberately user-visible
-    /// (not os_log) so it survives into the exported diagnostics the reporter sends back.
     private func logScreenTopology(reason: String) {
         let screens = NSScreen.screens
         let forced = settings?.targetDisplayID ?? 0
@@ -492,11 +393,6 @@ package final class NotificationRepositioner: ObservableObject {
         }
     }
 
-    /// Reports how recently a wake or screen-topology change fired, if within the last
-    /// 5s — the window where the AX service can plausibly still be settling. Attached to
-    /// the readiness-gate exhaustion log so a recurrence tells us whether it's clustering
-    /// around display events (a timing issue) or happening independently of them (more
-    /// likely a genuine unrecognised-subrole gap).
     private func recentDisplayEventDescription() -> String? {
         let now = Date()
         let candidates: [(String, Date?)] = [("wake", lastWakeAt), ("screen change", lastScreenChangeAt)]
@@ -515,8 +411,6 @@ package final class NotificationRepositioner: ObservableObject {
         guard settings?.holdWhileAsleep == true else { return }
         isDisplaySleeping = true
         logger.log("Display sleeping — holding banners", tag: "System")
-        // Move all currently-visible NC banners offscreen so they don't flicker
-        // to wrong positions briefly when the display wakes.
         guard let ncApp else { return }
         var value: CFTypeRef?
         guard AXUIElementCopyAttributeValue(ncApp, kAXWindowsAttribute as CFString, &value) == .success,
@@ -524,11 +418,6 @@ package final class NotificationRepositioner: ObservableObject {
         var parkedBanners = 0
         var skippedWidgets = 0
         for window in windows {
-            // NC hosts the user's desktop widgets in this same window list. Parking a
-            // widget off-screen would orphan it: the wake path repositions via targetOrigin,
-            // which skips widgets when protectDesktopWidgets is on, so it would never come
-            // back (it reappears only when the user re-edits the widget shelf). Only park
-            // real banners — leave widgets where the user put them.
             if isProtectedWidget(window) { skippedWidgets += 1; continue }
             setWindowPosition(window, to: Self.parkPoint)
             parkedBanners += 1
@@ -547,25 +436,21 @@ package final class NotificationRepositioner: ObservableObject {
         pendingWakeWindows = []
         logger.log("Display woke — repositioning \(queued.count) held banner(s)", tag: "System")
         logScreenTopology(reason: "wake")
-        // Brief delay to let the display fully initialise before repositioning.
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in
             guard let self else { return }
             for window in queued { self.repositionWindow(window) }
-            // Restart dismiss timers so banners that slept get their full display time.
             if let secs = self.settings?.autoDismissSeconds {
                 self.customBannerManager.resetDismissTimers(autoDismissSeconds: secs)
             }
         }
     }
 
-    // High-frequency AX size hammering: the NC process resets the banner size each layout
-    // pass (~60fps). We fight it by writing the target size at the same rate.
     private var scaleTimer: DispatchSourceTimer?
     private var activeBannerElement: AXUIElement? = nil
     private var targetBannerSize: CGSize = .zero
 
     func sendTestNotification(groupID: UUID?) {
-        guard testGroupID == nil else { return }  // one test in flight at a time
+        guard testGroupID == nil else { return }
         testGroupID = .some(groupID)
         testBannerWindow = nil
         let groupLabel = groupID.map { "group \($0.uuidString.prefix(8))" } ?? "default"
@@ -578,24 +463,16 @@ package final class NotificationRepositioner: ObservableObject {
         }
     }
 
-    // MARK: - Debug helpers (hidden Debug tab)
-
-    /// Fires `count` plain notifications back-to-back. Unlike `sendTestNotification`, these go
-    /// through the *real* notification path (not test mode), so they reproduce the back-to-back
-    /// race that affects genuine messages.
     package func sendBurstTest(count: Int) {
         logger.log("Burst test — sending \(count) back-to-back notifications", tag: "Debug")
         TestNotification.sendBurst(count: count)
     }
 
-    /// Sends a tricky edge-case notification through the real path (Diagnostics tab).
     package func sendEdgeCase(_ scenario: TestNotification.Scenario) {
         logger.log("Edge case — \(scenario.label)", tag: "Debug")
         TestNotification.sendCustom(title: scenario.title, body: scenario.body)
     }
 
-    /// Dumps the live NotificationCenter AX tree (roles, subroles, descriptions, frames) to the
-    /// log so banner-structure questions can be answered from real data instead of by inference.
     package func dumpBannerDiagnostics() {
         logger.log("════ AX dump start ════", tag: "Debug")
         guard let ncApp else {
@@ -644,8 +521,6 @@ package final class NotificationRepositioner: ObservableObject {
         let bannerSize: CGSize
     }
 
-    // MARK: - Repositioning
-
     private func targetOrigin(for window: AXUIElement, stackIndex: Int = 0) -> RepositionTarget? {
         guard let settings, settings.isActive else {
             log.debug("targetOrigin: skipped — disabled or snoozed")
@@ -655,7 +530,6 @@ package final class NotificationRepositioner: ObservableObject {
             log.debug("targetOrigin: skipped — window was auto-dismissed")
             return nil
         }
-        // Per-window test identity: only the bound test banner uses test-group settings.
         let testGroupID = effectiveTestGroup(for: window)
         if settings.pauseWhileStreaming, Self.isCapturing() {
             log.debug("targetOrigin: skipped — capturing")
@@ -671,7 +545,6 @@ package final class NotificationRepositioner: ObservableObject {
 
         log.debug("targetOrigin: window size=\(size.width, format: .fixed(precision: 0))×\(size.height, format: .fixed(precision: 0)) pos=(\(oldPos.x, format: .fixed(precision: 0)),\(oldPos.y, format: .fixed(precision: 0)))")
 
-        // Resolve app name first — needed for both screen and placement lookup.
         let appNameStr: String?
         if testGroupID == nil {
             appNameStr = appName(for: window)
@@ -680,8 +553,6 @@ package final class NotificationRepositioner: ObservableObject {
             appNameStr = nil
         }
 
-        // Screen priority: exception override > follow-active-screen > global override
-        //                  > banner's current screen.
         let groupScreen = testGroupID != nil
             ? settings.resolvedTargetScreen(forGroupID: testGroupID!)
             : settings.resolvedTargetScreen(for: appNameStr)
@@ -710,30 +581,18 @@ package final class NotificationRepositioner: ObservableObject {
         let bannerSz: CGSize
 
         if isOverlay {
-            // Large window — could be an NC overlay containing a banner (macOS 26+)
-            // or the NC panel / widget shelf (opened by clicking the clock). Only proceed
-            // if the AX tree contains an actual notification banner element.
             guard let bannerEl = findBannerElement(in: window) else {
                 log.info("targetOrigin: skipped — large window, no banner child (NC panel/widget)")
                 logSkippedOnce(window, reason: "Large NC window with no recognised banner child",
                               tag: "Banner", size: size, pos: oldPos)
                 return nil
             }
-            // The NC panel (opened by clicking the clock) immediately becomes the app's
-            // focused window. System-delivered notification banners don't take focus.
-            // Skip repositioning if this window is already the NC process's focused window.
             if settings.avoidNCPanel, isNCFocusedPanel(window) {
                 return nil
             }
-            // Size from AX — reliable, doesn't change during animation.
             var bSz = bannerEl.size() ?? Self.bannerSize
-            // Guard against NC's transient oversized width during rapid-notification coalescing.
             if bSz.width > Self.maxBannerWidth { bSz.width = Self.bannerSize.width }
-            // x: the banner slides in from the right during its entrance animation, so
-            // its screen-x is unstable until animation ends. Derive analytically instead:
-            // the banner always sits bannerInsetFromTopRight.x px from the window's right edge.
             let offsetX = size.width - bSz.width - Self.bannerInsetFromTopRight.x
-            // y: banner animates horizontally only, so screen-y is stable — read from AX.
             var offsetY = Self.bannerInsetFromTopRight.y
             if let bPos = bannerEl.point() {
                 offsetY = bPos.y - oldPos.y
@@ -741,10 +600,6 @@ package final class NotificationRepositioner: ObservableObject {
             bannerOffset = CGPoint(x: offsetX, y: offsetY)
             bannerSz = bSz
         } else {
-            // Small NC windows aren't only banners — NC also hosts the user's
-            // desktop widgets, which appear in this same window list. Only a real
-            // notification banner carries a banner subrole; without one this is a
-            // widget (or other NC chrome) and must be left where the user put it.
             if settings.protectDesktopWidgets, findBannerElement(in: window) == nil {
                 log.info("targetOrigin: skipped — small window, no banner subrole (desktop widget)")
                 logSkippedOnce(window, reason: "Protected desktop widget, left in place",
@@ -790,18 +645,14 @@ package final class NotificationRepositioner: ObservableObject {
 
         if customBannerManager.isActive(key: CFHash(window)) {
             if !shouldKeepCustom {
-                // Mode/scale changed to native — dismiss overlay, fall through to native path.
                 customBannerManager.dismiss(key: CFHash(window))
                 overlayContent.removeValue(forKey: CFHash(window))
             } else if testGroupID == nil, overlayContentChanged(for: window) {
-                // NC reused this window for a newer message (back-to-back). Recreate the overlay
-                // with the new content via the full path rather than repositioning stale text.
                 customBannerManager.dismiss(key: CFHash(window))
                 overlayContent.removeValue(forKey: CFHash(window))
                 repositionWindow(window)
                 return
             } else {
-                // Custom overlay is showing — keep the real NC banner off-screen and move our panel.
                 hideOffscreen(window, atX: t.windowOrigin.x)
                 let bannerAXOrigin = CGPoint(
                     x: t.windowOrigin.x + t.bannerOffsetInWindow.x,
@@ -822,12 +673,9 @@ package final class NotificationRepositioner: ObservableObject {
             }
         }
 
-        // -- Position --
         log.debug("snapWindow: setting position → (\(t.windowOrigin.x, format: .fixed(precision: 1)), \(t.windowOrigin.y, format: .fixed(precision: 1)))")
         setWindowPosition(window, to: t.windowOrigin)
     }
-
-    // MARK: - Scale hammer (60fps AX size write to fight NC layout reset)
 
     private func startScaleHammer(bannerElement: AXUIElement, naturalSize: CGSize, scale: Double) {
         stopScaleHammer()
@@ -856,9 +704,6 @@ package final class NotificationRepositioner: ObservableObject {
         activeBannerElement = nil
     }
 
-    /// A real notification is "ready" once its banner element and sender/app name are present
-    /// in the AX tree. Back-to-back banners can fire window events before this subtree is
-    /// populated, so we gate on it before deciding custom-vs-native.
     private func isBannerReady(_ window: AXUIElement) -> Bool {
         findBannerElement(in: window) != nil && appName(for: window) != nil
     }
@@ -867,12 +712,6 @@ package final class NotificationRepositioner: ObservableObject {
         let gen = nextGeneration(for: CFHash(window))
         let testGroupID = effectiveTestGroup(for: window)
 
-        // Readiness gate (real notifications only): when a second message arrives back-to-back,
-        // the new window's banner subtree and app name may not be populated yet. Deciding now
-        // resolves a per-group override against a missing name and falls back to the global
-        // (often native) banner — the "second message wasn't custom" bug. Retry briefly first.
-        // Genuine non-banners (desktop widgets, the NC panel) never become ready and simply
-        // proceed once the small retry budget is spent.
         if testGroupID == nil, attempt < 3, !isBannerReady(window) {
             let delay: Double = [0.05, 0.15, 0.35][attempt]
             logger.log("Banner not ready — retry \(attempt + 1)/3 in \(Int(delay * 1000))ms", tag: "Banner")
@@ -883,13 +722,6 @@ package final class NotificationRepositioner: ObservableObject {
             return
         }
         if testGroupID == nil, attempt >= 3, !isBannerReady(window) {
-            // Distinguishes two very different failure modes from the same "gave up" silence:
-            // subrole == "none" (AX subtree genuinely never populated — a timing issue, e.g.
-            // AX service still warming up right after display wake) vs. a populated subrole
-            // that findBannerElement doesn't recognise (a recognition gap, same class of bug
-            // as the AXNotificationCenterAlert/Persistent-style case fixed above). Without this
-            // line the give-up was invisible — the retry lines just stopped and nothing else
-            // followed, indistinguishable from success in a pasted diagnostics report.
             let subrole = window.stringAttribute(kAXSubroleAttribute as String) ?? "none"
             let context = recentDisplayEventDescription().map { ", \($0)" } ?? ""
             logger.log("Readiness gate exhausted after 3 retries — proceeding as non-banner (window subrole: \(subrole)\(context))", tag: "Banner")
@@ -931,10 +763,6 @@ package final class NotificationRepositioner: ObservableObject {
             useCustomBanner = settings.shouldUseCustomBanner(for: name)
             animation = settings.effectiveBannerAnimation(for: name)
         }
-        // The Notification Center panel (clock click) must always use the native move path.
-        // Replacing it with a custom overlay would hide the real panel and show a single
-        // stale banner instead. When avoidNCPanel is off we still *reposition* it — just
-        // natively, so the genuine Notification Center appears at the configured position.
         if isNCFocusedPanel(window) {
             useCustomBanner = false
             logger.log("Notification Center panel — forcing native move (no custom overlay)", tag: "Banner")
@@ -950,8 +778,6 @@ package final class NotificationRepositioner: ObservableObject {
             let activeState = customBannerManager.isActive(key: key) ? "already active" : "new"
             logger.log("Custom [\(resolvedName)] \(activeState), hasOtherActive=\(customBannerManager.hasActive), attempt=\(attempt)", tag: "Custom")
 
-            // In test mode, only allow one overlay at a time. Accumulated old NC windows
-            // (from previous test clicks that NC never dismissed) get parked off-screen.
             if testGroupID != nil && !customBannerManager.isActive(key: key) && customBannerManager.hasActive {
                 logger.log("Test mode: extra NC window parked off-screen", tag: "Custom")
                 hideOffscreen(window, atX: info.windowOrigin.x)
@@ -959,8 +785,6 @@ package final class NotificationRepositioner: ObservableObject {
                 return
             }
 
-            // If an overlay is already live for this window, just reposition it — unless NC has
-            // swapped in a newer message (back-to-back), in which case recreate it below.
             if customBannerManager.isActive(key: key), !(testGroupID == nil && overlayContentChanged(for: window)) {
                 hideOffscreen(window, atX: info.windowOrigin.x)
                 let scaledWidth = info.bannerSize.width * scale
@@ -979,10 +803,7 @@ package final class NotificationRepositioner: ObservableObject {
                 return
             }
 
-            // Custom overlay path: suppress the real NC banner, show our own at the configured scale.
             let bannerEl = findBannerElement(in: window) ?? window
-            // In test mode, hardcode the content so the osascript comma-separated AX
-            // format doesn't cause parsing issues.
             let content: BannerContent?
             if testGroupID != nil {
                 content = BannerContent(
@@ -999,17 +820,14 @@ package final class NotificationRepositioner: ObservableObject {
                 logger.log("Overlay: \(content.appName) — \"\(preview)\"", tag: "Custom")
                 hideOffscreen(window, atX: info.windowOrigin.x)
 
-                // Width grows modestly with scale so text has room; height is content-driven.
                 let scaledWidth = info.bannerSize.width * scale
                 let widthDelta = scaledWidth - info.bannerSize.width
 
-                // AX origin of the natural banner (stacking already baked in via targetOrigin).
                 let bannerAXOrigin = CGPoint(
                     x: info.windowOrigin.x + info.bannerOffsetInWindow.x,
                     y: info.windowOrigin.y + info.bannerOffsetInWindow.y
                 )
 
-                // Adjust X so the banner stays anchored to the correct edge.
                 let anchoredX: CGFloat
                 switch info.placement.position {
                 case .topRight, .middleRight, .bottomRight:
@@ -1027,10 +845,6 @@ package final class NotificationRepositioner: ObservableObject {
                     ? settings.effectiveBannerColor(forGroupID: testGroupID!)
                     : settings.effectiveBannerColor(for: appName(for: window))
                 if bannerBackground == .clear {
-                    // No tint set — this overlay exists solely for scale/animation, so it
-                    // renders with the system's real vibrancy appearance rather than a tint.
-                    // Logged so a future "banner color looks off" report can be matched to
-                    // this exact path (vs. an explicit tint) without needing a repro.
                     logger.log("Custom overlay untinted — rendering with system appearance (scale=\(String(format: "%.2f", scale))×, animation=\(animation.rawValue))", tag: "Custom")
                 }
                 customBannerManager.showBanner(
@@ -1047,12 +861,9 @@ package final class NotificationRepositioner: ObservableObject {
                     key: key
                 )
                 if testGroupID == nil { overlayContent[key] = content }
-                // Keep holds running so the real banner stays off-screen if NC fights us.
                 scheduleHolds(window: window, stackIndex: stackIndex, generation: gen)
                 return
             }
-            // AXAttributedDescription may not be populated yet when the banner first appears.
-            // Retry a few times before giving up and falling back to the native banner.
             if attempt < 3 {
                 let delay: Double = [0.05, 0.15, 0.35][attempt]
                 logger.log("Content extraction retry \(attempt + 1)/3 in \(Int(delay * 1000))ms", tag: "Custom")
@@ -1065,8 +876,6 @@ package final class NotificationRepositioner: ObservableObject {
             logger.log("Content extraction failed after 3 retries — falling back to native banner", level: .warn, tag: "Custom")
         }
 
-        // Committing to the native banner: tear down any overlay still live for this window
-        // (e.g. it flipped from custom to native) so we don't show both at once.
         if customBannerManager.isActive(key: CFHash(window)) {
             customBannerManager.dismiss(key: CFHash(window))
             overlayContent.removeValue(forKey: CFHash(window))
@@ -1074,7 +883,6 @@ package final class NotificationRepositioner: ObservableObject {
 
         setWindowPosition(window, to: info.windowOrigin)
 
-        // Re-evaluate target on each hold — app name lookup may race with banner rendering.
         scheduleHolds(window: window, stackIndex: stackIndex, generation: gen)
 
         if settings.autoDismissSeconds > 0 {
@@ -1083,10 +891,6 @@ package final class NotificationRepositioner: ObservableObject {
         }
     }
 
-    // MARK: - Custom overlay helpers
-
-    /// True when the window's current banner content differs from what its live overlay shows —
-    /// i.e. NC reused the window for a newer message and the overlay needs refreshing.
     private func overlayContentChanged(for window: AXUIElement) -> Bool {
         let key = CFHash(window)
         guard let shown = overlayContent[key] else { return false }
@@ -1104,7 +908,6 @@ package final class NotificationRepositioner: ObservableObject {
         let str = cleanAXString(rawStr)
         guard !str.isEmpty else { return nil }
 
-        // AXAttributedDescription is "AppName, <title+body>". Peel off the app name prefix.
         let parsedAppName: String
         let textPart: String
         if let commaRange = str.range(of: ", ") {
@@ -1120,16 +923,6 @@ package final class NotificationRepositioner: ObservableObject {
         return BannerContent(appName: appName, title: title, body: body, appIcon: lookupIcon(for: appName))
     }
 
-    /// Splits the flattened banner text into title + body.
-    ///
-    /// The flattened `AXAttributedDescription` is unreliable to split on its own: macOS inserts
-    /// its newline at the native banner's *visual* wrap point, not at the title/body boundary.
-    /// A long message therefore spills its first wrapped line into the "title", and senders whose
-    /// names contain commas (e.g. "Lastname, First") defeat the comma heuristic too. macOS does,
-    /// however, expose the real title as a discrete `AXStaticText` child. We take the title from
-    /// the first static-text child that prefixes `content` (skipping the app-name header), and let
-    /// the body be the remainder of `content` — so no text is lost, duplicated, or polluted by the
-    /// timestamp element. Falls back to the legacy newline/comma heuristic if no child matches.
     private func splitTitleBody(content: String, element: AXUIElement, appName: String) -> (String, String) {
         for text in element.staticTextValues()
         where !text.isEmpty && text.caseInsensitiveCompare(appName) != .orderedSame && content.hasPrefix(text) {
@@ -1141,14 +934,11 @@ package final class NotificationRepositioner: ObservableObject {
         return Self.heuristicSplit(content)
     }
 
-    /// Legacy fallback split for banners that don't expose discrete static-text children.
     private static func heuristicSplit(_ content: String) -> (String, String) {
         let lines = content.components(separatedBy: "\n").filter { !$0.isEmpty }
         if lines.count > 1 {
             return (lines.first ?? content, lines.dropFirst().joined(separator: "\n"))
         }
-        // No newline separator — split on the last ", " so e.g. "Sender Name, message"
-        // renders as a proper title + body rather than one long wrapping title line.
         let singleLine = lines.first ?? content
         if let lastComma = singleLine.range(of: ", ", options: .backwards) {
             return (String(singleLine[singleLine.startIndex..<lastComma.lowerBound]),
@@ -1159,16 +949,13 @@ package final class NotificationRepositioner: ObservableObject {
 
     private func lookupIcon(for appName: String) -> NSImage? {
         let ws = NSWorkspace.shared
-        // Primary: running app list — cheapest, handles non-standard install paths.
         if let icon = ws.runningApplications.first(where: { $0.localizedName == appName })?.icon {
             return icon
         }
-        // Secondary: if a running app with a known bundle ID can be resolved to a URL, use that.
         if let bundleID = ws.runningApplications.first(where: { $0.localizedName == appName })?.bundleIdentifier,
            let url = ws.urlForApplication(withBundleIdentifier: bundleID) {
             return ws.icon(forFile: url.path)
         }
-        // Fallback: scan common install directories by display name.
         let dirs = [
             "/Applications",
             NSHomeDirectory() + "/Applications",
@@ -1202,22 +989,12 @@ package final class NotificationRepositioner: ObservableObject {
         guard let delay = settings?.autoDismissSeconds, delay > 0 else { return }
         DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
             guard let self, self.isCurrentGeneration(gen, for: CFHash(window)) else { return }
-            // Bump this window's generation so its own pending holds can't re-show it after dismissal.
             _ = self.nextGeneration(for: CFHash(window))
-            // Mark dismissed before moving so any concurrent AX event can't re-show the banner.
             self.dismissedKeys.insert(CFHash(window))
             self.hideOffscreen(window, atX: info.windowOrigin.x)
         }
     }
 
-    /// Retires the real NC banner backing a custom overlay that has just dismissed itself
-    /// (user close, tap-to-open, or auto-dismiss timer). Without this, the overlay hid the
-    /// native banner only by parking it off-screen under a handful of short-lived holds — so
-    /// once the overlay vanished the native banner was still alive and popped back into view.
-    /// Mirrors scheduleAutoDismiss's native teardown: bump the generation so pending holds
-    /// can't re-show it, flag it dismissed so targetOrigin/AX events won't reposition it, and
-    /// park it off-screen. The follow-up re-parks cover NC re-showing the banner in the brief
-    /// window before it tears the window down for good.
     private func retireUnderlyingWindow(_ window: AXUIElement) {
         let key = CFHash(window)
         let gen = nextGeneration(for: key)
@@ -1245,11 +1022,6 @@ package final class NotificationRepositioner: ObservableObject {
         return actual
     }
 
-    /// The screen the user is currently working on, approximated by the screen
-    /// under the mouse cursor. `NSEvent.mouseLocation` and `NSScreen.frame` share
-    /// the same global, bottom-left-origin coordinate space, so no flip is needed.
-    /// Decided at banner-appearance time — a banner already on screen won't jump
-    /// if the cursor later moves to another display.
     private static func activeScreen() -> NSScreen? {
         let mouse = NSEvent.mouseLocation
         return NSScreen.screens.first { NSMouseInRect(mouse, $0.frame, false) }
@@ -1261,13 +1033,8 @@ package final class NotificationRepositioner: ObservableObject {
         return NSScreen.screens.first { $0.frame.contains(nsPoint) }
     }
 
-    // MARK: - AX attribute helpers
-
     @discardableResult
     private func hideOffscreen(_ window: AXUIElement, atX x: CGFloat) -> CGPoint {
-        // Central safety net for every off-screen park. A protected widget that gets
-        // parked here can never be restored (the reposition/wake path skips widgets and
-        // we don't store original positions), so refuse — leave it where the user put it.
         if isProtectedWidget(window) {
             logger.log("Refused to park a desktop widget off-screen — left it in place", level: .warn, tag: "Widget")
             return window.point() ?? .zero
@@ -1275,17 +1042,10 @@ package final class NotificationRepositioner: ObservableObject {
         return setWindowPosition(window, to: CGPoint(x: x, y: -9999))
     }
 
-    /// A desktop widget the user has asked us to protect. NC hosts widgets in the same
-    /// window list as banners; only a real banner carries a banner child element. Used to
-    /// gate every off-screen park so a widget is never stranded out of view.
     private func isProtectedWidget(_ window: AXUIElement) -> Bool {
         settings?.protectDesktopWidgets == true && findBannerElement(in: window) == nil
     }
 
-    /// True when `window` is the Notification Center panel (opened by clicking the clock).
-    /// The panel immediately becomes the NC process's focused window; system-delivered
-    /// banners never take focus. Used both to skip it when avoidNCPanel is on and to force
-    /// the native move path (never a custom overlay) when it is off.
     private func isNCFocusedPanel(_ window: AXUIElement) -> Bool {
         guard let app = ncApp else { return false }
         var focusRef: CFTypeRef?
@@ -1294,11 +1054,6 @@ package final class NotificationRepositioner: ObservableObject {
         return CFEqual(fw, window)
     }
 
-    /// Emits one user-visible (bug-report-attached) log line the first time a given window is
-    /// left unrepositioned, so a recurrence leaves a diagnosable trail without flooding the ring
-    /// buffer on every reposition pass. Always includes the AX subrole — the detail that tells
-    /// us apart "genuinely non-banner NC chrome" (widget/panel) from "a banner subrole we don't
-    /// recognise yet" (the same class of gap as the AXNotificationCenterAlert case).
     private func logSkippedOnce(_ window: AXUIElement, reason: String, tag: String, size: CGSize, pos: CGPoint) {
         let key = CFHash(window)
         guard !loggedSkippedKeys.contains(key) else { return }
@@ -1307,8 +1062,6 @@ package final class NotificationRepositioner: ObservableObject {
         logger.log("\(reason) — \(Int(size.width))×\(Int(size.height)) at (\(Int(pos.x)),\(Int(pos.y))), subrole=\(subrole)", tag: tag)
     }
 }
-
-// MARK: - C callback
 
 private func axNotificationCallback(observer: AXObserver, element: AXUIElement,
                                     notification: CFString, refcon: UnsafeMutableRawPointer?) {

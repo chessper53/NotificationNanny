@@ -3,8 +3,6 @@ import Foundation
 import Testing
 @testable import NotificationNannyCore
 
-// AppSettings is @MainActor, so each test helper creates its own isolated
-// instance with a throwaway UserDefaults suite.
 @Suite("AppSettings") @MainActor
 struct AppSettingsTests {
 
@@ -14,8 +12,6 @@ struct AppSettingsTests {
         let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent("\(name).json")
         return (AppSettings(defaults: ud, knownAppsFileURL: tempURL), name)
     }
-
-    // MARK: - Group CRUD
 
     @Test func addGroup_appendsGroup() {
         let (s, _) = makeSettings()
@@ -47,8 +43,6 @@ struct AppSettingsTests {
         s.renameGroup(UUID(), to: "Ghost")
         #expect(s.appGroups.first?.name == "Unchanged")
     }
-
-    // MARK: - App membership
 
     @Test func addApp_assignsToGroup() {
         let (s, _) = makeSettings()
@@ -100,8 +94,6 @@ struct AppSettingsTests {
         #expect(s.group(for: "NoSuchApp") == nil)
     }
 
-    // MARK: - Known app names
-
     @Test func recordAppName_addsName() {
         let (s, _) = makeSettings()
         s.recordAppName("Mail")
@@ -129,8 +121,6 @@ struct AppSettingsTests {
         #expect(s.knownAppNames.isEmpty)
     }
 
-    // MARK: - AppGroup model
-
     @Test func appGroup_init_defaults() {
         let g = AppGroup(name: "Work")
         #expect(!g.id.uuidString.isEmpty)
@@ -154,7 +144,6 @@ struct AppSettingsTests {
     }
 
     @Test func appGroup_codable_backwardCompat_missingTargetDisplayID() throws {
-        // JSON written before targetDisplayID existed must decode with 0.
         let json = """
         {
             "id": "00000000-0000-0000-0000-000000000001",
@@ -173,8 +162,6 @@ struct AppSettingsTests {
         let b = AppGroup(name: "A")
         #expect(a != b, "Two groups with different UUIDs must not be equal")
     }
-
-    // MARK: - Global banner text color
 
     @Test func bannerTextTint_defaultsToNilWithoutOverride() {
         let (settings, _) = makeSettings()
@@ -203,8 +190,6 @@ struct AppSettingsTests {
         settings.clearBannerTextColor()
         #expect(!settings.shouldUseCustomBanner(for: nil))
     }
-
-    // MARK: - Per-exception screen overrides
 
     @Test func targetDisplay_noGroup_returnsZero() {
         let (s, _) = makeSettings()
@@ -249,14 +234,11 @@ struct AppSettingsTests {
     }
 
     @Test func targetDisplay_groupDisplayZero_returnsZero() {
-        // Explicitly set to 0 (inherit global) — should still return 0.
         let (s, _) = makeSettings()
         let id = s.addGroup(name: "G")
         s.addApp("Slack", toGroup: id)
         #expect(s.targetDisplay(for: "Slack") == 0)
     }
-
-    // MARK: - Stable-key display resolution (survives displayID reassignment)
 
     @Test func setGroupTargetDisplay_mirrorsStableKeyForConnectedScreen() {
         guard let screen = NSScreen.main else { return }
@@ -300,14 +282,9 @@ struct AppSettingsTests {
         s.targetDisplayID = screen.displayID
         #expect(s.resolvedTargetScreen() === screen)
 
-        // A displayID with no currently-connected match (e.g. importing a backup from
-        // another Mac) must not leave the previous screen's stable key resolvable —
-        // that would silently point at the wrong, unrelated display.
         s.targetDisplayID = 999_999
         #expect(s.resolvedTargetScreen() == nil)
     }
-
-    // MARK: - Presets
 
     @Test func saveCurrentAsPreset_appendsPreset() {
         let (s, _) = makeSettings()
