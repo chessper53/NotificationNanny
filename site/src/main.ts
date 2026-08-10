@@ -219,9 +219,27 @@ function setupReveal(): void {
 }
 
 // ---------------------------------------------------------------------------
+// Screenshot skeletons — the shimmering placeholder (see .shot in styles.css)
+// stays up until each lazy-loaded screenshot actually decodes, then fades in.
+// ---------------------------------------------------------------------------
+
+function setupScreenshotSkeletons(): void {
+  document.querySelectorAll<HTMLImageElement>(".shot img").forEach((img) => {
+    const reveal = () => img.closest(".shot")?.classList.add("is-loaded");
+    if (img.complete) {
+      reveal();
+    } else {
+      img.addEventListener("load", reveal, { once: true });
+      img.addEventListener("error", reveal, { once: true });
+    }
+  });
+}
+
+// ---------------------------------------------------------------------------
 
 document.addEventListener("DOMContentLoaded", () => {
   setupCopyButtons();
   setupReveal();
+  setupScreenshotSkeletons();
   void loadStats();
 });
