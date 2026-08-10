@@ -148,10 +148,19 @@ final class AppCoordinator: NSObject, ObservableObject, NSApplicationDelegate {
     /// status and the panel's color changes silently stop reaching the settings Binding.
     /// Re-activating whenever the shared panel becomes key keeps it wired regardless of which
     /// screen it ends up on.
+    ///
+    /// Deliberately does NOT reference `NSColorPanel.shared` here — touching that accessor
+    /// creates the panel's window immediately, and doing so this early (still inside
+    /// AppCoordinator.init, while SwiftUI's own App graph is mid-instantiation) triggers a
+    /// reentrant window-layout pass that crashes with an AttributeGraph precondition failure.
+    /// Matching on the notification's window by class name instead means the real
+    /// NSColorPanel is only ever touched lazily, once the user actually opens one.
     private func observeColorPanelActivation() {
         NotificationCenter.default.addObserver(
-            forName: NSWindow.didBecomeKeyNotification, object: NSColorPanel.shared, queue: .main
-        ) { _ in
+            forName: NSWindow.didBecomeKeyNotification, object: nil, queue: .main
+        ) { note in
+            guard let window = note.object as? NSWindow,
+                  NSStringFromClass(type(of: window)) == "NSColorPanel" else { return }
             Task { @MainActor in NSApp.activate(ignoringOtherApps: true) }
         }
     }
