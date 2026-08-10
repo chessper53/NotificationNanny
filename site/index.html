@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <!-- Marks JS as available before first paint, so the CSS reveal-on-scroll rules
+       (scoped to html.js, see styles.css) never hide content from no-JS visitors. -->
+  <script>document.documentElement.classList.add('js')</script>
+  <title>NotificationNanny: take control of your macOS notification banners</title>
+  <meta name="description" content="Put macOS notification banners wherever you want. Position, scale, tint, and animate them per app, on any display. Free, open source, no telemetry." />
+
+  <link rel="icon" type="image/png" sizes="32x32" href="assets/favicon-32.png" />
+  <link rel="apple-touch-icon" href="assets/apple-touch-icon.png" />
+
+  <meta property="og:title" content="NotificationNanny" />
+  <meta property="og:description" content="Control where notification banners appear, how they look, which apps get which treatment, and when they show up." />
+  <meta property="og:image" content="assets/icon-512.png" />
+  <meta property="og:type" content="website" />
+
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+
+  <header class="nav">
+    <div class="wrap nav-row">
+      <a class="brand" href="#top">
+        <img src="assets/icon-512.png" alt="" width="24" height="24" class="brand-icon" />
+        <span>NotificationNanny</span>
+      </a>
+      <nav class="nav-links">
+        <a href="#features">Features</a>
+        <a href="#screenshots">Screenshots</a>
+        <a href="#install">Install</a>
+        <a href="https://github.com/chessper53/NotificationNanny" class="nav-gh">GitHub</a>
+      </nav>
+    </div>
+  </header>
+
+  <main id="top">
+
+    <!-- Hero -->
+    <section class="hero">
+      <div class="hero-glow" aria-hidden="true"></div>
+      <div class="wrap hero-inner">
+        <img src="assets/icon-512.png" alt="NotificationNanny app icon" width="88" height="88" class="hero-icon" />
+        <h1>Don't let macOS decide<br />where your notifications go.</h1>
+        <p class="hero-sub">
+          Position, scale, tint, and animate your notification banners globally or per app,
+          on whichever display you want.
+        </p>
+
+        <div class="hero-actions">
+          <div class="install-copy" data-copy-target="brew-cmd-hero">
+            <code id="brew-cmd-hero">brew install --cask chessper53/notificationnanny/notificationnanny</code>
+            <button type="button" class="copy-btn" data-copy="brew-cmd-hero" aria-label="Copy install command">
+              <svg viewBox="0 0 20 20" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="6.5" y="6.5" width="10" height="10" rx="2"/><path d="M3.5 13.5v-8a2 2 0 0 1 2-2h8" stroke-linecap="round"/></svg>
+              <span class="copy-label">Copy</span>
+            </button>
+          </div>
+          <a class="btn btn-secondary" href="https://github.com/chessper53/NotificationNanny/releases/latest">
+            Download .zip
+          </a>
+        </div>
+
+        <p class="hero-meta">
+          <span>macOS 14 Sonoma, 15 Sequoia &amp; 26 Tahoe</span>
+          <span class="dot">·</span>
+          <span>Free &amp; open source</span>
+          <span class="dot">·</span>
+          <span>No telemetry, ever</span>
+        </p>
+      </div>
+    </section>
+
+    <!-- Stats -->
+    <section class="stats" aria-label="Project stats">
+      <div class="wrap stats-grid" id="stats-grid">
+        <div class="stat-tile" data-stat="downloads">
+          <span class="stat-value is-loading" data-value></span>
+          <span class="stat-label">Downloads (excluding Homebrew)</span>
+        </div>
+        <div class="stat-tile" data-stat="stars">
+          <span class="stat-value is-loading" data-value></span>
+          <span class="stat-label">GitHub stars</span>
+        </div>
+        <div class="stat-tile" data-stat="forks">
+          <span class="stat-value is-loading" data-value></span>
+          <span class="stat-label">Forks</span>
+        </div>
+        <div class="stat-tile" data-stat="version">
+          <span class="stat-value is-loading" data-value></span>
+          <span class="stat-label">Latest release</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- Screenshots -->
+    <section class="section" id="screenshots">
+      <div class="wrap">
+        <h2 class="section-title">Every corner of it is configurable</h2>
+        <p class="section-sub">Six tabs, one menu-bar icon. Drag a banner to where you want it and it stays there.</p>
+      </div>
+      <div class="wrap shots-grid">
+        <figure class="shot" data-reveal>
+          <div class="window-chrome"><span></span><span></span><span></span></div>
+          <img loading="lazy" src="https://github.com/user-attachments/assets/777c81f7-6cc5-4407-a4b6-5328de2c262b" alt="Position tab: drag a banner to any of nine anchor points on any display" />
+          <figcaption>Position</figcaption>
+        </figure>
+        <figure class="shot" data-reveal>
+          <div class="window-chrome"><span></span><span></span><span></span></div>
+          <img loading="lazy" src="https://github.com/user-attachments/assets/5d01ec6a-8267-4114-9691-9b5b46f1e3cd" alt="Banner tab: scale, tint, and animation controls" />
+          <figcaption>Banner</figcaption>
+        </figure>
+        <figure class="shot" data-reveal>
+          <div class="window-chrome"><span></span><span></span><span></span></div>
+          <img loading="lazy" src="https://github.com/user-attachments/assets/366b1afc-c5a2-4deb-8837-5a4ca7794268" alt="Exceptions tab: per-app groups with their own rules" />
+          <figcaption>Exceptions</figcaption>
+        </figure>
+        <figure class="shot" data-reveal>
+          <div class="window-chrome"><span></span><span></span><span></span></div>
+          <img loading="lazy" src="https://github.com/user-attachments/assets/bd47b5e8-e667-4bb0-bf55-8ed1c15c9029" alt="Presets tab: saved named configurations" />
+          <figcaption>Presets</figcaption>
+        </figure>
+        <figure class="shot" data-reveal>
+          <div class="window-chrome"><span></span><span></span><span></span></div>
+          <img loading="lazy" src="https://github.com/user-attachments/assets/f670ef93-8241-45e5-bef2-282506dd64d6" alt="General tab: behavior toggles" />
+          <figcaption>General</figcaption>
+        </figure>
+        <figure class="shot" data-reveal>
+          <div class="window-chrome"><span></span><span></span><span></span></div>
+          <img loading="lazy" src="https://github.com/user-attachments/assets/c63fce84-d270-4e68-b711-f43190e393e5" alt="Help tab: links and bug reporting" />
+          <figcaption>Help</figcaption>
+        </figure>
+      </div>
+    </section>
+
+    <!-- Features -->
+    <section class="section" id="features">
+      <div class="wrap">
+        <h2 class="section-title">What it does</h2>
+        <p class="section-sub">No subscriptions, no accounts, nothing phoning home.</p>
+
+        <div class="feature-grid">
+          <article class="feature" data-reveal>
+            <span class="feature-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3.5" y="3.5" width="17" height="17" rx="3"/><circle cx="16.5" cy="7.5" r="1.6" fill="currentColor" stroke="none"/></svg>
+            </span>
+            <h3>Position</h3>
+            <p>Nine anchor points, pixel offsets, and independent placement per physical display. Drag it where you want it and it stays.</p>
+          </article>
+
+          <article class="feature" data-reveal>
+            <span class="feature-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3.5" y="6.5" width="17" height="11" rx="2.5"/><circle cx="8" cy="12" r="1.3" fill="currentColor" stroke="none"/><path d="M11.5 10h6M11.5 14h4" stroke-linecap="round"/></svg>
+            </span>
+            <h3>Banner style</h3>
+            <p>Scale from 50% to 250%, tint the background, and pick an animation: Slide, Bounce, Fade, Scale, or the system default.</p>
+          </article>
+
+          <article class="feature" data-reveal>
+            <span class="feature-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8.5" cy="7.5" r="2.5"/><circle cx="16" cy="15.5" r="2.5"/><path d="M8.5 10.5V17M16 13V8.5M8.5 17h3.5M16 8.5h-3.5" stroke-linecap="round"/></svg>
+            </span>
+            <h3>Per-app rules</h3>
+            <p>Group apps and give each group its own position, display, banner style, scale, and tint. Everything else uses your defaults.</p>
+          </article>
+
+          <article class="feature" data-reveal>
+            <span class="feature-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3.5" y="5" width="17" height="14" rx="3"/><circle cx="8" cy="12" r="2.2"/><path d="M8 5v3M8 16v3" stroke-linecap="round"/></svg>
+            </span>
+            <h3>General</h3>
+            <p>Auto-dismiss on a timer, hold banners while your display is asleep, pause during Focus or screen sharing, launch at login.</p>
+          </article>
+
+          <article class="feature" data-reveal>
+            <span class="feature-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="4" y="4" width="16" height="4.5" rx="1.5"/><rect x="4" y="10" width="16" height="4.5" rx="1.5"/><rect x="4" y="16" width="16" height="4.5" rx="1.5"/></svg>
+            </span>
+            <h3>Organisation</h3>
+            <p>Save named presets covering position, scale, animation, tint, and per-app groups. Export and restore a full configuration as JSON.</p>
+          </article>
+
+          <article class="feature" data-reveal>
+            <span class="feature-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3.5" y="3.5" width="17" height="17" rx="3"/><path d="M7 9l2.5 2.5L7 14M12.5 14h4.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </span>
+            <h3>Logs</h3>
+            <p>An in-app activity log of the last 500 events, so when something looks off you can see exactly what happened and when.</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <!-- Install -->
+    <section class="section" id="install">
+      <div class="wrap install-wrap">
+        <h2 class="section-title">Install</h2>
+        <p class="section-sub">Homebrew is the easiest path. One command also gets you future updates.</p>
+
+        <div class="terminal">
+          <div class="terminal-bar"><span></span><span></span><span></span></div>
+          <div class="terminal-body">
+            <div class="terminal-line">
+              <span class="prompt">$</span>
+              <code id="brew-tap-cmd">brew tap chessper53/notificationnanny https://github.com/chessper53/NotificationNanny</code>
+            </div>
+            <div class="terminal-line">
+              <span class="prompt">$</span>
+              <code id="brew-install-cmd">brew install --cask notificationnanny</code>
+            </div>
+          </div>
+          <button type="button" class="copy-btn terminal-copy" data-copy-multi="brew-tap-cmd,brew-install-cmd" aria-label="Copy both commands">
+            <svg viewBox="0 0 20 20" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="6.5" y="6.5" width="10" height="10" rx="2"/><path d="M3.5 13.5v-8a2 2 0 0 1 2-2h8" stroke-linecap="round"/></svg>
+            <span class="copy-label">Copy</span>
+          </button>
+        </div>
+
+        <p class="install-alt">
+          Prefer not to use Homebrew? Download the latest build directly from the
+          <a href="https://github.com/chessper53/NotificationNanny/releases/latest">Releases page</a>
+          and drag <code>NotificationNanny.app</code> to your Applications folder.
+        </p>
+        <p class="install-alt install-permission">
+          After installing, click the bell icon in your menu bar and grant Accessibility permission to get started.
+        </p>
+      </div>
+    </section>
+
+  </main>
+
+  <footer class="footer">
+    <div class="wrap footer-row">
+      <div class="footer-brand">
+        <img src="assets/icon-512.png" alt="" width="20" height="20" />
+        <span>NotificationNanny</span>
+      </div>
+      <div class="footer-links">
+        <a href="https://github.com/chessper53/NotificationNanny">GitHub</a>
+        <a href="https://github.com/chessper53/NotificationNanny/blob/main/docs/CHANGELOG.md">Changelog</a>
+        <a href="https://github.com/chessper53/NotificationNanny/issues">Issues</a>
+        <a href="https://github.com/chessper53/NotificationNanny/blob/main/LICENSE">MIT License</a>
+      </div>
+    </div>
+  </footer>
+
+  <script src="main.js" defer></script>
+</body>
+</html>

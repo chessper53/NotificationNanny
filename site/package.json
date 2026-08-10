@@ -1,0 +1,13 @@
+{
+  "name": "notificationnanny-site",
+  "private": true,
+  "description": "NotificationNanny landing page. No framework, no bundler — tsc compiles src/main.ts to main.js, which index.html loads directly.",
+  "scripts": {
+    "build": "tsc",
+    "watch": "tsc --watch",
+    "serve": "python3 -m http.server 4173"
+  },
+  "devDependencies": {
+    "typescript": "^5.5.4"
+  }
+}
