@@ -1,8 +1,6 @@
 import AppKit
 import SwiftUI
 
-// MARK: - Animation
-
 package enum BannerAnimation: String, Codable, CaseIterable {
     case `default`  = "Default"
     case fade       = "Fade"
@@ -13,7 +11,6 @@ package enum BannerAnimation: String, Codable, CaseIterable {
     case rise       = "Rise"
     case swing      = "Swing"
 
-    /// User-facing name (rawValue is persisted, so keep it stable; relabel here).
     package var label: String {
         switch self {
         case .slideLeft: return "Slide"
@@ -34,17 +31,12 @@ package enum BannerAnimation: String, Codable, CaseIterable {
         }
     }
 
-    /// A banner's resting state is always the identity transform; each animation only
-    /// differs in where it starts/ends (the `hidden` transform) and the curve used.
-    /// Driving every case from this one table keeps the resting frame aligned for all
-    /// of them — the earlier per-case code forgot to reset the slide offset, which is
-    /// what shifted non-default banners sideways.
     struct Transform: Equatable {
         var x: CGFloat = 0
         var y: CGFloat = 0
         var opacity: Double = 1
         var scale: CGFloat = 1
-        var rotation: Double = 0   // degrees
+        var rotation: Double = 0
     }
 
     var hidden: Transform {
@@ -84,22 +76,16 @@ package enum BannerAnimation: String, Codable, CaseIterable {
     var outroDuration: Double { self == .default ? 0.38 : 0.24 }
 }
 
-// MARK: - Data
-
 struct BannerContent: Equatable {
     let appName: String
     let title: String
     let body: String
     let appIcon: NSImage?
 
-    /// Identity is the text only — the icon is derived from the app name, so it never differs
-    /// when the text matches. Used to detect when NC reuses a window for a newer message.
     static func == (l: BannerContent, r: BannerContent) -> Bool {
         l.appName == r.appName && l.title == r.title && l.body == r.body
     }
 }
-
-// MARK: - Animation Controller
 
 @MainActor
 final class BannerAnimationController {
@@ -107,16 +93,11 @@ final class BannerAnimationController {
     var dismissCompletion: (() -> Void)?
 }
 
-// MARK: - View
-
 struct CustomBannerView: View {
     let content: BannerContent
     let scale: CGFloat
     let animation: BannerAnimation
     let tint: Color
-    /// `nil` means no override — fall back to the adaptive `.primary`/`.secondary`/
-    /// `.tertiary` system styles (see the `*Style` helpers below) so text stays legible
-    /// against the background's own light/dark-adaptive appearance.
     let textColor: Color?
     let controller: BannerAnimationController
     let onDismiss: () -> Void
@@ -142,9 +123,6 @@ struct CustomBannerView: View {
         self.controller = controller
         self.onDismiss = onDismiss
         self.onOpen = onOpen
-        // Start in the hidden pose so the first painted frame is already off-screen /
-        // transparent — the box then animates to rest in onAppear. No panel alpha fade
-        // is needed to mask a flash, which lets translate-in animations show immediately.
         let h = animation.hidden
         _animX = State(initialValue: h.x)
         _animY = State(initialValue: h.y)
@@ -185,14 +163,15 @@ struct CustomBannerView: View {
         }
         .padding(EdgeInsets(top: 4 * scale, leading: 8 * scale,
                             bottom: 4 * scale, trailing: 8 * scale))
-        // Fill the whole panel so the chrome below *is* the box — when the transforms at
-        // the end of the chain run, the entire box animates together (matching the
-        // preview), rather than just the content sliding inside a static box.
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background {
             ZStack {
                 VisualEffectBackground(cornerRadius: 14 * scale)
-                if tint != .clear { tint.opacity(0.45) }
+                if tint != .clear {
+                    tint.opacity(0.45)
+                } else {
+                    Color.black.opacity(0.55)
+                }
             }
         }
         .clipShape(RoundedRectangle(cornerRadius: 14 * scale, style: .continuous))
@@ -235,11 +214,6 @@ struct CustomBannerView: View {
         }
     }
 
-    // MARK: - Text styles
-    // AnyShapeStyle unifies the two branches: a concrete Color (explicit override) and
-    // the hierarchical system styles (.secondary/.tertiary/.primary, adaptive fallback)
-    // don't share a static type, so foregroundStyle can't pick between them directly.
-
     private var appNameStyle: AnyShapeStyle {
         textColor.map { AnyShapeStyle($0.opacity(0.65)) } ?? AnyShapeStyle(.secondary)
     }
@@ -254,19 +228,14 @@ struct CustomBannerView: View {
     }
 
     private func setupAnimations() {
-        // State already starts in the hidden pose (set in init), so just animate to rest.
         let hidden = animation.hidden
         controller.slideOutClosure = {
             withAnimation(animation.outro) { apply(hidden) }
             scheduleDismiss(after: animation.outroDuration)
         }
-        withAnimation(animation.intro) { apply(.init()) }   // .init() == resting/aligned
+        withAnimation(animation.intro) { apply(.init()) }
     }
 
-    /// Push/pop a pointing-hand cursor so the banner reads as clickable. Guarded by
-    /// `cursorPushed` to keep the global cursor stack balanced — `onDisappear` covers the
-    /// case where the panel is dismissed (auto-dismiss / click) while still hovered, since
-    /// `onHover(false)` may not fire when the hosting view is torn down.
     private func setCursorPushed(_ pushed: Bool) {
         guard pushed != cursorPushed else { return }
         cursorPushed = pushed
@@ -305,12 +274,6 @@ struct CustomBannerView: View {
     }
 }
 
-// MARK: - Blur background
-
-/// A `.behindWindow` vibrancy view exposed to SwiftUI so it can live *inside* the
-/// animated banner box (and thus translate/scale/fade with it). SwiftUI's `.clipShape`
-/// doesn't reliably round an AppKit vibrancy layer, so corners are rounded here via the
-/// view's own `maskImage` — a stretchable rounded-rect image.
 private struct VisualEffectBackground: NSViewRepresentable {
     let cornerRadius: CGFloat
 
@@ -319,10 +282,7 @@ private struct VisualEffectBackground: NSViewRepresentable {
         v.material = .hudWindow
         v.blendingMode = .behindWindow
         v.state = .active
-        // No forced appearance: leaving it nil lets the view inherit the system's
-        // current light/dark appearance (like the real NC banner does), instead of
-        // this overlay always rendering as a dark HUD panel while the rest of the
-        // system is in Light Mode.
+        v.appearance = NSAppearance(named: .darkAqua)
         v.maskImage = Self.maskImage(cornerRadius: cornerRadius)
         return v
     }
@@ -345,8 +305,6 @@ private struct VisualEffectBackground: NSViewRepresentable {
     }
 }
 
-// MARK: - Manager
-
 @MainActor
 final class CustomBannerManager {
 
@@ -354,10 +312,6 @@ final class CustomBannerManager {
         let panel: NSPanel
         let controller: BannerAnimationController
         var dismissTimer: DispatchSourceTimer?
-        /// Retires the real NC banner hidden behind this overlay. Run only when the overlay
-        /// dismisses itself (user close, tap-to-open, auto-dismiss timer) — not when the
-        /// repositioner tears it down to swap in a native banner. nil for overlays with no
-        /// backing NC window to retire.
         let onUnderlyingDismiss: (() -> Void)?
     }
 
@@ -387,9 +341,6 @@ final class CustomBannerManager {
         let frame  = Self.axRect(axOrigin: axTopLeft, size: CGSize(width: width, height: bannerHeight))
         let bounds = CGRect(origin: .zero, size: frame.size)
 
-        // The box chrome (blur, tint, rounded corners) now lives inside the SwiftUI view
-        // so it animates as one unit with the content. The hosting view fills the panel
-        // with a transparent background; the panel's drop shadow follows the rounded box.
         let bannerView = CustomBannerView(
             content: content, scale: s, animation: animation, tint: backgroundColor,
             textColor: textColor,
@@ -401,26 +352,21 @@ final class CustomBannerManager {
         hosting.layer?.isOpaque = false
         hosting.layer?.backgroundColor = NSColor.clear.cgColor
 
-        // No alpha fade-in: the box starts in its hidden pose and animates to rest itself.
         let panel = makePanel(frame: frame, contentView: hosting)
         panel.alphaValue = 1
         panel.orderFront(nil)
 
         var entry = Entry(panel: panel, controller: controller, onUnderlyingDismiss: onUnderlyingDismiss)
-        let timeout = autoDismissSeconds > 0 ? autoDismissSeconds : 8
-        let timer = DispatchSource.makeTimerSource(queue: .main)
-        timer.schedule(deadline: .now() + timeout)
-        timer.setEventHandler { [weak self] in self?.dismissFromUser(key: key) }
-        timer.resume()
-        entry.dismissTimer = timer
+        if autoDismissSeconds > 0 {
+            let timer = DispatchSource.makeTimerSource(queue: .main)
+            timer.schedule(deadline: .now() + autoDismissSeconds)
+            timer.setEventHandler { [weak self] in self?.dismissFromUser(key: key) }
+            timer.resume()
+            entry.dismissTimer = timer
+        }
         active[key] = entry
     }
 
-    /// Dismissal originating from the overlay itself — the user closed it, tapped it to open,
-    /// or its auto-dismiss timer fired. Unlike `dismiss(key:)` (used when the repositioner
-    /// tears the overlay down to swap in a native banner), this first retires the real NC
-    /// banner behind the overlay, so dismissing the custom banner doesn't reveal the native
-    /// one underneath.
     private func dismissFromUser(key: CFHashCode) {
         active[key]?.onUnderlyingDismiss?()
         dismiss(key: key)
@@ -451,11 +397,12 @@ final class CustomBannerManager {
     var hasActive: Bool { !active.isEmpty }
 
     func resetDismissTimers(autoDismissSeconds: Double) {
-        let timeout = autoDismissSeconds > 0 ? autoDismissSeconds : 8
         for key in Array(active.keys) {
             active[key]?.dismissTimer?.cancel()
+            active[key]?.dismissTimer = nil
+            guard autoDismissSeconds > 0 else { continue }
             let timer = DispatchSource.makeTimerSource(queue: .main)
-            timer.schedule(deadline: .now() + timeout)
+            timer.schedule(deadline: .now() + autoDismissSeconds)
             timer.setEventHandler { [weak self] in self?.dismiss(key: key) }
             timer.resume()
             active[key]?.dismissTimer = timer
