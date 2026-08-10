@@ -1,7 +1,7 @@
 # NotificationNanny
 Control where notification banners appear, how they look, which apps get which treatment, and when they show up.
 
-![macOS 14+](https://img.shields.io/badge/macOS-14%2B-blue) ![Swift](https://img.shields.io/badge/Swift-5.9-orange) ![Version](https://img.shields.io/badge/version-7.5.0-brightgreen) ![Downloads](https://img.shields.io/github/downloads/chessper53/NotificationNanny/total?style=flat&label=downloads&color=brightgreen&logo=apple) ![Stars](https://img.shields.io/github/stars/chessper53/NotificationNanny?style=flat&label=stars&color=yellow)
+![macOS 14+](https://img.shields.io/badge/macOS-14%2B-blue) ![Swift](https://img.shields.io/badge/Swift-5.9-orange) ![Version](https://img.shields.io/badge/version-7.7.0-brightgreen) ![Downloads](https://img.shields.io/github/downloads/chessper53/NotificationNanny/total?style=flat&label=downloads&color=brightgreen&logo=apple) ![Stars](https://img.shields.io/github/stars/chessper53/NotificationNanny?style=flat&label=stars&color=yellow)
 
 <table>
   <tr>
@@ -36,7 +36,7 @@ I have a full-time job, so responses may take a little while, but nothing goes u
 macOS gives you one place for notification banners and no way to change it. NotificationNanny takes that control back.
 
 - Put banners wherever you want on any screen, with nine anchor points and independent settings per display
-- Scale them from 50% to 250%, tint them a color, or replace the system banner entirely with a custom styled one
+- Scale them from 50% to 250%, tint the background or text, or replace the system banner entirely with a custom styled one
 - Give specific apps their own rules: create named groups with their own position, display, banner type, scale, and tint
 - Choose how banners animate in: system default, slide, bounce, fade, or scale
 - Hold banners until your display wakes up so nothing disappears while you are away
@@ -46,8 +46,6 @@ macOS gives you one place for notification banners and no way to change it. Noti
 - In-app log viewer showing the last 500 events from the banner engine, for debugging unexpected behavior
 
 ## Documentation
-
-For users: [Changelog](docs/CHANGELOG.md) has the release history and per-version changes.
 
 For contributors: [Contributing](docs/CONTRIBUTING.md) covers setup and conventions, [Architecture](docs/ARCHITECTURE.md) covers internals and module structure, [Debugging](docs/DEBUGGING.md) covers the local build/run/debug loop, and [Releasing](docs/RELEASING.md) covers how to cut a release.
 
