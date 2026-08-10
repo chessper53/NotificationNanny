@@ -1,25 +1,16 @@
 @preconcurrency import ApplicationServices
 
-/// Resolves the sending app name from a NotificationCenterUI AX element.
-/// Maintains a per-window-hash cache that is invalidated on element destruction.
 @MainActor
 final class AppNameResolver {
     private static let bannerSubroles: Set<String> = [
         "AXNotificationCenterBanner",
         "AXNotificationCenterBannerStack",
-        // "Persistent" notification style (System Settings → Notifications → app →
-        // Notification style) renders through AXSystemDialog using the Alert subrole
-        // instead of the Banner one used by "Temporary" style. Same content shape,
-        // different subrole string — both must be recognised as a real notification.
         "AXNotificationCenterAlert",
         "AXNotificationCenterAlertStack",
     ]
 
     private var cache: [CFHashCode: String] = [:]
 
-    // MARK: - Public API
-
-    /// Returns the app name for `window`, using the cache when possible.
     func appName(for window: AXUIElement) -> String? {
         let key = CFHash(window)
         if let cached = cache[key] { return cached }
@@ -29,19 +20,14 @@ final class AppNameResolver {
         return name
     }
 
-    /// Removes the cache entry for the destroyed element.
     func invalidate(key: CFHashCode) {
         cache.removeValue(forKey: key)
     }
 
-    /// Removes all cached entries (e.g. when the observer tears down).
     func invalidateAll() {
         cache.removeAll()
     }
 
-    // MARK: - Banner element search
-
-    /// Walks the AX tree looking for a child element whose subrole is a known banner subrole.
     func findBannerElement(in el: AXUIElement, depth: Int = 0) -> AXUIElement? {
         guard depth < 7 else { return nil }
         if let sr = el.stringAttribute(kAXSubroleAttribute as String), Self.bannerSubroles.contains(sr) {
@@ -53,12 +39,9 @@ final class AppNameResolver {
         return nil
     }
 
-    // MARK: - Private
-
     private func nameFromElement(_ el: AXUIElement) -> String? {
         guard let str = el.stringAttribute("AXAttributedDescription"),
               let first = str.components(separatedBy: ", ").first else { return nil }
-        // Strip directional Unicode marks (e.g. U+200E prepended by WhatsApp).
         let cleaned = cleanAXString(first)
         return cleaned.isEmpty ? nil : cleaned
     }

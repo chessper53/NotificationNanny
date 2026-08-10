@@ -36,8 +36,6 @@ package final class AppSettings: ObservableObject {
         static let snoozedUntil         = "snoozedUntil"
     }
 
-    /// ~/Library/Application Support/NotificationNanny/known_apps.json
-    /// Survives reinstalls and UserDefaults resets.
     private static let defaultKnownAppsFileURL: URL = {
         let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
         let dir = support.appendingPathComponent("NotificationNanny", isDirectory: true)
@@ -51,9 +49,6 @@ package final class AppSettings: ObservableObject {
         didSet { defaults.set(isEnabled, forKey: Key.isEnabled) }
     }
 
-    /// When set to a future date, repositioning is temporarily paused ("snooze"); banners fall
-    /// through to default macOS behaviour until it elapses. Persisted so a relaunch mid-snooze
-    /// still honours it. `nil`/past means not snoozed.
     @Published package private(set) var snoozedUntil: Date? {
         didSet {
             if let d = snoozedUntil { defaults.set(d, forKey: Key.snoozedUntil) }
@@ -63,24 +58,20 @@ package final class AppSettings: ObservableObject {
 
     private var snoozeGeneration = 0
 
-    /// True while a snooze is in effect.
     package var isSnoozed: Bool {
         guard let until = snoozedUntil else { return false }
         return until > Date()
     }
 
-    /// Master gate for repositioning: the user toggle AND not currently snoozed.
     package var isActive: Bool { isEnabled && !isSnoozed }
 
-    /// Pause repositioning for `minutes`, auto-resuming when it elapses.
     package func snooze(minutes: Int) {
         snoozedUntil = Date().addingTimeInterval(Double(minutes) * 60)
         scheduleSnoozeExpiry()
     }
 
-    /// Resume immediately, cancelling any pending auto-resume.
     package func endSnooze() {
-        snoozeGeneration &+= 1            // invalidate any in-flight expiry
+        snoozeGeneration &+= 1
         if snoozedUntil != nil { snoozedUntil = nil }
     }
 
@@ -106,13 +97,10 @@ package final class AppSettings: ObservableObject {
         didSet { defaults.set(protectDesktopWidgets, forKey: Key.protectDesktopWidgets) }
     }
 
-    /// When on, banners go to the screen under the cursor instead of the fixed
-    /// target display. A per-app/group screen override still wins over this.
     @Published package var followActiveScreen: Bool {
         didSet { defaults.set(followActiveScreen, forKey: Key.followActiveScreen) }
     }
 
-    /// When on, repositioning is skipped while a macOS Focus / Do Not Disturb is active.
     @Published package var pauseDuringFocus: Bool {
         didSet { defaults.set(pauseDuringFocus, forKey: Key.pauseDuringFocus) }
     }
@@ -158,7 +146,6 @@ package final class AppSettings: ObservableObject {
         }
     }
 
-    /// Clean single-optional API over the raw R/G/B UserDefaults storage.
     package var bannerTint: BannerTint? {
         get { hasBannerColor ? BannerTint(r: bannerColorR, g: bannerColorG, b: bannerColorB) : nil }
         set {
@@ -172,10 +159,6 @@ package final class AppSettings: ObservableObject {
 
     package func clearBannerColor() { bannerTint = nil }
 
-    /// Optional global text-color override for the custom banner renderer. `nil` (the
-    /// default) means "no override" — callers should fall back to the adaptive system
-    /// text styles (`.primary`/`.secondary`/`.tertiary`), not a hardcoded color, so text
-    /// stays legible against the custom banner's own appearance-adaptive background.
     package var bannerTextTint: BannerTint? {
         get {
             hasBannerTextColor
@@ -197,7 +180,6 @@ package final class AppSettings: ObservableObject {
         }
     }
 
-    /// `nil` means "no override" — render with the adaptive system text styles.
     package var effectiveBannerTextColor: Color? { bannerTextTint?.color }
 
     package func clearBannerTextColor() { bannerTextTint = nil }
@@ -216,16 +198,9 @@ package final class AppSettings: ObservableObject {
         return .clear
     }
 
-    /// 0 = auto (follow macOS), non-zero = force to this display.
     @Published package var targetDisplayID: CGDirectDisplayID {
         didSet {
             defaults.set(Int(targetDisplayID), forKey: Key.targetDisplay)
-            // Mirror the choice as a stable per-monitor key (nil for "auto" or a display
-            // that isn't currently connected — e.g. importing a backup from another Mac)
-            // so resolvedTargetScreen() can still find the right physical display after
-            // displayID gets reassigned (sleep/wake, dock reconnect). A stale leftover key
-            // is explicitly cleared rather than kept, so it can't resolve to the wrong
-            // (previously selected) display.
             if let key = Self.stableKey(forDisplayID: targetDisplayID) {
                 defaults.set(key, forKey: Key.targetDisplayUUID)
             } else {
@@ -234,37 +209,25 @@ package final class AppSettings: ObservableObject {
         }
     }
 
-    /// Resolves the forced target display (`targetDisplayID`), preferring the persisted
-    /// stable key so a displayID reassignment (sleep/wake, dock reconnect) doesn't make
-    /// the forced screen appear to vanish. Returns nil when set to auto (0) or when the
-    /// display genuinely isn't connected.
     package func resolvedTargetScreen() -> NSScreen? {
         Self.resolveScreen(displayID: targetDisplayID, stableKey: defaults.string(forKey: Key.targetDisplayUUID))
     }
 
-    /// Resolves the forced display for a per-app group override (see `AppGroup.targetDisplayID`).
-    /// Nil when the app isn't in a group, or the group has no override (auto).
     package func resolvedTargetScreen(for appName: String?) -> NSScreen? {
         guard let appName, let g = group(for: appName) else { return nil }
         return Self.resolveScreen(displayID: g.targetDisplayID, stableKey: g.targetDisplayUUID)
     }
 
-    /// Group-ID variant of `resolvedTargetScreen(for:)`.
     package func resolvedTargetScreen(forGroupID groupID: UUID?) -> NSScreen? {
         guard let groupID, let g = group(by: groupID) else { return nil }
         return Self.resolveScreen(displayID: g.targetDisplayID, stableKey: g.targetDisplayUUID)
     }
 
-    /// Derives the stable per-monitor key for a currently-connected display, or nil for
-    /// "auto" (id == 0) or a display that isn't connected right now.
     private static func stableKey(forDisplayID id: CGDirectDisplayID) -> String? {
         guard id != 0 else { return nil }
         return NSScreen.screens.first(where: { $0.displayID == id })?.stableDisplayKey
     }
 
-    /// Shared resolution behind every `resolvedTargetScreen…` variant: prefer the stable
-    /// key (survives displayID reassignment), fall back to a direct ID match for data
-    /// written before the stable key existed.
     private static func resolveScreen(displayID: CGDirectDisplayID, stableKey: String?) -> NSScreen? {
         guard displayID != 0 else { return nil }
         if let stableKey, let screen = NSScreen.screens.first(where: { $0.stableDisplayKey == stableKey }) {
@@ -273,9 +236,6 @@ package final class AppSettings: ObservableObject {
         return NSScreen.screens.first(where: { $0.displayID == displayID })
     }
 
-    /// Sets a group's forced display, mirroring the stable per-monitor key alongside the
-    /// raw ID the same way the global `targetDisplayID` does. Use instead of mutating
-    /// `appGroups[i].targetDisplayID` directly.
     func setGroupTargetDisplay(_ displayID: CGDirectDisplayID, forGroupID groupID: UUID) {
         guard let i = appGroups.firstIndex(where: { $0.id == groupID }) else { return }
         var group = appGroups[i]
@@ -296,7 +256,6 @@ package final class AppSettings: ObservableObject {
         didSet { saveAppGroups() }
     }
 
-    /// Sorted unique list of app names that have sent at least one notification.
     @Published private(set) var knownAppNames: [String] {
         didSet { saveKnownApps() }
     }
@@ -305,7 +264,6 @@ package final class AppSettings: ObservableObject {
         self.defaults           = defaults
         self.knownAppsFileURL   = knownAppsFileURL ?? Self.defaultKnownAppsFileURL
         self.isEnabled             = (defaults.object(forKey: Key.isEnabled) as? Bool) ?? true
-        // Only honour a persisted snooze if it's still in the future.
         if let d = defaults.object(forKey: Key.snoozedUntil) as? Date, d > Date() {
             self.snoozedUntil = d
         } else {
@@ -358,7 +316,6 @@ package final class AppSettings: ObservableObject {
             self.appGroups = []
         }
 
-        // Load known app names from file (survives reinstalls), fall back to UserDefaults.
         if let data = try? Data(contentsOf: self.knownAppsFileURL),
            let names = try? JSONDecoder().decode([String].self, from: data) {
             self.knownAppNames = names
@@ -368,38 +325,18 @@ package final class AppSettings: ObservableObject {
             self.knownAppNames = []
         }
 
-        // Re-arm the auto-resume timer if we loaded a still-active snooze.
         if snoozedUntil != nil { scheduleSnoozeExpiry() }
 
-        // One-time best-effort cleanup for data written before the stable per-monitor key
-        // (NSScreen.stableDisplayKey) existed: mirror it onto everything still keyed by the
-        // old, sleep/wake-fragile raw displayID, for every screen that happens to be
-        // connected right now. `placement(for:)` and `resolvedTargetScreen…` already fall
-        // back to the raw key on every read regardless, so correctness never depends on
-        // this running — it just stops the fallback from being needed again after the next
-        // reassignment. Explicit save calls rather than relying on didSet, since property
-        // observers aren't invoked for `self.x = …` performed directly inside `init`.
         migrateLegacyPlacementKeys()
         backfillTargetDisplayUUID()
         backfillGroupTargetDisplayUUIDs()
     }
 
-    // MARK: - Per-screen placement
-
     func placement(for screen: NSScreen) -> ScreenPlacement {
-        // Legacy raw-displayID fallback: that ID can be reassigned to the same physical
-        // monitor across sleep/wake or a dock reconnect, which would otherwise orphan an
-        // entry still sitting under the old key (pre-migration installs, or a legacy-format
-        // backup restored via importData/applyPreset) and make a custom placement look like
-        // it silently reset to default. A pure read — no mutation — so it's safe to call
-        // from a SwiftUI Binding getter; init()'s one-time migration keeps this fallback
-        // from being needed for long, but correctness never depends on that having run.
         placements[screen.stableDisplayKey] ?? placements[String(screen.displayID)] ?? .default
     }
 
     func setPlacement(_ placement: ScreenPlacement, for screen: NSScreen) {
-        // Single assignment to `placements` (rather than two dictionary mutations) so this
-        // triggers exactly one didSet — one disk write, one objectWillChange — instead of two.
         var updated = placements
         updated[screen.stableDisplayKey] = placement
         updated.removeValue(forKey: String(screen.displayID))
@@ -413,8 +350,6 @@ package final class AppSettings: ObservableObject {
         )
     }
 
-    // MARK: - App groups
-
     func group(for appName: String) -> AppGroup? {
         appGroups.first { $0.appNames.contains(appName) }
     }
@@ -423,7 +358,6 @@ package final class AppSettings: ObservableObject {
         appGroups.first { $0.id == id }
     }
 
-    /// Returns the group placement if the app has a rule, else the per-screen default.
     package func placement(for appName: String?, screen: NSScreen) -> ScreenPlacement {
         if let appName, let g = group(for: appName) { return g.placement }
         return placement(for: screen)
@@ -470,7 +404,6 @@ package final class AppSettings: ObservableObject {
         appGroups[i].name = name
     }
 
-    /// Assigns `appName` to `groupID`, removing it from any other group first.
     func addApp(_ appName: String, toGroup groupID: UUID) {
         for i in appGroups.indices { appGroups[i].appNames.removeAll { $0 == appName } }
         guard let i = appGroups.firstIndex(where: { $0.id == groupID }) else { return }
@@ -538,29 +471,25 @@ package final class AppSettings: ObservableObject {
         }
     }
 
-    /// Adds to the known-apps list if not already present. Safe to call repeatedly.
     package func recordAppName(_ name: String) {
         guard !name.isEmpty, !knownAppNames.contains(name) else { return }
         knownAppNames.append(name)
         knownAppNames.sort()
     }
 
-    // MARK: - Import / Export
-
-    /// Bumped whenever the export shape changes in a way that needs migration on read.
     static let currentExportSchemaVersion = 1
 
     struct SettingsExport: Codable {
-        var schemaVersion: Int?            // optional: absent in backups predating versioning (treat as v1)
+        var schemaVersion: Int?
         var placements: [String: ScreenPlacement]
         var targetDisplayID: CGDirectDisplayID
         var autoDismissSeconds: Double
         var bannerScale: Double
         var pauseWhileStreaming: Bool
         var avoidNCPanel: Bool
-        var protectDesktopWidgets: Bool?   // optional: absent in backups predating this setting
-        var followActiveScreen: Bool?      // optional: absent in older backups
-        var pauseDuringFocus: Bool?        // optional: absent in older backups
+        var protectDesktopWidgets: Bool?
+        var followActiveScreen: Bool?
+        var pauseDuringFocus: Bool?
         var appGroups: [AppGroup]
         var presets: [Preset]
     }
@@ -605,8 +534,6 @@ package final class AppSettings: ObservableObject {
         appGroups           = imported.appGroups
         presets             = imported.presets
     }
-
-    // MARK: - Presets
 
     func saveCurrentAsPreset(name: String) {
         let preset = Preset(
@@ -655,8 +582,6 @@ package final class AppSettings: ObservableObject {
         hideMenuBarIcon    = false
     }
 
-    // MARK: - Persistence
-
     private func savePlacements() {
         if let data = try? JSONEncoder().encode(placements) { defaults.set(data, forKey: Key.placements) }
     }
@@ -676,12 +601,6 @@ package final class AppSettings: ObservableObject {
         }
     }
 
-    // MARK: - Stable-key migration (init-time, best-effort)
-
-    /// Moves any placement still stored under the legacy raw-displayID key onto the stable
-    /// per-monitor key, for every screen connected right now. `placement(for:)` falls back
-    /// to the legacy key on every read regardless, so this is cleanup, not a correctness
-    /// dependency — it just narrows how often that fallback is needed.
     private func migrateLegacyPlacementKeys() {
         var updated = placements
         var migrated = 0
@@ -696,14 +615,9 @@ package final class AppSettings: ObservableObject {
         guard migrated > 0 else { return }
         placements = updated
         savePlacements()
-        // User-visible: on the reporter's next diagnostics dump, this line's presence proves
-        // their saved positions were in the pre-fix, displayID-keyed (bug-vulnerable) format.
         NannyLogger.shared.log("Migrated \(migrated) placement(s) to stable per-display keys", tag: "Display")
     }
 
-    /// Backfills `targetDisplayUUID` for a `targetDisplayID` set by a version predating the
-    /// stable key, so the global forced-display override doesn't need one more sleep/wake
-    /// or dock reconnect (to trip over a reassigned raw ID) before it becomes resilient.
     private func backfillTargetDisplayUUID() {
         guard defaults.string(forKey: Key.targetDisplayUUID) == nil,
               let key = Self.stableKey(forDisplayID: targetDisplayID) else { return }
@@ -711,8 +625,6 @@ package final class AppSettings: ObservableObject {
         NannyLogger.shared.log("Backfilled stable key for forced display id=\(targetDisplayID)", tag: "Display")
     }
 
-    /// Group-level equivalent of `backfillTargetDisplayUUID()`, for `AppGroup.targetDisplayID`
-    /// overrides set before `targetDisplayUUID` existed.
     private func backfillGroupTargetDisplayUUIDs() {
         var updated = appGroups
         var changed = false
