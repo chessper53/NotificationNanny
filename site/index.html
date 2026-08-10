@@ -6,7 +6,7 @@
   <!-- Marks JS as available before first paint, so the CSS reveal-on-scroll rules
        (scoped to html.js, see styles.css) never hide content from no-JS visitors. -->
   <script>document.documentElement.classList.add('js')</script>
-  <title>NotificationNanny: take control of your macOS notification banners</title>
+  <title>NotificationNanny</title>
   <meta name="description" content="Put macOS notification banners wherever you want. Position, scale, tint, and animate them per app, on any display. Free, open source, no telemetry." />
 
   <link rel="icon" type="image/png" sizes="32x32" href="assets/favicon-32.png" />
@@ -92,6 +92,22 @@
           <span class="stat-label">Latest release</span>
         </div>
       </div>
+      <div class="wrap stats-footer">
+        <a class="footer-link" href="https://github.com/chessper53/NotificationNanny">
+          <svg viewBox="0 0 16 16" width="16" height="16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>
+          <span>Visit my GitHub</span>
+        </a>
+        <span class="footer-link-dot">·</span>
+        <a class="footer-link" href="https://github.com/chessper53/NotificationNanny/issues/new?template=bug_report.md">
+          <svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.3"><circle cx="8" cy="8" r="6.5"/><path d="M8 5v3.5" stroke-linecap="round"/><circle cx="8" cy="11" r="0.6" fill="currentColor" stroke="none"/></svg>
+          <span>Report a bug</span>
+        </a>
+        <span class="footer-link-dot">·</span>
+        <a class="footer-link" href="https://github.com/chessper53/NotificationNanny/issues/new?template=feature_request.md">
+          <svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.3"><path d="M8 1.5a4.5 4.5 0 0 0-2.5 8.24c.4.28.5.6.5 1v.76h4v-.76c0-.4.1-.72.5-1A4.5 4.5 0 0 0 8 1.5Z"/><path d="M6.5 13.5h3M7 15h2" stroke-linecap="round"/></svg>
+          <span>Request a feature</span>
+        </a>
+      </div>
     </section>
 
     <!-- Screenshots -->
@@ -103,32 +119,32 @@
       <div class="wrap shots-grid">
         <figure class="shot" data-reveal>
           <div class="window-chrome"><span></span><span></span><span></span></div>
-          <img loading="lazy" src="https://github.com/user-attachments/assets/777c81f7-6cc5-4407-a4b6-5328de2c262b" alt="Position tab: drag a banner to any of nine anchor points on any display" />
+          <img loading="lazy" src="assets/screenshots/position.png" alt="Position tab: drag a banner to any of nine anchor points on any display" />
           <figcaption>Position</figcaption>
         </figure>
         <figure class="shot" data-reveal>
           <div class="window-chrome"><span></span><span></span><span></span></div>
-          <img loading="lazy" src="https://github.com/user-attachments/assets/5d01ec6a-8267-4114-9691-9b5b46f1e3cd" alt="Banner tab: scale, tint, and animation controls" />
+          <img loading="lazy" src="assets/screenshots/banner.png" alt="Banner tab: scale, tint, and animation controls" />
           <figcaption>Banner</figcaption>
         </figure>
         <figure class="shot" data-reveal>
           <div class="window-chrome"><span></span><span></span><span></span></div>
-          <img loading="lazy" src="https://github.com/user-attachments/assets/366b1afc-c5a2-4deb-8837-5a4ca7794268" alt="Exceptions tab: per-app groups with their own rules" />
+          <img loading="lazy" src="assets/screenshots/exceptions.png" alt="Exceptions tab: per-app groups with their own rules" />
           <figcaption>Exceptions</figcaption>
         </figure>
         <figure class="shot" data-reveal>
           <div class="window-chrome"><span></span><span></span><span></span></div>
-          <img loading="lazy" src="https://github.com/user-attachments/assets/bd47b5e8-e667-4bb0-bf55-8ed1c15c9029" alt="Presets tab: saved named configurations" />
+          <img loading="lazy" src="assets/screenshots/presets.png" alt="Presets tab: saved named configurations" />
           <figcaption>Presets</figcaption>
         </figure>
         <figure class="shot" data-reveal>
           <div class="window-chrome"><span></span><span></span><span></span></div>
-          <img loading="lazy" src="https://github.com/user-attachments/assets/f670ef93-8241-45e5-bef2-282506dd64d6" alt="General tab: behavior toggles" />
+          <img loading="lazy" src="assets/screenshots/general.png" alt="General tab: behavior toggles" />
           <figcaption>General</figcaption>
         </figure>
         <figure class="shot" data-reveal>
           <div class="window-chrome"><span></span><span></span><span></span></div>
-          <img loading="lazy" src="https://github.com/user-attachments/assets/c63fce84-d270-4e68-b711-f43190e393e5" alt="Help tab: links and bug reporting" />
+          <img loading="lazy" src="assets/screenshots/help.png" alt="Help tab: links and bug reporting" />
           <figcaption>Help</figcaption>
         </figure>
       </div>
@@ -138,7 +154,6 @@
     <section class="section" id="features">
       <div class="wrap">
         <h2 class="section-title">What it does</h2>
-        <p class="section-sub">No subscriptions, no accounts, nothing phoning home.</p>
 
         <div class="feature-grid">
           <article class="feature" data-reveal>

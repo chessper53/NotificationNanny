@@ -37,6 +37,28 @@ brew update && brew upgrade --cask notificationnanny
 - Clean working tree — commit or stash first.
 - Tag `v<version>` must not already exist locally.
 
+## Screenshots
+
+`README.md` and `site/index.html` both reference the same six settings-tab
+screenshots (Position, Banner, Exceptions, Presets, General, Help) by filename
+from `docs/screenshots/` and `site/assets/screenshots/` — not an external URL.
+To refresh them for a release:
+
+```sh
+./scripts/capture-screenshots.sh --launch
+```
+
+It builds and launches the app, clicks through each tab via System Events, and
+writes matching PNGs into both directories. Run it, look over the results, then
+`git add docs/screenshots site/assets/screenshots` alongside your other release
+changes — there's no manual capture-and-reupload step.
+
+One-time setup: the terminal running the script needs Automation permission to
+drive the app's UI (System Settings → Privacy & Security → Automation → your
+terminal → System Events). macOS prompts for this the first time you run it
+interactively; if it fails with "Not authorized to send Apple events to System
+Events," that permission hasn't been granted yet.
+
 ## Versioning
 
 - [`VERSION`](../VERSION) is the single source of truth; `build-app.sh` reads it.

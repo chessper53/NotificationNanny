@@ -76,19 +76,54 @@ async function fetchLiveStats(): Promise<RepoStats> {
   };
 }
 
+function prefersReducedMotion(): boolean {
+  return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+}
+
+function easeOutCubic(t: number): number {
+  return 1 - Math.pow(1 - t, 3);
+}
+
+function animateCountUp(el: HTMLElement, to: number, duration = 1200): void {
+  const start = performance.now();
+
+  function tick(now: number): void {
+    const progress = Math.min(1, (now - start) / duration);
+    const value = Math.round(to * easeOutCubic(progress));
+    el.textContent = formatCompact(value);
+    if (progress < 1) {
+      requestAnimationFrame(tick);
+    }
+  }
+
+  requestAnimationFrame(tick);
+}
+
+const animatedStats = new Set<string>();
+
 function renderStats(stats: RepoStats): void {
-  const tiles: Record<string, string> = {
-    downloads: formatCompact(stats.downloads),
-    stars: formatCompact(stats.stars),
-    forks: formatCompact(stats.forks),
-    version: stats.latestTag ?? "—",
+  const numericTiles: Record<string, number> = {
+    downloads: stats.downloads,
+    stars: stats.stars,
+    forks: stats.forks,
   };
 
-  for (const [key, text] of Object.entries(tiles)) {
-    const tile = document.querySelector<HTMLElement>(`[data-stat="${key}"] [data-value]`);
-    if (!tile) continue;
-    tile.textContent = text;
-    tile.classList.remove("is-loading");
+  for (const [key, value] of Object.entries(numericTiles)) {
+    const el = document.querySelector<HTMLElement>(`[data-stat="${key}"] [data-value]`);
+    if (!el) continue;
+    el.classList.remove("is-loading");
+    if (prefersReducedMotion() || animatedStats.has(key)) {
+      el.textContent = formatCompact(value);
+    } else {
+      animatedStats.add(key);
+      animateCountUp(el, value);
+    }
+  }
+
+  const versionEl = document.querySelector<HTMLElement>('[data-stat="version"] [data-value]');
+  if (versionEl) {
+    versionEl.textContent = stats.latestTag ?? "—";
+    versionEl.classList.remove("is-loading");
   }
 }
 

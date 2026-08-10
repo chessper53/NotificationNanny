@@ -5,14 +5,14 @@ Control where notification banners appear, how they look, which apps get which t
 
 <table>
   <tr>
-    <td align="center"><img src="https://github.com/user-attachments/assets/777c81f7-6cc5-4407-a4b6-5328de2c262b" width="260" alt="Position"/><br/><sub>Position</sub></td>
-    <td align="center"><img src="https://github.com/user-attachments/assets/5d01ec6a-8267-4114-9691-9b5b46f1e3cd" width="260" alt="Banner"/><br/><sub>Banner</sub></td>
-    <td align="center"><img src="https://github.com/user-attachments/assets/366b1afc-c5a2-4deb-8837-5a4ca7794268" width="260" alt="Exceptions"/><br/><sub>Exceptions</sub></td>
+    <td align="center"><img src="docs/screenshots/position.png" width="260" alt="Position"/><br/><sub>Position</sub></td>
+    <td align="center"><img src="docs/screenshots/banner.png" width="260" alt="Banner"/><br/><sub>Banner</sub></td>
+    <td align="center"><img src="docs/screenshots/exceptions.png" width="260" alt="Exceptions"/><br/><sub>Exceptions</sub></td>
   </tr>
   <tr>
-    <td align="center"><img src="https://github.com/user-attachments/assets/bd47b5e8-e667-4bb0-bf55-8ed1c15c9029" width="260" alt="Presets"/><br/><sub>Presets</sub></td>
-    <td align="center"><img src="https://github.com/user-attachments/assets/f670ef93-8241-45e5-bef2-282506dd64d6" width="260" alt="General"/><br/><sub>General</sub></td>
-    <td align="center"><img src="https://github.com/user-attachments/assets/c63fce84-d270-4e68-b711-f43190e393e5" width="260" alt="Help"/><br/><sub>Help</sub></td>
+    <td align="center"><img src="docs/screenshots/presets.png" width="260" alt="Presets"/><br/><sub>Presets</sub></td>
+    <td align="center"><img src="docs/screenshots/general.png" width="260" alt="General"/><br/><sub>General</sub></td>
+    <td align="center"><img src="docs/screenshots/help.png" width="260" alt="Help"/><br/><sub>Help</sub></td>
   </tr>
 </table>
 
