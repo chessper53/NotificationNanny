@@ -5,6 +5,21 @@ All notable changes to NotificationNanny are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [7.7.0] — 2026-08-10
+
+### Added
+- **Custom banner text color** — a global override for the custom renderer's text (title, body, app name, timestamp). Leaving it unset keeps text on the system's adaptive `.primary`/`.secondary`/`.tertiary` styles rather than a fixed color, so it stays legible against the banner's own light/dark-adaptive background (see the Fixed entry below). Configurable from the Banner tab next to Background Color.
+- Universal (arm64 + x86_64) release builds — the release workflow now builds with `UNIVERSAL=1` and verifies both architectures are present with `lipo` before packaging, so Intel Macs installing via Homebrew get a binary that actually launches. (Previously, only arm64 was shipped; Intel installs failed with "unsupported.") Building a universal artifact requires full Xcode (not Command Line Tools) — see `docs/RELEASING.md`.
+
+### Fixed
+- **Persistent-style notifications not repositioned** — macOS renders "Persistent" notification style (System Settings → Notifications → app → Notification style) with the `AXNotificationCenterAlert`/`AlertStack` accessibility subrole instead of the `AXNotificationCenterBanner`/`BannerStack` subrole used by "Temporary" style. NotificationNanny only recognized the Banner subroles, so Persistent notifications were never identified as banners — the app name couldn't be resolved, the readiness gate never passed, and after retries were exhausted the notification was left exactly where macOS natively placed it (not the cursor's screen, not the user's configured position). Both Alert subroles are now recognized.
+- **Custom banner color mismatch on non-default animations** — picking any banner animation other than Default forces the custom-overlay rendering path even with no tint set. That overlay forced a `.darkAqua` appearance and painted a flat black overlay to approximate the native banner's look — correct-looking only when the system happened to already be in Dark Mode. In Light Mode, picking an animation swapped a light native banner for a dark custom one. The overlay's background now inherits the system's actual current appearance instead of a hardcoded approximation.
+- `depends_on macos: ">= :sonoma"` in the Homebrew cask used a deprecated string-comparison form, printing a verbose warning on every `brew` invocation involving the tap. Changed to the plain-symbol form (`depends_on macos: :sonoma`), same minimum-version meaning.
+
+### Changed
+- `NotificationNannyCore`'s 31 source files, previously flat, are now grouped into `Engine/`, `Models/`, `UI/{SettingsView,MenuBar,Overlay}/`, `System/`, and `Diagnostics/` (file moves only — no logic changes). See `docs/ARCHITECTURE.md` for the updated module map.
+- Two previously silent skip paths (an unrecognized-subrole large NC window, and readiness-gate exhaustion) now log a user-visible reason including the AX subrole, so a future diagnostics paste can distinguish "genuinely not a banner" from "a subrole we don't recognize yet" without needing a live repro. The readiness-gate log also reports elapsed time since the last display wake / screen-configuration-change event, to help tell a recognition gap apart from an AX-service warm-up timing issue.
+
 ## [7.6.1] — 2026-07-17
 
 ### Fixed

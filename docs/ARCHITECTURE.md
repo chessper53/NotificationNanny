@@ -1,7 +1,7 @@
 # NotificationNanny — Architecture Documentation
 
 **Project:** notification-nanny  
-**Last Updated:** 2026-06-18  
+**Last Updated:** 2026-08-10  
 **Language:** English
 
 ---
@@ -19,6 +19,8 @@
 | 1.4     | 2026-06-17 | Claude   | Back-to-back race fixes (per-window generation, test-banner identity, readiness gate, overlay content refresh, width clamp); title/body extraction via AXStaticText; per-group animation; Diagnostics tab + bug-report auto-attach |
 | 1.5     | 2026-06-17 | Claude   | AX primitives extracted to `AXUIElement` extension (`AXSupport.swift`); Snooze / pause-for-N-minutes feature; export schema versioning |
 | 1.6     | 2026-06-18 | Claude   | Desktop-widget protection (`protectDesktopWidgets`); pause-during-Focus (`FocusModeMonitor`, `pauseDuringFocus`); `LogEntryRow` view extraction; export schema carries the new toggles; CHANGELOG.md added |
+| 1.7     | 2026-08-09 | Claude   | `NotificationNannyCore` regrouped from a flat 31-file directory into `Engine/`, `Models/`, `UI/{SettingsView,MenuBar,Overlay}/`, `System/`, `Diagnostics/` (file moves only, no logic changes); `AXNotificationCenterAlert`/`AlertStack` recognised as banner subroles (fixes Persistent-style notifications not repositioning); custom-overlay background no longer forces dark HUD appearance; readiness-gate exhaustion and previously-silent skip paths now log a user-visible reason + AX subrole |
+| 1.8     | 2026-08-10 | Claude   | Global custom-banner text color (`bannerTextTint`, `effectiveBannerTextColor: Color?` — nil means adaptive `.primary`/`.secondary`/`.tertiary`, deliberately not a hardcoded default, so it can't regress the 1.7 appearance fix); universal (arm64+x86_64) release builds verified via `lipo` in `release.yml` + `scripts/test-release-workflow.sh` |
 
 **Status:** CURRENT
 
@@ -29,7 +31,7 @@
 ### Workspace Structure
 
 ```
-NotificationNanny (v7.5.0)
+NotificationNanny (v7.7.0)
 ├── Sources/NotificationNanny/     — Thin @main executable entry point
 ├── Sources/NotificationNannyCore/ — All app logic (library target, testable)
 └── Tests/NotificationNannyTests/  — Swift Testing unit tests
@@ -50,9 +52,9 @@ NotificationNanny (v7.5.0)
 
 - **Main App:** [NotificationNannyApp.swift](../Sources/NotificationNanny/NotificationNannyApp.swift)
 - **App Coordinator:** [NotificationNannyApp.swift:19](../Sources/NotificationNanny/NotificationNannyApp.swift#L19)
-- **Core Settings:** [AppSettings.swift](../Sources/NotificationNannyCore/AppSettings.swift)
-- **Banner Engine:** [NotificationRepositioner.swift](../Sources/NotificationNannyCore/NotificationRepositioner.swift)
-- **Settings UI:** [SettingsView.swift](../Sources/NotificationNannyCore/SettingsView.swift)
+- **Core Settings:** [AppSettings.swift](../Sources/NotificationNannyCore/Models/AppSettings.swift)
+- **Banner Engine:** [NotificationRepositioner.swift](../Sources/NotificationNannyCore/Engine/NotificationRepositioner.swift)
+- **Settings UI:** [SettingsView.swift](../Sources/NotificationNannyCore/UI/SettingsView/SettingsView.swift)
 
 ### Key Files & Directories
 
@@ -192,38 +194,50 @@ C4Container
 ```
 NotificationNanny (SPM Package)
 ├── NotificationNannyCore          (library target — all app logic)
-│   ├── AppSettings.swift          Settings store + export/import
-│   ├── NotificationRepositioner.swift  AX engine + repositioning (orchestrator)
-│   ├── AppNameResolver.swift      AX attribute parsing, banner-element search, app-name cache
-│   ├── PrivateWindowAPI.swift     CGS/SkyLight SPI wrapper (setTransform, setAlpha, windowID)
-│   ├── CustomOverlay.swift        Custom banner view + manager
-│   ├── AppGroup.swift             Per-app group data model + BannerTint + BannerMode
-│   ├── ScreenPlacement.swift      Placement model + NSScreen extension
-│   ├── NotificationPosition.swift 9-anchor position enum + geometry
-│   ├── Preset.swift               Named configuration snapshot
-│   ├── NotificationSettingsProviding.swift  Protocol interface
-│   ├── AccessibilityPermissionMonitor.swift TCC polling
-│   ├── LaunchAtLogin.swift        SMAppService wrapper
-│   ├── UpdateChecker.swift        GitHub Releases version check
-│   ├── InstallSource.swift        Homebrew-vs-direct install detection
-│   ├── HomebrewUpdater.swift      In-app `brew upgrade --cask` runner
-│   ├── FocusModeMonitor.swift     Focus/DND detection (reads Assertions.json, 1s cache)
-│   ├── NannyLogger.swift          In-memory log ring buffer
-│   ├── LogEntryRow.swift          SwiftUI row view for a single log entry (Diagnostics tab)
-│   ├── AXSupport.swift            AXUIElement extension: size/point/string/children/staticText + cleanAXString
-│   ├── Diagnostics.swift          Health-check collection + bug-report URL builder (shared)
-│   ├── NotificationProbe.swift    Diagnostic window enumeration
-│   ├── MenuBarContent.swift       (menu bar population, if present)
-│   ├── PositionTile.swift         DraggableScreenTile + TestNotification
-│   ├── SettingsView.swift         Shell: sidebar, banner strips, WindowSizeLock, SettingsSliderRow
-│   ├── SettingsView+PositionTab.swift    Position tab (PositionTabView)
-│   ├── SettingsView+BannerTab.swift      Banner tab (BannerTabView — scale, tint, animation picker)
-│   ├── SettingsView+ExceptionsTab.swift  Exceptions tab (ExceptionsTabView)
-│   ├── SettingsView+PresetsTab.swift     Presets tab (PresetsTabView)
-│   ├── SettingsView+GeneralTab.swift     General tab (GeneralTabView)
-│   ├── SettingsView+BackupTab.swift      Backup tab (BackupTabView)
-│   ├── SettingsView+DebugTab.swift       Diagnostics tab (DebugTabView — collapsible health checks, activity log, edge-case tools)
-│   └── SettingsView+HelpTab.swift        Help tab (HelpTabView — links + "Report a bug" auto-attach)
+│   ├── Engine/                    AX observation loop + supporting primitives
+│   │   ├── NotificationRepositioner.swift  AX engine + repositioning (orchestrator)
+│   │   ├── AppNameResolver.swift  AX attribute parsing, banner-element search, app-name cache
+│   │   ├── AXSupport.swift        AXUIElement extension: size/point/string/children/staticText + cleanAXString
+│   │   ├── PrivateWindowAPI.swift CGS/SkyLight SPI wrapper (setTransform, setAlpha, windowID)
+│   │   └── NotificationProbe.swift Diagnostic window enumeration
+│   │
+│   ├── Models/                    Settings store + domain/data types
+│   │   ├── AppSettings.swift      Settings store + export/import
+│   │   ├── AppGroup.swift         Per-app group data model + BannerTint + BannerMode
+│   │   ├── ScreenPlacement.swift  Placement model + NSScreen extension
+│   │   ├── NotificationPosition.swift  9-anchor position enum + geometry
+│   │   ├── Preset.swift           Named configuration snapshot
+│   │   └── NotificationSettingsProviding.swift  Protocol interface
+│   │
+│   ├── UI/
+│   │   ├── SettingsView/          Settings window: shell + one file per tab
+│   │   │   ├── SettingsView.swift Shell: sidebar, banner strips, WindowSizeLock, SettingsSliderRow
+│   │   │   ├── SettingsView+PositionTab.swift    Position tab (PositionTabView)
+│   │   │   ├── SettingsView+BannerTab.swift      Banner tab (BannerTabView — scale, tint, animation picker)
+│   │   │   ├── SettingsView+ExceptionsTab.swift  Exceptions tab (ExceptionsTabView)
+│   │   │   ├── SettingsView+PresetsTab.swift     Presets tab (PresetsTabView)
+│   │   │   ├── SettingsView+GeneralTab.swift     General tab (GeneralTabView)
+│   │   │   ├── SettingsView+BackupTab.swift      Backup tab (BackupTabView)
+│   │   │   ├── SettingsView+DebugTab.swift       Diagnostics tab (DebugTabView — collapsible health checks, activity log, edge-case tools)
+│   │   │   └── SettingsView+HelpTab.swift        Help tab (HelpTabView — links + "Report a bug" auto-attach)
+│   │   ├── MenuBar/               Status-bar dropdown
+│   │   │   ├── MenuBarContent.swift  Menu bar population
+│   │   │   ├── PositionTile.swift    DraggableScreenTile + TestNotification
+│   │   │   └── LogEntryRow.swift     SwiftUI row view for a single log entry (Diagnostics tab)
+│   │   └── Overlay/                Custom banner rendering
+│   │       └── CustomOverlay.swift  Custom banner view + manager
+│   │
+│   ├── System/                    Platform/OS integration
+│   │   ├── AccessibilityPermissionMonitor.swift TCC polling
+│   │   ├── FocusModeMonitor.swift Focus/DND detection (reads Assertions.json, 1s cache)
+│   │   ├── LaunchAtLogin.swift    SMAppService wrapper
+│   │   ├── InstallSource.swift    Homebrew-vs-direct install detection
+│   │   ├── HomebrewUpdater.swift  In-app `brew upgrade --cask` runner
+│   │   └── UpdateChecker.swift    GitHub Releases version check
+│   │
+│   └── Diagnostics/               Logging + health-check reporting
+│       ├── Diagnostics.swift      Health-check collection + bug-report URL builder (shared)
+│       └── NannyLogger.swift      In-memory log ring buffer
 │
 ├── NotificationNanny              (executable target — entry point only)
 │   └── NotificationNannyApp.swift @main + AppCoordinator
@@ -242,6 +256,8 @@ NotificationNanny (SPM Package)
     ├── SnoozeTests.swift                snooze / isActive gate
     └── TintMigrationTests.swift         legacy bannerColorR/G/B → bannerTint
 ```
+
+Test target files stay flat (no subfolders) — SPM discovers them recursively regardless, and the current count doesn't warrant the extra nesting.
 
 ### Target Responsibilities
 
