@@ -7,7 +7,7 @@ cask "notificationnanny" do
   desc "Control the position, style, and behavior of macOS notification banners"
   homepage "https://github.com/chessper53/NotificationNanny"
 
-  depends_on macos: ">= :sonoma"
+  depends_on macos: :sonoma
 
   app "NotificationNanny.app"
 
