@@ -20,7 +20,6 @@ struct BannerTabView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            // Experimental disclaimer
             HStack(alignment: .top, spacing: 8) {
                 Image(systemName: "flask")
                     .font(.caption).foregroundStyle(Color(red: 1.0, green: 0.55, blue: 0.0)).padding(.top, 1)
@@ -39,7 +38,6 @@ struct BannerTabView: View {
             .padding(10)
             .background(Color.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 8))
 
-            // Scale
             VStack(alignment: .leading, spacing: 10) {
                 HStack {
                     Text("Default Scale").font(.caption.weight(.medium)).foregroundStyle(.secondary)
@@ -61,7 +59,6 @@ struct BannerTabView: View {
             .padding(12)
             .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
 
-            // Background color
             VStack(alignment: .leading, spacing: 10) {
                 HStack {
                     Text("Background Color").font(.caption.weight(.medium)).foregroundStyle(.secondary)
@@ -97,7 +94,6 @@ struct BannerTabView: View {
             .padding(12)
             .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
 
-            // Text color
             VStack(alignment: .leading, spacing: 10) {
                 HStack {
                     Text("Text Color").font(.caption.weight(.medium)).foregroundStyle(.secondary)
@@ -108,9 +104,9 @@ struct BannerTabView: View {
                 }
                 HStack(spacing: 8) {
                     ColorPicker("Text", selection: Binding(
-                        get: { settings.bannerTextTint?.color ?? .white },
+                        get: { settings.bannerTextTint?.color ?? .black },
                         set: { newColor in
-                            let color = NSColor(newColor).usingColorSpace(.sRGB) ?? .white
+                            let color = NSColor(newColor).usingColorSpace(.sRGB) ?? .black
                             settings.bannerTextTint = BannerTint(
                                 r: Double(color.redComponent),
                                 g: Double(color.greenComponent),
@@ -127,7 +123,6 @@ struct BannerTabView: View {
             .padding(12)
             .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
 
-            // Animation
             VStack(alignment: .leading, spacing: 10) {
                 HStack {
                     Text("Animation").font(.caption.weight(.medium)).foregroundStyle(.secondary)
@@ -140,7 +135,6 @@ struct BannerTabView: View {
                     .buttonStyle(.borderless).foregroundStyle(Color.nannyAccent)
                 }
 
-                // Live preview — replays on selection change, the Replay button, or a tap.
                 AnimationPreviewPane(animation: settings.bannerAnimation, replay: previewReplay,
                                      tint: settings.hasBannerColor ? settings.bannerColor : .clear,
                                      textColor: settings.effectiveBannerTextColor ?? .white)
@@ -165,7 +159,6 @@ struct BannerTabView: View {
             .padding(12)
             .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
 
-            // Per-group overrides
             if !settings.appGroups.isEmpty {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Per-app overrides").font(.caption.weight(.medium)).foregroundStyle(.secondary)
@@ -264,8 +257,6 @@ struct BannerTabView: View {
         .padding(.horizontal, 14).padding(.vertical, 10)
     }
 
-    /// Compact per-group animation picker. Defaults to inheriting the global animation;
-    /// a menu keeps the row clean rather than repeating the full chip grid per group.
     @ViewBuilder
     private func groupAnimationMenu(for group: AppGroup) -> some View {
         let override = settings.appGroups.first(where: { $0.id == group.id })?.bannerAnimation
@@ -324,18 +315,10 @@ struct BannerTabView: View {
     }
 }
 
-/// A small stand-in banner that plays the given animation's intro curve, used as a
-/// live preview in the Banner tab. It reuses `BannerAnimation.hidden`/`intro` so the
-/// preview always matches what the real overlay does. Replays whenever `replay`
-/// changes or a different `animation` is selected.
 private struct AnimationPreviewPane: View {
     let animation: BannerAnimation
     let replay: Int
-    /// The tint to render the sample banner with, or `.clear` for the untinted dark banner.
     var tint: Color = .clear
-    /// The text color to render the sample banner with. This preview box is always a
-    /// fixed dark swatch (unlike the real overlay's adaptive background), so `.white`
-    /// is the correct default here, not a regression of the overlay's own appearance fix.
     var textColor: Color = .white
 
     @State private var animX: CGFloat = 0
@@ -367,8 +350,6 @@ private struct AnimationPreviewPane: View {
         }
         .padding(.horizontal, 12).padding(.vertical, 10)
         .frame(width: 220)
-        // Mirror the real overlay's chrome: a dark base with the selected tint laid over it,
-        // so the preview reflects the chosen Background Color instead of a fixed red.
         .background {
             ZStack {
                 Color.black.opacity(0.5)
@@ -386,4 +367,3 @@ private struct AnimationPreviewPane: View {
         }
     }
 }
-
