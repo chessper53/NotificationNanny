@@ -7,6 +7,12 @@ final class AppNameResolver {
     private static let bannerSubroles: Set<String> = [
         "AXNotificationCenterBanner",
         "AXNotificationCenterBannerStack",
+        // "Persistent" notification style (System Settings → Notifications → app →
+        // Notification style) renders through AXSystemDialog using the Alert subrole
+        // instead of the Banner one used by "Temporary" style. Same content shape,
+        // different subrole string — both must be recognised as a real notification.
+        "AXNotificationCenterAlert",
+        "AXNotificationCenterAlertStack",
     ]
 
     private var cache: [CFHashCode: String] = [:]
