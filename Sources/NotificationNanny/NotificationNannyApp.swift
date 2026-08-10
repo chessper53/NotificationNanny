@@ -47,6 +47,7 @@ final class AppCoordinator: NSObject, ObservableObject, NSApplicationDelegate {
         Task { @MainActor [weak self] in self?.autoEnableLoginItemIfNeeded() }
         setupStatusItem()
         observePermission()
+        observeColorPanelActivation()
         NSApp.delegate = self
         // Auto-open settings if Accessibility permission hasn't been granted yet.
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
@@ -138,6 +139,21 @@ final class AppCoordinator: NSObject, ObservableObject, NSApplicationDelegate {
         let size = window.frame.size
         window.setFrameOrigin(NSPoint(x: vf.midX - size.width / 2,
                                       y: vf.midY - size.height / 2))
+    }
+
+    /// `NSColorPanel` (behind SwiftUI's `ColorPicker`) delivers its `changeColor:` action
+    /// through the key window's responder chain. As an `LSUIElement` accessory app we don't
+    /// get the Dock's usual activation handling, so if the panel opens or is dragged to a
+    /// different display/Space than wherever we were last active, this app can lose active-app
+    /// status and the panel's color changes silently stop reaching the settings Binding.
+    /// Re-activating whenever the shared panel becomes key keeps it wired regardless of which
+    /// screen it ends up on.
+    private func observeColorPanelActivation() {
+        NotificationCenter.default.addObserver(
+            forName: NSWindow.didBecomeKeyNotification, object: NSColorPanel.shared, queue: .main
+        ) { _ in
+            Task { @MainActor in NSApp.activate(ignoringOtherApps: true) }
+        }
     }
 
     // MARK: - Single-instance guard
