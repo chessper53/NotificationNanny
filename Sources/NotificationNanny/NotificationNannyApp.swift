@@ -9,8 +9,6 @@ struct NotificationNannyApp: App {
     @StateObject private var coordinator = AppCoordinator()
 
     var body: some Scene {
-        // LSUIElement apps have no menu bar, so this empty Settings scene satisfies
-        // the App protocol without auto-showing any window on launch.
         Settings { EmptyView() }
     }
 }
@@ -26,10 +24,6 @@ final class AppCoordinator: NSObject, ObservableObject, NSApplicationDelegate {
     private var cancellables = Set<AnyCancellable>()
 
     override init() {
-        // Single-instance guard. A second instance would attach its own AXObserver to
-        // NotificationCenterUI (two processes fighting over banner positions) and run the
-        // TCC reset below, revoking Accessibility from the live instance. Hand off to the
-        // existing one and exit before any of that setup happens.
         AppCoordinator.terminateIfAlreadyRunning()
         settings = AppSettings()
         launchAtLogin = LaunchAtLogin()
@@ -39,8 +33,6 @@ final class AppCoordinator: NSObject, ObservableObject, NSApplicationDelegate {
         repositioner = NotificationRepositioner()
         super.init()
         repositioner.bind(to: settings)
-        // UNUserNotificationCenter.current() aborts if the process has no bundle ID
-        // (e.g. raw binary run by the debugger outside a .app wrapper).
         if Bundle.main.bundleIdentifier != nil {
             UNUserNotificationCenter.current().delegate = NotificationDisplayDelegate.shared
         }
@@ -49,14 +41,11 @@ final class AppCoordinator: NSObject, ObservableObject, NSApplicationDelegate {
         observePermission()
         observeColorPanelActivation()
         NSApp.delegate = self
-        // Auto-open settings if Accessibility permission hasn't been granted yet.
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
             guard let self, !self.repositioner.hasAccessibilityPermission else { return }
             self.openSettings()
         }
     }
-
-    // MARK: - Status item
 
     private func setupStatusItem() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
@@ -88,15 +77,11 @@ final class AppCoordinator: NSObject, ObservableObject, NSApplicationDelegate {
         openSettings(on: statusItemScreen())
     }
 
-    /// The display whose menu bar currently hosts the status item — i.e. the one the
-    /// user just clicked. Falls back to the screen under the mouse.
     private func statusItemScreen() -> NSScreen? {
         if let screen = statusItem?.button?.window?.screen { return screen }
         let mouse = NSEvent.mouseLocation
         return NSScreen.screens.first { $0.frame.contains(mouse) }
     }
-
-    // MARK: - Settings window
 
     func openSettings(on screen: NSScreen? = nil) {
         if let win = settingsWindow {
@@ -120,10 +105,6 @@ final class AppCoordinator: NSObject, ObservableObject, NSApplicationDelegate {
         presentWindow(window, on: screen)
     }
 
-    /// Brings an existing settings window to the front. As an `LSUIElement` accessory
-    /// app, the macOS 14+ cooperative `NSApp.activate()` will not pull our window above
-    /// the currently active app — so the window would stay hidden behind whatever the
-    /// user clicked into. `ignoringOtherApps` + `orderFrontRegardless` forces it forward.
     private func presentWindow(_ window: NSWindow, on screen: NSScreen? = nil) {
         if window.isMiniaturized { window.deminiaturize(nil) }
         if let screen { centerWindow(window, on: screen) }
@@ -132,8 +113,6 @@ final class AppCoordinator: NSObject, ObservableObject, NSApplicationDelegate {
         window.orderFrontRegardless()
     }
 
-    /// Center `window` on the given screen's visible area, so it opens on whichever
-    /// display the menu-bar icon was clicked rather than always on the primary screen.
     private func centerWindow(_ window: NSWindow, on screen: NSScreen) {
         let vf = screen.visibleFrame
         let size = window.frame.size
@@ -141,20 +120,6 @@ final class AppCoordinator: NSObject, ObservableObject, NSApplicationDelegate {
                                       y: vf.midY - size.height / 2))
     }
 
-    /// `NSColorPanel` (behind SwiftUI's `ColorPicker`) delivers its `changeColor:` action
-    /// through the key window's responder chain. As an `LSUIElement` accessory app we don't
-    /// get the Dock's usual activation handling, so if the panel opens or is dragged to a
-    /// different display/Space than wherever we were last active, this app can lose active-app
-    /// status and the panel's color changes silently stop reaching the settings Binding.
-    /// Re-activating whenever the shared panel becomes key keeps it wired regardless of which
-    /// screen it ends up on.
-    ///
-    /// Deliberately does NOT reference `NSColorPanel.shared` here — touching that accessor
-    /// creates the panel's window immediately, and doing so this early (still inside
-    /// AppCoordinator.init, while SwiftUI's own App graph is mid-instantiation) triggers a
-    /// reentrant window-layout pass that crashes with an AttributeGraph precondition failure.
-    /// Matching on the notification's window by class name instead means the real
-    /// NSColorPanel is only ever touched lazily, once the user actually opens one.
     private func observeColorPanelActivation() {
         NotificationCenter.default.addObserver(
             forName: NSWindow.didBecomeKeyNotification, object: nil, queue: .main
@@ -165,11 +130,6 @@ final class AppCoordinator: NSObject, ObservableObject, NSApplicationDelegate {
         }
     }
 
-    // MARK: - Single-instance guard
-
-    /// If another copy of this app (same bundle ID, different PID) is already running,
-    /// bring it forward and terminate this process. Skipped when there is no bundle ID
-    /// (e.g. a raw binary launched by the debugger), where the lookup wouldn't apply.
     private static func terminateIfAlreadyRunning() {
         guard let bundleID = Bundle.main.bundleIdentifier else { return }
         let myPID = ProcessInfo.processInfo.processIdentifier
@@ -181,8 +141,6 @@ final class AppCoordinator: NSObject, ObservableObject, NSApplicationDelegate {
         existing.activate()
         exit(0)
     }
-
-    // MARK: - TCC reset on binary change
 
     private static func resetTCCIfBinaryChanged() {
         guard let execURL = Bundle.main.executableURL,
@@ -203,8 +161,6 @@ final class AppCoordinator: NSObject, ObservableObject, NSApplicationDelegate {
         }
     }
 
-    // MARK: - Notification display delegate
-
     private final class NotificationDisplayDelegate: NSObject, UNUserNotificationCenterDelegate {
         static let shared = NotificationDisplayDelegate()
         func userNotificationCenter(_ center: UNUserNotificationCenter,
@@ -214,14 +170,10 @@ final class AppCoordinator: NSObject, ObservableObject, NSApplicationDelegate {
         }
     }
 
-    // MARK: - App delegate
-
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         if settings.hideMenuBarIcon { openSettings() }
         return true
     }
-
-    // MARK: - Login item
 
     private func autoEnableLoginItemIfNeeded() {
         let key = "didAutoEnableLoginItem"
