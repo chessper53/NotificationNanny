@@ -56,19 +56,48 @@ async function fetchLiveStats() {
         fetchedAt: Date.now(),
     };
 }
+function prefersReducedMotion() {
+    return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+}
+function easeOutCubic(t) {
+    return 1 - Math.pow(1 - t, 3);
+}
+function animateCountUp(el, to, duration = 1200) {
+    const start = performance.now();
+    function tick(now) {
+        const progress = Math.min(1, (now - start) / duration);
+        const value = Math.round(to * easeOutCubic(progress));
+        el.textContent = formatCompact(value);
+        if (progress < 1) {
+            requestAnimationFrame(tick);
+        }
+    }
+    requestAnimationFrame(tick);
+}
+const animatedStats = new Set();
 function renderStats(stats) {
-    const tiles = {
-        downloads: formatCompact(stats.downloads),
-        stars: formatCompact(stats.stars),
-        forks: formatCompact(stats.forks),
-        version: stats.latestTag ?? "—",
+    const numericTiles = {
+        downloads: stats.downloads,
+        stars: stats.stars,
+        forks: stats.forks,
     };
-    for (const [key, text] of Object.entries(tiles)) {
-        const tile = document.querySelector(`[data-stat="${key}"] [data-value]`);
-        if (!tile)
+    for (const [key, value] of Object.entries(numericTiles)) {
+        const el = document.querySelector(`[data-stat="${key}"] [data-value]`);
+        if (!el)
             continue;
-        tile.textContent = text;
-        tile.classList.remove("is-loading");
+        el.classList.remove("is-loading");
+        if (prefersReducedMotion() || animatedStats.has(key)) {
+            el.textContent = formatCompact(value);
+        }
+        else {
+            animatedStats.add(key);
+            animateCountUp(el, value);
+        }
+    }
+    const versionEl = document.querySelector('[data-stat="version"] [data-value]');
+    if (versionEl) {
+        versionEl.textContent = stats.latestTag ?? "—";
+        versionEl.classList.remove("is-loading");
     }
 }
 async function loadStats() {
