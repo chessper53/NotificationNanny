@@ -54,6 +54,6 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add Casks/notificationnanny.rb
           git commit -m "chore: bump cask to v${{ steps.version.outputs.version }}"
-          git push
+          git push origin HEAD:main
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
