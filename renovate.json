@@ -1,0 +1,41 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended",
+    ":dependencyDashboard",
+    ":semanticCommits"
+  ],
+  "timezone": "Europe/Berlin",
+  "schedule": ["before 6am on monday"],
+  "prConcurrentLimit": 3,
+  "prHourlyLimit": 2,
+  "labels": ["dependencies"],
+  "ignorePaths": [
+    "**/node_modules/**",
+    ".build/**",
+    "build/**"
+  ],
+  "packageRules": [
+    {
+      "description": "Group all GitHub Actions bumps into one PR — they are low-risk and land together.",
+      "matchManagers": ["github-actions"],
+      "groupName": "github actions",
+      "automerge": false
+    },
+    {
+      "description": "TypeScript is a build-only dep for the landing page; minor/patch bumps can ride together.",
+      "matchFileNames": ["site/package.json"],
+      "matchDepTypes": ["devDependencies"],
+      "matchUpdateTypes": ["minor", "patch"],
+      "groupName": "site devDependencies"
+    }
+  ],
+  "vulnerabilityAlerts": {
+    "labels": ["security"],
+    "schedule": ["at any time"]
+  },
+  "lockFileMaintenance": {
+    "enabled": true,
+    "schedule": ["before 6am on the first day of the month"]
+  }
+}
