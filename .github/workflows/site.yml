@@ -1,0 +1,51 @@
+name: Site
+
+# The landing page ships as a prebuilt artifact: pages.yml uploads site/ as-is,
+# including the committed main.js. Nothing else in CI compiles the TypeScript,
+# so without this workflow a broken tsc or a stale main.js reaches production
+# unnoticed — which is how the TypeScript 7 bump landed green.
+on:
+  push:
+    branches: [main]
+    paths: [site/**, .github/workflows/site.yml]
+  pull_request:
+    branches: [main]
+    paths: [site/**, .github/workflows/site.yml]
+
+concurrency:
+  group: site-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Compile TypeScript
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: site/package-lock.json
+
+      - name: Install
+        working-directory: site
+        run: npm ci
+
+      - name: Compile
+        working-directory: site
+        run: npm run build
+
+      # main.js is committed and is what actually gets deployed, so it has to
+      # match what src/main.ts compiles to. Skips itself if main.js stops being
+      # tracked, i.e. once it is built during deploy instead of committed.
+      - name: Committed main.js is up to date
+        run: |
+          if git ls-files --error-unmatch site/main.js >/dev/null 2>&1; then
+            if ! git diff --exit-code -- site/main.js; then
+              echo "::error::site/main.js is stale. Run 'npm run build' in site/ and commit the result."
+              exit 1
+            fi
+          else
+            echo "site/main.js is not tracked — built at deploy time, nothing to verify."
+          fi
