@@ -14,9 +14,9 @@ concurrency:
 jobs:
   test:
     name: Build & Test
-    runs-on: macos-15
+    runs-on: macos-26
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Select latest Xcode
         run: |
@@ -26,7 +26,7 @@ jobs:
           swift --version
 
       - name: Cache SwiftPM build
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: .build
           key: ${{ runner.os }}-spm-test-${{ hashFiles('Package.swift', 'Sources/**/*.swift', 'Tests/**/*.swift') }}
@@ -57,9 +57,9 @@ jobs:
 
   bundle:
     name: Bundle smoke build
-    runs-on: macos-15
+    runs-on: macos-26
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Select latest Xcode
         run: |
@@ -67,7 +67,7 @@ jobs:
           sudo xcode-select -s "$XCODE"
 
       - name: Cache SwiftPM build
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: .build
           key: ${{ runner.os }}-spm-release-${{ hashFiles('Package.swift', 'Sources/**/*.swift') }}
