@@ -8,6 +8,6 @@
     "serve": "python3 -m http.server 4173"
   },
   "devDependencies": {
-    "typescript": "^5.5.4"
+    "typescript": "^7.0.0"
   }
 }
