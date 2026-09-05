@@ -2,9 +2,9 @@
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": [
     "config:recommended",
-    ":dependencyDashboard",
     ":semanticCommits"
   ],
+  "dependencyDashboard": false,
   "timezone": "Europe/Berlin",
   "schedule": ["before 6am on monday"],
   "prConcurrentLimit": 3,
@@ -15,19 +15,29 @@
     ".build/**",
     "build/**"
   ],
+  "automergeStrategy": "squash",
+  "platformAutomerge": false,
   "packageRules": [
     {
-      "description": "Group all GitHub Actions bumps into one PR — they are low-risk and land together.",
+      "description": "Actions minor/patch/digest are exercised directly by CI — let them land unattended once it is green.",
       "matchManagers": ["github-actions"],
+      "matchUpdateTypes": ["minor", "patch", "digest"],
       "groupName": "github actions",
-      "automerge": false
+      "automerge": true
     },
     {
-      "description": "TypeScript is a build-only dep for the landing page; minor/patch bumps can ride together.",
+      "description": "Landing-page build deps: minor/patch only, grouped.",
       "matchFileNames": ["site/package.json"],
       "matchDepTypes": ["devDependencies"],
       "matchUpdateTypes": ["minor", "patch"],
-      "groupName": "site devDependencies"
+      "groupName": "site devDependencies",
+      "automerge": true
+    },
+    {
+      "description": "Majors change behaviour in ways green CI does not always catch (runner images, compiler rewrites). Always review by hand.",
+      "matchUpdateTypes": ["major"],
+      "automerge": false,
+      "addLabels": ["needs-review"]
     }
   ],
   "vulnerabilityAlerts": {
@@ -36,6 +46,7 @@
   },
   "lockFileMaintenance": {
     "enabled": true,
-    "schedule": ["before 6am on the first day of the month"]
+    "schedule": ["before 6am on the first day of the month"],
+    "automerge": true
   }
 }
