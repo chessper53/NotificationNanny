@@ -2,12 +2,13 @@
   "compilerOptions": {
     "target": "ES2020",
     "lib": ["ES2020", "DOM"],
-    "module": "None",
-    "outFile": "main.js",
+    "rootDir": "src",
+    "outDir": ".",
     "strict": true,
     "noUncheckedIndexedAccess": true,
     "forceConsistentCasingInFileNames": true,
     "skipLibCheck": true
   },
-  "include": ["src/main.ts"]
+  "include": ["src/main.ts"],
+  "exclude": ["node_modules"]
 }
