@@ -280,6 +280,14 @@ final class AppCoordinator: NSObject, ObservableObject, NSApplicationDelegate, N
         return true
     }
 
+    /// Settings writes are debounced so dragging doesn't hammer UserDefaults, which
+    /// leaves a sub-second window where a crash or force-quit would lose the last
+    /// edit. Deactivating is the natural end of an editing session and costs one
+    /// write, so close that window here rather than relying on a clean terminate.
+    func applicationDidResignActive(_ notification: Notification) {
+        settings.flushPendingSaves()
+    }
+
     func applicationWillTerminate(_ notification: Notification) {
         settings.flushPendingSaves()
     }

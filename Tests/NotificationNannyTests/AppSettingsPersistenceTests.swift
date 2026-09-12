@@ -49,11 +49,17 @@ struct AppSettingsPersistenceTests {
         #expect(store.make().targetDisplayID == 99)
     }
 
+    // placements and appGroups are written through a debounce (dragging the
+    // position tile would otherwise re-encode JSON on every frame), so these two
+    // flush the way the app does when it deactivates or quits. Without the flush
+    // the write is still sitting on the main queue when instance B reads.
     @Test func placements_persistAcrossInit() {
         guard let screen = NSScreen.main else { return }
         let store = Store(); defer { store.cleanup() }
         let written = ScreenPlacement(position: .bottomLeft, xOffset: 5, yOffset: -3)
-        store.make().setPlacement(written, for: screen)
+        let a = store.make()
+        a.setPlacement(written, for: screen)
+        a.flushPendingSaves()
         let read = store.make().placement(for: screen)
         #expect(read.position == .bottomLeft)
         #expect(read.xOffset == 5)
@@ -160,6 +166,7 @@ struct AppSettingsPersistenceTests {
         let id = a.addGroup(name: "Work")
         a.addApp("Slack", toGroup: id)
         a.addApp("Zoom", toGroup: id)
+        a.flushPendingSaves()
         let b = store.make()
         #expect(b.appGroups.count == 1)
         #expect(b.appGroups.first?.name == "Work")
@@ -185,5 +192,41 @@ struct AppSettingsPersistenceTests {
         // The next init should prefer the file over UserDefaults.
         let b = store.make()
         #expect(b.knownAppNames == ["Mail"])
+    }
+
+    // MARK: - Write coalescing
+    //
+    // Dragging the position tile drives setPlacement at screen refresh rate. Each
+    // write re-encodes the whole placements dictionary to JSON, so it has to be
+    // debounced rather than hitting UserDefaults per frame. These pin that down:
+    // without the coalescer the suite below shows an intermediate value, and the
+    // drag lag this was fixing comes straight back.
+
+    @Test func placements_rapidWrites_coalesceIntoOneStore() {
+        guard let screen = NSScreen.main else { return }
+        let store = Store(); defer { store.cleanup() }
+        let a = store.make()
+
+        for i in 1...60 {
+            a.setPlacement(ScreenPlacement(position: .topLeft, xOffset: Double(i), yOffset: 0),
+                           for: screen)
+        }
+        // Nothing on disk yet — all 60 frames collapsed into one pending write.
+        #expect(UserDefaults(suiteName: store.suiteName)!
+            .data(forKey: "placementsByDisplayID") == nil)
+
+        a.flushPendingSaves()
+        #expect(store.make().placement(for: screen).xOffset == 60)
+    }
+
+    @Test func placements_inMemoryValueIsImmediate() {
+        guard let screen = NSScreen.main else { return }
+        let store = Store(); defer { store.cleanup() }
+        let a = store.make()
+        // Only the disk write is deferred; the live value must update at once or
+        // the banner would visibly lag the pointer during a drag.
+        a.setPlacement(ScreenPlacement(position: .bottomRight, xOffset: 7, yOffset: 9), for: screen)
+        #expect(a.placement(for: screen).xOffset == 7)
+        #expect(a.placement(for: screen).position == .bottomRight)
     }
 }
