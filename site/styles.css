@@ -1,14 +1,14 @@
 /* ==========================================================================
    Tokens
-   Brand pulled from the app itself: nannyAccent (#895C9B, MenuBarContent.swift)
-   and the icon's own gradient stops (deep indigo -> lighter purple).
+   Brand pulled from the app itself: nannyAccent (amber, MenuBarContent.swift)
+   and the icon's own gradient stops (graphite).
    ========================================================================== */
 
 :root {
-  --accent: #9a6bab;
-  --accent-strong: #b183c4;
-  --grad-a: #4c4297;
-  --grad-b: #9166d1;
+  --accent: #e8833a;
+  --accent-strong: #f09b5e;
+  --grad-a: #1a1c21;
+  --grad-b: #2a2d34;
 
   --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
@@ -28,8 +28,8 @@
   color-scheme: dark light;
 
   /* Dark (default) */
-  --bg: #0b0a10;
-  --bg-raised: #131019;
+  --bg: #0d0e11;
+  --bg-raised: #15171c;
   --surface: rgba(255, 255, 255, 0.045);
   --surface-strong: rgba(255, 255, 255, 0.07);
   --border: rgba(255, 255, 255, 0.09);
@@ -41,17 +41,17 @@
 
 @media (prefers-color-scheme: light) {
   :root {
-    --accent: #7c4f8e;
-    --accent-strong: #6a4179;
-    --bg: #f7f5f9;
+    --accent: #a85514;
+    --accent-strong: #8a4310;
+    --bg: #f7f6f4;
     --bg-raised: #ffffff;
-    --surface: rgba(20, 12, 28, 0.035);
-    --surface-strong: rgba(20, 12, 28, 0.055);
-    --border: rgba(20, 12, 28, 0.09);
-    --border-strong: rgba(20, 12, 28, 0.16);
-    --text-primary: rgba(15, 10, 20, 0.92);
-    --text-secondary: rgba(15, 10, 20, 0.6);
-    --text-muted: rgba(15, 10, 20, 0.42);
+    --surface: rgba(18, 18, 20, 0.035);
+    --surface-strong: rgba(18, 18, 20, 0.055);
+    --border: rgba(18, 18, 20, 0.09);
+    --border-strong: rgba(18, 18, 20, 0.16);
+    --text-primary: rgba(14, 14, 16, 0.92);
+    --text-secondary: rgba(14, 14, 16, 0.6);
+    --text-muted: rgba(14, 14, 16, 0.42);
   }
 }
 
