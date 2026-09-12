@@ -29,9 +29,9 @@ package final class NotificationRepositioner: ObservableObject {
     private var cancellables = Set<AnyCancellable>()
     private let logger: NannyLogger
 
-    nonisolated(unsafe) private var observer: AXObserver?
-    private var ncApp: AXUIElement?
-    private var ncPid: pid_t = 0
+    private let axController = AXObserverController()
+    private var ncApp: AXUIElement? { axController.ncApp }
+    private var ncPid: pid_t { axController.ncPid }
 
     package init(logger: NannyLogger? = nil) {
         self.logger = logger ?? .shared
@@ -49,12 +49,6 @@ package final class NotificationRepositioner: ObservableObject {
             guard let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication,
                   app.bundleIdentifier == "com.apple.notificationcenterui" else { return }
             Task { @MainActor [weak self] in self?.startObserving() }
-        }
-    }
-
-    deinit {
-        if let observer {
-            CFRunLoopRemoveSource(CFRunLoopGetMain(), AXObserverGetRunLoopSource(observer), .defaultMode)
         }
     }
 
@@ -99,58 +93,19 @@ package final class NotificationRepositioner: ObservableObject {
         }
         teardownObserver()
 
-        let pid = findNotificationProcessPid()
-        guard pid > 0 else {
+        guard axController.start(onEvent: { [weak self] element, notification in
+            self?.handleAXEvent(element: element, notification: notification)
+        }) else {
             logger.log("NC process not found — will retry when it launches", level: .warn, tag: "AX")
             return
         }
-        let app = AXUIElementCreateApplication(pid)
-
-        var newObserver: AXObserver?
-        guard AXObserverCreate(pid, axNotificationCallback, &newObserver) == .success,
-              let newObserver else { return }
-
-        let selfPtr = Unmanaged.passUnretained(self).toOpaque()
-        for name in [kAXWindowCreatedNotification, kAXFocusedWindowChangedNotification,
-                     kAXWindowMovedNotification, kAXMainWindowChangedNotification,
-                     kAXUIElementDestroyedNotification] as [String] {
-            AXObserverAddNotification(newObserver, app, name as CFString, selfPtr)
-        }
-        CFRunLoopAddSource(CFRunLoopGetMain(), AXObserverGetRunLoopSource(newObserver), .defaultMode)
-
-        self.observer = newObserver
-        self.ncApp = app
-        self.ncPid = pid
-        self.isObserving = true
-        logger.log("Observer started — NC PID \(pid)", tag: "AX")
+        isObserving = true
+        logger.log("Observer started — NC PID \(axController.ncPid)", tag: "AX")
         repositionVisibleWindows()
     }
 
-    private func findNotificationProcessPid() -> pid_t {
-        if let app = NSRunningApplication
-            .runningApplications(withBundleIdentifier: "com.apple.notificationcenterui").first {
-            return app.processIdentifier
-        }
-        for app in NSWorkspace.shared.runningApplications {
-            if app.bundleIdentifier?.localizedCaseInsensitiveContains("notification") == true {
-                return app.processIdentifier
-            }
-        }
-        let windows = CGWindowListCopyWindowInfo([.optionAll], kCGNullWindowID) as? [[String: Any]] ?? []
-        for info in windows {
-            guard let ownerName = info[kCGWindowOwnerName as String] as? String,
-                  ownerName.localizedCaseInsensitiveContains("notification"),
-                  let pid = info[kCGWindowOwnerPID as String] as? Int32 else { continue }
-            return pid
-        }
-        return 0
-    }
-
     private func teardownObserver() {
-        if let observer {
-            CFRunLoopRemoveSource(CFRunLoopGetMain(), AXObserverGetRunLoopSource(observer), .defaultMode)
-        }
-        observer = nil; ncApp = nil; ncPid = 0
+        axController.stop()
         isObserving = false
         lastSelfSetPositions.removeAll()
         lastRepositionAt.removeAll()
@@ -159,6 +114,7 @@ package final class NotificationRepositioner: ObservableObject {
         dismissedKeys.removeAll()
         loggedSkippedKeys.removeAll()
         resolver.invalidateAll()
+        iconCache.invalidateAll()
         customBannerManager.dismissAll()
         logger.log("Observer stopped", tag: "AX")
     }
@@ -171,7 +127,7 @@ package final class NotificationRepositioner: ObservableObject {
         resolver.appName(for: window)
     }
 
-    fileprivate func handleAXEvent(element: AXUIElement, notification: String) {
+    private func handleAXEvent(element: AXUIElement, notification: String) {
         axLog.debug("── AX event: \(notification, privacy: .public)")
 
         if notification == kAXUIElementDestroyedNotification as String {
@@ -854,6 +810,7 @@ package final class NotificationRepositioner: ObservableObject {
                     scale: scale,
                     backgroundColor: bannerBackground,
                     textColor: settings.effectiveBannerTextColor,
+                    redactContent: settings.redactBannerContent,
                     autoDismissSeconds: settings.autoDismissSeconds,
                     animation: animation,
                     onOpen: { [weak self] in self?.handleBannerTap(appName: capturedName, bannerElement: capturedEl) },
@@ -947,7 +904,13 @@ package final class NotificationRepositioner: ObservableObject {
         return (singleLine, "")
     }
 
+    private let iconCache = AppIconCache.shared
+
     private func lookupIcon(for appName: String) -> NSImage? {
+        iconCache.icon(for: appName, resolve: resolveIcon(for:))
+    }
+
+    private func resolveIcon(for appName: String) -> NSImage? {
         let ws = NSWorkspace.shared
         if let icon = ws.runningApplications.first(where: { $0.localizedName == appName })?.icon {
             return icon
@@ -1061,12 +1024,4 @@ package final class NotificationRepositioner: ObservableObject {
         let subrole = window.stringAttribute(kAXSubroleAttribute as String) ?? "none"
         logger.log("\(reason) — \(Int(size.width))×\(Int(size.height)) at (\(Int(pos.x)),\(Int(pos.y))), subrole=\(subrole)", tag: tag)
     }
-}
-
-private func axNotificationCallback(observer: AXObserver, element: AXUIElement,
-                                    notification: CFString, refcon: UnsafeMutableRawPointer?) {
-    guard let refcon else { return }
-    let nanny = Unmanaged<NotificationRepositioner>.fromOpaque(refcon).takeUnretainedValue()
-    let name = notification as String
-    Task { @MainActor in nanny.handleAXEvent(element: element, notification: name) }
 }

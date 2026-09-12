@@ -4,24 +4,25 @@ import AppKit
 struct ExceptionsTabView: View {
     @EnvironmentObject var settings: AppSettings
     @EnvironmentObject var repositioner: NotificationRepositioner
+    @ObservedObject private var loc = LocalizationManager.shared
 
     private enum GroupMode: Equatable { case browsing, adding }
 
     @State private var selectedGroupID: UUID? = nil
     @State private var groupMode: GroupMode = .browsing
     @State private var newGroupName = ""
-    @State private var iconCache: [String: NSImage] = [:]
+    private let iconCache = AppIconCache.shared
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text("Create groups of apps and give each group its own rules: position, screen, banner type, and scale. Apps not in any group use the defaults.")
+            LocalizedText("Create groups of apps and give each group its own rules: position, screen, banner type, and scale. Apps not in any group use the defaults.")
                 .font(.callout)
                 .foregroundStyle(Color(white: 0.55))
                 .fixedSize(horizontal: false, vertical: true)
 
             HStack(alignment: .center, spacing: 8) {
                 if settings.appGroups.isEmpty && groupMode != .adding {
-                    Text("No exceptions yet.").font(.caption).foregroundStyle(.tertiary)
+                    LocalizedText("No exceptions yet.").font(.caption).foregroundStyle(.tertiary)
                     Spacer()
                 } else {
                     ScrollView(.horizontal, showsIndicators: false) {
@@ -43,10 +44,10 @@ struct ExceptionsTabView: View {
 
                 if groupMode == .adding {
                     HStack(spacing: 6) {
-                        TextField("Name", text: $newGroupName)
+                        TextField(loc.string("Name"), text: $newGroupName)
                             .textFieldStyle(.roundedBorder).controlSize(.small).font(.caption)
                             .onSubmit { commitNewGroup() }
-                        Button("Create", action: commitNewGroup)
+                        Button(loc.string("Create"), action: commitNewGroup)
                             .buttonStyle(.borderedProminent).controlSize(.mini)
                             .disabled(newGroupName.trimmingCharacters(in: .whitespaces).isEmpty)
                         Button { newGroupName = ""; groupMode = .browsing } label: {
@@ -99,9 +100,9 @@ struct ExceptionsTabView: View {
                         set: { newVal in settings.setGroupTargetDisplay(newVal, forGroupID: group.id) }
                     )
                     HStack(spacing: 4) {
-                        Text("Screen:").font(.caption).foregroundStyle(.secondary)
+                        LocalizedText("Screen:").font(.caption).foregroundStyle(.secondary)
                         Picker("", selection: displayBinding) {
-                            Text("Default").tag(CGDirectDisplayID(0))
+                            LocalizedText("Default").tag(CGDirectDisplayID(0))
                             ForEach(screens, id: \.displayID) { screen in
                                 Text(screen.nannyDisplayName).tag(screen.displayID)
                             }
@@ -116,9 +117,9 @@ struct ExceptionsTabView: View {
 
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
-                    Text("Fine-tune").font(.caption.weight(.medium)).foregroundStyle(.secondary)
+                    LocalizedText("Fine-tune").font(.caption.weight(.medium)).foregroundStyle(.secondary)
                     Spacer()
-                    Button("Reset") {
+                    Button(loc.string("Reset")) {
                         placementBinding.wrappedValue.xOffset = 0
                         placementBinding.wrappedValue.yOffset = 0
                     }
@@ -133,7 +134,7 @@ struct ExceptionsTabView: View {
             .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 8))
 
             VStack(alignment: .leading, spacing: 6) {
-                Text("Assigned Apps").font(.footnote.weight(.semibold)).foregroundStyle(Color(white: 0.45))
+                LocalizedText("Assigned Apps").font(.footnote.weight(.semibold)).foregroundStyle(Color(white: 0.45))
                 appAssignmentRow(for: group)
             }
 
@@ -151,7 +152,7 @@ struct ExceptionsTabView: View {
         ScrollView(showsIndicators: true) {
             VStack(alignment: .leading, spacing: 1) {
                 if settings.knownAppNames.isEmpty {
-                    Text("No apps seen yet — receive a notification from any app and it will appear here.")
+                    LocalizedText("No apps seen yet — receive a notification from any app and it will appear here.")
                         .font(.caption2).foregroundStyle(.tertiary).padding(.horizontal, 6).padding(.vertical, 6)
                 } else {
                     ForEach(settings.knownAppNames, id: \.self) { appName in
@@ -187,26 +188,23 @@ struct ExceptionsTabView: View {
     }
 
     private func cachedIcon(for appName: String) -> NSImage? {
-        if let hit = iconCache[appName] { return hit }
-        // Primary: running app
-        if let icon = NSWorkspace.shared.runningApplications
-            .first(where: { $0.localizedName == appName })?.icon {
-            DispatchQueue.main.async { iconCache[appName] = icon }
-            return icon
-        }
-        // Fallback: directory scan
-        let dirs = ["/Applications", NSHomeDirectory() + "/Applications",
-                    "/System/Applications", "/System/Applications/Utilities"]
-        for dir in dirs {
-            let path = "\(dir)/\(appName).app"
-            if FileManager.default.fileExists(atPath: path) {
-                let img = NSWorkspace.shared.icon(forFile: path)
-                img.size = NSSize(width: 16, height: 16)
-                DispatchQueue.main.async { iconCache[appName] = img }
-                return img
+        iconCache.icon(for: appName) { name in
+            if let icon = NSWorkspace.shared.runningApplications
+                .first(where: { $0.localizedName == name })?.icon {
+                return icon
             }
+            let dirs = ["/Applications", NSHomeDirectory() + "/Applications",
+                        "/System/Applications", "/System/Applications/Utilities"]
+            for dir in dirs {
+                let path = "\(dir)/\(name).app"
+                if FileManager.default.fileExists(atPath: path) {
+                    let img = NSWorkspace.shared.icon(forFile: path)
+                    img.size = NSSize(width: 16, height: 16)
+                    return img
+                }
+            }
+            return nil
         }
-        return nil
     }
 
     @ViewBuilder

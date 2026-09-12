@@ -6,6 +6,7 @@ package struct SettingsView: View {
     @EnvironmentObject var settings: AppSettings
     @EnvironmentObject var repositioner: NotificationRepositioner
     @EnvironmentObject var launchAtLogin: LaunchAtLogin
+    @ObservedObject private var loc = LocalizationManager.shared
 
     enum NavTab: Hashable { case position, exceptions, presets, general, banner, backup, help, debug }
 
@@ -58,7 +59,7 @@ package struct SettingsView: View {
                         HStack(spacing: 8) {
                             Image(systemName: settings.isEnabled ? "pause.circle" : "play.circle")
                                 .frame(width: 16, alignment: .center)
-                            Text(settings.isEnabled ? "Disable" : "Enable")
+                            LocalizedText(settings.isEnabled ? "Disable" : "Enable")
                             Spacer()
                         }
                         .font(.callout)
@@ -73,7 +74,7 @@ package struct SettingsView: View {
                     } label: {
                         HStack(spacing: 8) {
                             Image(systemName: "power").frame(width: 16, alignment: .center)
-                            Text("Quit")
+                            LocalizedText("Quit")
                             Spacer()
                         }
                         .font(.callout)
@@ -153,11 +154,11 @@ package struct SettingsView: View {
         Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "—"
     }
 
-    private func sidebarItem(_ label: String, systemImage: String, tab: NavTab) -> some View {
+    private func sidebarItem(_ labelKey: String, systemImage: String, tab: NavTab) -> some View {
         Button { activeTab = tab } label: {
             HStack(spacing: 8) {
                 Image(systemName: systemImage).frame(width: 16, alignment: .center)
-                Text(label)
+                LocalizedText(labelKey)
                 Spacer()
             }
             .font(.callout)
@@ -180,11 +181,11 @@ package struct SettingsView: View {
                 .foregroundStyle(granted ? .green : .orange)
                 .animation(.easeInOut(duration: 0.2), value: granted)
             VStack(alignment: .leading, spacing: 1) {
-                Text(granted ? "Accessibility access granted" : "Accessibility access required")
+                LocalizedText(granted ? "Accessibility access granted" : "Accessibility access required")
                     .font(.callout.weight(.semibold))
                     .animation(.easeInOut(duration: 0.2), value: granted)
                 if !granted {
-                    Text("NotificationNanny needs this to reposition and intercept notification banners.")
+                    LocalizedText("NotificationNanny needs this to reposition and intercept notification banners.")
                         .font(.caption2)
                         .foregroundStyle(Color(white: 0.65))
                         .fixedSize(horizontal: false, vertical: true)
@@ -192,7 +193,7 @@ package struct SettingsView: View {
             }
             Spacer()
             if !granted {
-                Button("Grant Access") { repositioner.requestAccessibilityPermission() }
+                Button(loc.string("Grant Access")) { repositioner.requestAccessibilityPermission() }
                     .buttonStyle(.borderedProminent)
                     .controlSize(.small)
             }
@@ -230,7 +231,7 @@ package struct SettingsView: View {
                     Text("v\(version) is available")
                         .font(.callout.weight(.semibold))
                 case .running:
-                    Text("Updating via Homebrew\u{2026}")
+                    LocalizedText("Updating via Homebrew…")
                         .font(.callout.weight(.semibold))
                     if let last = brewUpdater.outputLines.last {
                         Text(last)
@@ -241,10 +242,10 @@ package struct SettingsView: View {
                 case .succeeded:
                     Text("Updated to v\(version)")
                         .font(.callout.weight(.semibold))
-                    Text("Relaunch to apply changes")
+                    LocalizedText("Relaunch to apply changes")
                         .font(.caption2).foregroundStyle(.secondary)
                 case .failed(let msg):
-                    Text("Update failed")
+                    LocalizedText("Update failed")
                         .font(.callout.weight(.semibold))
                     Text(msg)
                         .font(.caption2).foregroundStyle(.secondary)
@@ -258,10 +259,10 @@ package struct SettingsView: View {
             switch brewUpdater.state {
             case .idle:
                 if InstallSource.current == .homebrew {
-                    Button("Update Now") { brewUpdater.start() }
+                    Button(loc.string("Update Now")) { brewUpdater.start() }
                         .buttonStyle(.borderedProminent).controlSize(.small)
                 } else {
-                    Button("View Release") {
+                    Button(loc.string("View Release")) {
                         NSWorkspace.shared.open(URL(string: "https://github.com/chessper53/NotificationNanny/releases/latest")!)
                     }
                     .buttonStyle(.borderedProminent).controlSize(.small)
@@ -269,10 +270,10 @@ package struct SettingsView: View {
             case .running:
                 EmptyView()
             case .succeeded:
-                Button("Relaunch") { brewUpdater.relaunch() }
+                Button(loc.string("Relaunch")) { brewUpdater.relaunch() }
                     .buttonStyle(.borderedProminent).controlSize(.small)
             case .failed:
-                Button("View Release") {
+                Button(loc.string("View Release")) {
                     NSWorkspace.shared.open(URL(string: "https://github.com/chessper53/NotificationNanny/releases/latest")!)
                 }
                 .buttonStyle(.borderedProminent).controlSize(.small)
@@ -326,7 +327,7 @@ struct SettingsSliderRow: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
-            Text(title).font(.caption2).foregroundStyle(.secondary)
+            LocalizedText(title).font(.caption2).foregroundStyle(.secondary)
             HStack(spacing: 8) {
                 Slider(value: $value, in: range).controlSize(.mini)
                 TextField("0", value: $value, format: .number.precision(.fractionLength(0)))
@@ -335,7 +336,7 @@ struct SettingsSliderRow: View {
                     .multilineTextAlignment(.trailing)
                     .frame(width: 56)
                     .font(.caption2.monospacedDigit())
-                Text("px").font(.caption2).foregroundStyle(.secondary)
+                LocalizedText("px").font(.caption2).foregroundStyle(.secondary)
             }
         }
     }

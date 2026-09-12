@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import UserNotifications
 
 // MARK: - Shared drag tile
 
@@ -157,11 +158,17 @@ struct BannerChip: View {
 package enum TestNotification {
     /// Sends the test banner and returns its unique title, so the repositioner can tell
     /// this specific banner apart from real notifications that arrive at the same time.
+    ///
+    /// Prefers `UNUserNotificationCenter` (no subprocess) when the user has granted
+    /// notification permission — requested once, silently, at first launch. Falls back
+    /// to `osascript`'s `display notification`, which posts under a distinct identity
+    /// that doesn't require this app's own notification permission, when the user
+    /// hasn't granted (or hasn't yet responded to) that request.
     @discardableResult
     static func send() -> String {
         let stamp = Int(Date().timeIntervalSince1970) % 100000
         let title = "Test #\(stamp)"
-        run(script: "display notification \"Thank you for using NotificationNanny!\" with title \"\(title)\"")
+        dispatch(title: title, body: "Thank you for using NotificationNanny!")
         return title
     }
 
@@ -180,13 +187,34 @@ package enum TestNotification {
     /// One real-path notification with an arbitrary title/body — used by the Diagnostics tab to
     /// exercise content extraction (`splitTitleBody`), wrapping, unicode handling, and width logic.
     static func sendCustom(title: String, body: String) {
-        run(script: "display notification \"\(escapeAS(body))\" with title \"\(escapeAS(title))\"")
+        dispatch(title: title, body: body)
     }
 
     /// Escapes a Swift string for safe embedding inside an AppleScript double-quoted literal.
     private static func escapeAS(_ s: String) -> String {
         s.replacingOccurrences(of: "\\", with: "\\\\")
          .replacingOccurrences(of: "\"", with: "\\\"")
+    }
+
+    private static func dispatch(title: String, body: String) {
+        Task { @MainActor in
+            let status = await UNUserNotificationCenter.current().notificationSettings().authorizationStatus
+            guard status == .authorized else {
+                run(script: "display notification \"\(escapeAS(body))\" with title \"\(escapeAS(title))\"")
+                return
+            }
+            let content = UNMutableNotificationContent()
+            content.title = title
+            content.body = body
+            let request = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil)
+            do {
+                try await UNUserNotificationCenter.current().add(request)
+                NannyLogger.shared.log("TestNotification: delivered via UNUserNotificationCenter")
+            } catch {
+                NannyLogger.shared.log("TestNotification: UNUserNotificationCenter failed (\(error.localizedDescription)) — falling back to osascript", level: .warn)
+                run(script: "display notification \"\(escapeAS(body))\" with title \"\(escapeAS(title))\"")
+            }
+        }
     }
 
     /// Tricky notification shapes that have historically broken extraction or layout.

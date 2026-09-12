@@ -8,19 +8,26 @@ struct DebugTabView: View {
     @EnvironmentObject var repositioner: NotificationRepositioner
     @EnvironmentObject var launchAtLogin: LaunchAtLogin
     @ObservedObject private var logger = NannyLogger.shared
+    @ObservedObject private var loc = LocalizationManager.shared
 
     @State private var diagCopied = false
     @State private var burstCount = 3
     @State private var pasteText = ""
     @State private var applyResult: String?
+    @State private var logTagFilter: String? = nil
+    @State private var logSearch = ""
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             // MARK: One-tap report — everything a bug report needs, on the clipboard.
             VStack(alignment: .leading, spacing: 10) {
-                Label("Diagnostics", systemImage: "stethoscope")
-                    .font(.headline).foregroundStyle(.primary)
-                Text("Copies your settings, system info, and recent activity. Paste it into your bug report.")
+                Label {
+                    LocalizedText("Diagnostics")
+                } icon: {
+                    Image(systemName: "stethoscope")
+                }
+                .font(.headline).foregroundStyle(.primary)
+                LocalizedText("Copies your settings, system info, and recent activity. Paste it into your bug report.")
                     .font(.caption).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
                 Button {
@@ -31,9 +38,12 @@ struct DebugTabView: View {
                     diagCopied = true
                     DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { diagCopied = false }
                 } label: {
-                    Label(diagCopied ? "Copied to clipboard" : "Copy Diagnostics",
-                          systemImage: diagCopied ? "checkmark" : "doc.on.doc")
-                        .frame(maxWidth: .infinity)
+                    Label {
+                        LocalizedText(diagCopied ? "Copied to clipboard" : "Copy Diagnostics")
+                    } icon: {
+                        Image(systemName: diagCopied ? "checkmark" : "doc.on.doc")
+                    }
+                    .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.borderedProminent)
                 .tint(diagCopied ? .green : Color.nannyAccent)
@@ -62,9 +72,9 @@ struct DebugTabView: View {
 
     private var applyReportTool: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Apply a report")
+            LocalizedText("Apply a report")
                 .font(.caption.weight(.medium)).foregroundStyle(.secondary)
-            Text("Paste a diagnostics report to take over its settings (position, behavior toggles, auto-dismiss, scale) for local reproduction.")
+            LocalizedText("Paste a diagnostics report to take over its settings (position, behavior toggles, auto-dismiss, scale) for local reproduction.")
                 .font(.caption2).foregroundStyle(.tertiary).fixedSize(horizontal: false, vertical: true)
             TextEditor(text: $pasteText)
                 .font(.caption2.monospaced())
@@ -75,14 +85,18 @@ struct DebugTabView: View {
             HStack(spacing: 8) {
                 Button {
                     if let pasted = NSPasteboard.general.string(forType: .string) { pasteText = pasted }
-                } label: { Label("Paste", systemImage: "clipboard") }
+                } label: {
+                    Label { LocalizedText("Paste") } icon: { Image(systemName: "clipboard") }
+                }
                     .buttonStyle(.bordered).controlSize(.small)
                 Button {
                     let applied = Diagnostics.applyReport(pasteText, to: settings)
                     applyResult = applied.isEmpty
                         ? "Nothing recognized — paste a full diagnostics report."
                         : "Applied \(applied.count): " + applied.joined(separator: ", ")
-                } label: { Label("Apply Settings", systemImage: "arrow.down.circle") }
+                } label: {
+                    Label { LocalizedText("Apply Settings") } icon: { Image(systemName: "arrow.down.circle") }
+                }
                     .buttonStyle(.borderedProminent).controlSize(.small).tint(Color.nannyAccent)
                     .disabled(pasteText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
@@ -98,24 +112,56 @@ struct DebugTabView: View {
 
     // MARK: Activity log
 
+    private var logTags: [String] {
+        Array(Set(logger.entries.map(\.tag).filter { !$0.isEmpty })).sorted()
+    }
+
+    private var filteredLogEntries: [LogEntry] {
+        logger.entries.filter { entry in
+            (logTagFilter == nil || entry.tag == logTagFilter)
+                && (logSearch.isEmpty || entry.message.localizedCaseInsensitiveContains(logSearch))
+        }
+    }
+
     private var activityLog: some View {
         CollapsibleSection(title: "Activity log", systemImage: "doc.text.magnifyingglass") {
-            Text("\(logger.entries.count)")
+            Text("\(filteredLogEntries.count)/\(logger.entries.count)")
                 .font(.caption2.monospacedDigit()).foregroundStyle(.tertiary)
-            Button("Clear") { logger.clear() }
+            Button(loc.string("Clear")) { logger.clear() }
                 .buttonStyle(.borderless).font(.caption).foregroundStyle(Color.nannyAccent)
                 .disabled(logger.entries.isEmpty)
-            Button("Save…") { logger.saveToFile() }
+            Button(loc.string("Save…")) { logger.saveToFile() }
                 .buttonStyle(.borderless).font(.caption).foregroundStyle(Color.nannyAccent)
                 .disabled(logger.entries.isEmpty)
         } content: {
+            HStack(spacing: 8) {
+                Image(systemName: "magnifyingglass").font(.caption2).foregroundStyle(.tertiary)
+                TextField(loc.string("Filter messages…"), text: $logSearch)
+                    .textFieldStyle(.plain).font(.caption2)
+                if !logSearch.isEmpty {
+                    Button { logSearch = "" } label: { Image(systemName: "xmark.circle.fill") }
+                        .buttonStyle(.plain).foregroundStyle(.tertiary).font(.caption2)
+                }
+                Spacer()
+                Picker("", selection: $logTagFilter) {
+                    LocalizedText("All tags").tag(String?.none)
+                    ForEach(logTags, id: \.self) { tag in Text(tag).tag(String?.some(tag)) }
+                }
+                .labelsHidden().pickerStyle(.menu).controlSize(.mini).fixedSize()
+            }
+            .padding(.horizontal, 8).padding(.vertical, 6)
+            .background(Color.black.opacity(0.15), in: RoundedRectangle(cornerRadius: 6))
+
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 1) {
                     if logger.entries.isEmpty {
-                        Text("No entries yet. Trigger a notification to start logging.")
+                        LocalizedText("No entries yet. Trigger a notification to start logging.")
+                            .font(.caption2).foregroundStyle(.tertiary).padding(10)
+                    } else if filteredLogEntries.isEmpty {
+                        LocalizedText("No entries match the current filter.")
                             .font(.caption2).foregroundStyle(.tertiary).padding(10)
                     } else {
-                        ForEach(logger.entries.reversed()) { LogEntryRow(entry: $0) }
+                        ForEach(filteredLogEntries.reversed()) { LogEntryRow(entry: $0) }
                     }
                 }
                 .padding(6)
@@ -135,7 +181,7 @@ struct DebugTabView: View {
                 toolRow(title: "Dump AX tree",
                         subtitle: "Logs the live Notification Center window tree for any banners on screen.") {
                     Button { repositioner.dumpBannerDiagnostics() } label: {
-                        Label("Dump", systemImage: "list.bullet.indent")
+                        Label { LocalizedText("Dump") } icon: { Image(systemName: "list.bullet.indent") }
                     }
                     .buttonStyle(.bordered).controlSize(.small)
                     .disabled(!repositioner.isObserving)
@@ -145,7 +191,7 @@ struct DebugTabView: View {
                         subtitle: "Fires several notifications in rapid succession to reproduce the rapid-message race.") {
                     Stepper("\(burstCount)", value: $burstCount, in: 2...8).fixedSize().controlSize(.small)
                     Button { repositioner.sendBurstTest(count: burstCount) } label: {
-                        Label("Send", systemImage: "paperplane.fill")
+                        Label { LocalizedText("Send") } icon: { Image(systemName: "paperplane.fill") }
                     }
                     .buttonStyle(.bordered).controlSize(.small)
                 }
@@ -157,7 +203,7 @@ struct DebugTabView: View {
                             Button(scenario.label) { repositioner.sendEdgeCase(scenario) }
                         }
                     } label: {
-                        Label("Send", systemImage: "ellipsis.bubble")
+                        Label { LocalizedText("Send") } icon: { Image(systemName: "ellipsis.bubble") }
                     }
                     .menuStyle(.borderlessButton).fixedSize()
                 }
@@ -171,8 +217,8 @@ struct DebugTabView: View {
                                          @ViewBuilder trailing: () -> Trailing) -> some View {
         HStack(spacing: 10) {
             VStack(alignment: .leading, spacing: 1) {
-                Text(title).font(.callout)
-                Text(subtitle).font(.caption2).foregroundStyle(.tertiary)
+                LocalizedText(title).font(.callout)
+                LocalizedText(subtitle).font(.caption2).foregroundStyle(.tertiary)
                     .fixedSize(horizontal: false, vertical: true)
             }
             Spacer()
@@ -212,7 +258,7 @@ private struct CollapsibleSection<Trailing: View, Content: View>: View {
                 } label: {
                     HStack(spacing: 6) {
                         Image(systemName: systemImage).font(.caption).foregroundStyle(.secondary).frame(width: 14)
-                        Text(title).font(.caption.weight(.medium)).foregroundStyle(.secondary)
+                        LocalizedText(title).font(.caption.weight(.medium)).foregroundStyle(.secondary)
                         Image(systemName: "chevron.right").font(.caption2.weight(.semibold))
                             .foregroundStyle(.tertiary)
                             .rotationEffect(.degrees(expanded ? 90 : 0))

@@ -39,41 +39,65 @@ package enum BannerAnimation: String, Codable, CaseIterable {
         var rotation: Double = 0
     }
 
-    var hidden: Transform {
+    /// Everything one animation case needs to drive its intro/outro — bundled so
+    /// adding a new `BannerAnimation` case means writing one `Spec`, not editing
+    /// four separate switches that have to be kept in sync by hand.
+    struct Spec {
+        let hidden: Transform
+        let intro: Animation
+        let outro: Animation
+        let outroDuration: Double
+    }
+
+    var spec: Spec {
         switch self {
-        case .default:   return Transform(x: 150)
-        case .fade:      return Transform(opacity: 0)
-        case .scale:     return Transform(opacity: 0, scale: 0.8)
-        case .bounce:    return Transform(opacity: 0, scale: 0.5)
-        case .drop:      return Transform(y: -120)
-        case .slideLeft: return Transform(x: -150)
-        case .rise:      return Transform(y: 120, opacity: 0)
-        case .swing:     return Transform(opacity: 0, scale: 0.9, rotation: -8)
+        case .default:
+            return Spec(hidden: Transform(x: 150),
+                        intro: .spring(response: 0.45, dampingFraction: 0.78),
+                        outro: .spring(response: 0.35, dampingFraction: 0.85),
+                        outroDuration: 0.38)
+        case .fade:
+            return Spec(hidden: Transform(opacity: 0),
+                        intro: .easeOut(duration: 0.35),
+                        outro: .easeIn(duration: 0.22),
+                        outroDuration: 0.24)
+        case .scale:
+            return Spec(hidden: Transform(opacity: 0, scale: 0.8),
+                        intro: .spring(response: 0.40, dampingFraction: 0.72),
+                        outro: .easeIn(duration: 0.20),
+                        outroDuration: 0.24)
+        case .bounce:
+            return Spec(hidden: Transform(opacity: 0, scale: 0.5),
+                        intro: .spring(response: 0.50, dampingFraction: 0.55),
+                        outro: .easeIn(duration: 0.20),
+                        outroDuration: 0.24)
+        case .drop:
+            return Spec(hidden: Transform(y: -120),
+                        intro: .spring(response: 0.50, dampingFraction: 0.70),
+                        outro: .easeIn(duration: 0.22),
+                        outroDuration: 0.24)
+        case .slideLeft:
+            return Spec(hidden: Transform(x: -150),
+                        intro: .spring(response: 0.45, dampingFraction: 0.80),
+                        outro: .easeIn(duration: 0.22),
+                        outroDuration: 0.24)
+        case .rise:
+            return Spec(hidden: Transform(y: 120, opacity: 0),
+                        intro: .spring(response: 0.48, dampingFraction: 0.78),
+                        outro: .easeIn(duration: 0.22),
+                        outroDuration: 0.24)
+        case .swing:
+            return Spec(hidden: Transform(opacity: 0, scale: 0.9, rotation: -8),
+                        intro: .spring(response: 0.50, dampingFraction: 0.52),
+                        outro: .easeIn(duration: 0.22),
+                        outroDuration: 0.24)
         }
     }
 
-    var intro: Animation {
-        switch self {
-        case .default:   return .spring(response: 0.45, dampingFraction: 0.78)
-        case .fade:      return .easeOut(duration: 0.35)
-        case .scale:     return .spring(response: 0.40, dampingFraction: 0.72)
-        case .bounce:    return .spring(response: 0.50, dampingFraction: 0.55)
-        case .drop:      return .spring(response: 0.50, dampingFraction: 0.70)
-        case .slideLeft: return .spring(response: 0.45, dampingFraction: 0.80)
-        case .rise:      return .spring(response: 0.48, dampingFraction: 0.78)
-        case .swing:     return .spring(response: 0.50, dampingFraction: 0.52)
-        }
-    }
-
-    var outro: Animation {
-        switch self {
-        case .default:        return .spring(response: 0.35, dampingFraction: 0.85)
-        case .scale, .bounce: return .easeIn(duration: 0.20)
-        default:              return .easeIn(duration: 0.22)
-        }
-    }
-
-    var outroDuration: Double { self == .default ? 0.38 : 0.24 }
+    var hidden: Transform { spec.hidden }
+    var intro: Animation { spec.intro }
+    var outro: Animation { spec.outro }
+    var outroDuration: Double { spec.outroDuration }
 }
 
 struct BannerContent: Equatable {
@@ -99,6 +123,7 @@ struct CustomBannerView: View {
     let animation: BannerAnimation
     let tint: Color
     let textColor: Color?
+    let redactContent: Bool
     let controller: BannerAnimationController
     let onDismiss: () -> Void
     let onOpen: () -> Void
@@ -113,13 +138,14 @@ struct CustomBannerView: View {
     @State private var cursorPushed = false
 
     init(content: BannerContent, scale: CGFloat, animation: BannerAnimation, tint: Color,
-         textColor: Color?, controller: BannerAnimationController,
+         textColor: Color?, redactContent: Bool = false, controller: BannerAnimationController,
          onDismiss: @escaping () -> Void, onOpen: @escaping () -> Void) {
         self.content = content
         self.scale = scale
         self.animation = animation
         self.tint = tint
         self.textColor = textColor
+        self.redactContent = redactContent
         self.controller = controller
         self.onDismiss = onDismiss
         self.onOpen = onOpen
@@ -142,7 +168,7 @@ struct CustomBannerView: View {
                         .kerning(0.4)
                         .lineLimit(1)
                     Spacer()
-                    Text("now")
+                    LocalizedText("now")
                         .font(.system(size: 11 * scale))
                         .foregroundStyle(timestampStyle)
                 }
@@ -151,6 +177,7 @@ struct CustomBannerView: View {
                         .font(.system(size: 13 * scale, weight: .semibold))
                         .foregroundStyle(titleStyle)
                         .lineLimit(1)
+                        .blur(radius: redactContent ? 6 * scale : 0)
                 }
                 if !content.body.isEmpty {
                     Text(content.body)
@@ -158,6 +185,7 @@ struct CustomBannerView: View {
                         .foregroundStyle(bodyStyle)
                         .lineLimit(2)
                         .fixedSize(horizontal: false, vertical: true)
+                        .blur(radius: redactContent ? 6 * scale : 0)
                 }
             }
         }
@@ -324,6 +352,7 @@ final class CustomBannerManager {
         scale: Double,
         backgroundColor: Color,
         textColor: Color? = nil,
+        redactContent: Bool = false,
         autoDismissSeconds: Double,
         animation: BannerAnimation = .default,
         onOpen: @escaping () -> Void,
@@ -343,7 +372,7 @@ final class CustomBannerManager {
 
         let bannerView = CustomBannerView(
             content: content, scale: s, animation: animation, tint: backgroundColor,
-            textColor: textColor,
+            textColor: textColor, redactContent: redactContent,
             controller: controller, onDismiss: onDismissAction, onOpen: onOpenAction)
         let hosting = NSHostingView(rootView: bannerView)
         hosting.frame = bounds

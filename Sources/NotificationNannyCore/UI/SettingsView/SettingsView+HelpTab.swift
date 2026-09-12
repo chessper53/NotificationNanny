@@ -5,12 +5,13 @@ struct HelpTabView: View {
     @EnvironmentObject var settings: AppSettings
     @EnvironmentObject var repositioner: NotificationRepositioner
     @EnvironmentObject var launchAtLogin: LaunchAtLogin
+    @ObservedObject private var loc = LocalizationManager.shared
 
     @State private var bugReportPrepared = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text("Need help or have an idea?").font(.subheadline.weight(.semibold))
+            LocalizedText("Need help or have an idea?").font(.subheadline.weight(.semibold))
 
             VStack(spacing: 0) {
                 // Report a bug — auto-attaches diagnostics + recent logs to the prefilled issue,
@@ -42,7 +43,7 @@ struct HelpTabView: View {
 
             HStack(alignment: .top, spacing: 8) {
                 Image(systemName: "wrench.and.screwdriver").font(.caption).foregroundStyle(.secondary).padding(.top, 1)
-                Text("Diagnostics and activity logs now live in the **Diagnostics** tab — handy if you want to inspect them before filing a report.")
+                LocalizedMarkdownText("Diagnostics and activity logs now live in the **Diagnostics** tab — handy if you want to inspect them before filing a report.")
                     .font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             }
             .padding(10)
@@ -50,7 +51,7 @@ struct HelpTabView: View {
 
             HStack(alignment: .top, spacing: 8) {
                 Image(systemName: "person.crop.circle").font(.caption).foregroundStyle(.secondary).padding(.top, 1)
-                Text("I work full time, nevertheless I read every issue and try to respond to everyone.")
+                LocalizedText("I work full time, nevertheless I read every issue and try to respond to everyone.")
                     .font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             }
             .padding(10)
@@ -58,7 +59,7 @@ struct HelpTabView: View {
 
             HStack(spacing: 4) {
                 Image(systemName: "lock.shield").font(.caption2)
-                Text("Diagnostics are only attached when you file a report. Nothing is collected or transmitted otherwise.")
+                LocalizedText("Diagnostics are only attached when you file a report. Nothing is collected or transmitted otherwise.")
                     .font(.caption2)
             }
             .foregroundStyle(.tertiary).padding(.top, 4)
@@ -94,8 +95,8 @@ struct HelpTabView: View {
                 Image(systemName: systemImage).frame(width: 20).foregroundStyle(accent)
                     .animation(.easeInOut(duration: 0.15), value: systemImage)
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(title).font(.callout)
-                    Text(description).font(.caption2).foregroundStyle(.secondary)
+                    LocalizedText(title).font(.callout)
+                    LocalizedText(description).font(.caption2).foregroundStyle(.secondary)
                 }
                 Spacer()
                 Image(systemName: "arrow.up.right").font(.caption2).foregroundStyle(.tertiary)

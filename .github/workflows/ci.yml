@@ -12,6 +12,16 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  release-consistency:
+    name: Release consistency checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Cask / Info.plist macOS version match
+        run: ./scripts/test-version-consistency.sh
+      - name: Release workflow ships a universal, verified binary
+        run: ./scripts/test-release-workflow.sh
+
   test:
     name: Build & Test
     runs-on: macos-26
