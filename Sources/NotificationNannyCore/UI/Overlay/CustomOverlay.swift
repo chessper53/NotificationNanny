@@ -441,8 +441,19 @@ final class CustomBannerManager {
     func move(key: CFHashCode, axTopLeft: CGPoint, width: CGFloat) {
         guard let entry = active[key] else { return }
         let h = entry.panel.frame.size.height
-        entry.panel.setFrame(Self.axRect(axOrigin: axTopLeft, size: CGSize(width: width, height: h)),
-                             display: true, animate: false)
+        let target = Self.axRect(axOrigin: axTopLeft, size: CGSize(width: width, height: h))
+        let current = entry.panel.frame
+        guard current != target else { return }
+
+        // Dragging the position tile drives this at screen refresh rate. When only
+        // the origin moves — the common case — setFrameOrigin skips the resize and
+        // redraw path; setFrame(display: true) was forcing a synchronous re-render
+        // of the panel's blurred, SwiftUI-hosted content on every single frame.
+        if current.size == target.size {
+            entry.panel.setFrameOrigin(target.origin)
+        } else {
+            entry.panel.setFrame(target, display: true, animate: false)
+        }
     }
 
     private func makePanel(frame: NSRect, contentView: NSView) -> NSPanel {
