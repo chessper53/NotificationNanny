@@ -117,9 +117,16 @@ struct DraggableScreenTile: View {
         case .end:    refY = visible.height - inset - banner.height / 2
         }
 
-        placement.position = anchor
-        placement.xOffset  = Double(centreX - refX)
-        placement.yOffset  = Double(centreY - refY)
+        // One write, not three. Each assignment through the binding is a full
+        // get-mutate-set of the placements dictionary — at 60 Hz, writing the
+        // three fields separately tripled the JSON encode, the UserDefaults
+        // write, and the SwiftUI invalidation for every frame of the drag.
+        var updated = placement
+        updated.position = anchor
+        updated.xOffset  = Double(centreX - refX)
+        updated.yOffset  = Double(centreY - refY)
+        guard updated != placement else { return }
+        placement = updated
     }
 
     private enum AnchorBand { case start, middle, end }
@@ -197,6 +204,13 @@ package enum TestNotification {
     }
 
     private static func dispatch(title: String, body: String) {
+        // UNUserNotificationCenter.current() raises when the process has no bundle
+        // identifier (unit tests, `swift run`), so take the osascript path there
+        // rather than trapping.
+        guard Bundle.main.bundleIdentifier != nil else {
+            run(script: "display notification \"\(escapeAS(body))\" with title \"\(escapeAS(title))\"")
+            return
+        }
         Task { @MainActor in
             let status = await UNUserNotificationCenter.current().notificationSettings().authorizationStatus
             guard status == .authorized else {

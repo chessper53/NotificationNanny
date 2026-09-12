@@ -252,40 +252,67 @@ package final class AppSettings: ObservableObject {
         appGroups[i] = group
     }
 
+    // placements and appGroups are both edited at high frequency: dragging the
+    // position tile or a per-group scale slider fires on every frame. SwiftUI's
+    // diffing of the @Published value is cheap; re-encoding the whole collection
+    // to JSON and writing UserDefaults 60 times a second is not. Debounce the
+    // disk write — `flushPendingSaves()` guarantees nothing is lost if the app
+    // quits mid-debounce.
     @Published private var placements: [String: ScreenPlacement] {
-        didSet { savePlacements() }
+        didSet { placementsSaver.schedule { [weak self] in self?.savePlacements() } }
     }
 
     @Published var presets: [Preset] {
         didSet { savePresets() }
     }
 
-    // appGroups is edited at high frequency (a per-group scale slider fires on every
-    // drag frame, for example). SwiftUI's diffing of the @Published array itself is
-    // cheap; re-encoding the whole array to JSON and writing UserDefaults on every
-    // single frame is not. Debounce the disk write; `flushPendingSaves()` guarantees
-    // nothing is lost if the app quits mid-debounce.
     @Published var appGroups: [AppGroup] {
-        didSet { scheduleSaveAppGroups() }
-    }
-    private var saveAppGroupsWorkItem: DispatchWorkItem?
-
-    private func scheduleSaveAppGroups() {
-        saveAppGroupsWorkItem?.cancel()
-        let item = DispatchWorkItem { [weak self] in self?.saveAppGroups() }
-        saveAppGroupsWorkItem = item
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25, execute: item)
+        didSet { appGroupsSaver.schedule { [weak self] in self?.saveAppGroups() } }
     }
 
-    /// Forces the debounced `appGroups` write to disk immediately. Call before the
-    /// app could quit — e.g. `applicationWillTerminate` — or after a deliberate
-    /// one-shot mutation (preset apply, import, reset) rather than waiting on the
-    /// debounce for changes that aren't part of a rapid-fire edit.
+    private let placementsSaver = SaveCoalescer()
+    private let appGroupsSaver  = SaveCoalescer()
+
+    /// Collapses a burst of writes into one, `delay` after the last of them.
+    @MainActor
+    fileprivate final class SaveCoalescer {
+        private var pending: (() -> Void)?
+        private var workItem: DispatchWorkItem?
+        private let delay: TimeInterval
+
+        init(delay: TimeInterval = 0.25) { self.delay = delay }
+
+        func schedule(_ save: @escaping () -> Void) {
+            pending = save
+            workItem?.cancel()
+            let item = DispatchWorkItem { [weak self] in self?.fire() }
+            workItem = item
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: item)
+        }
+
+        /// Runs the pending save now. Note this can't just `perform()` the work
+        /// item — a cancelled DispatchWorkItem silently does nothing — so the
+        /// closure is held separately.
+        func flush() {
+            workItem?.cancel()
+            fire()
+        }
+
+        private func fire() {
+            let save = pending
+            pending = nil
+            workItem = nil
+            save?()
+        }
+    }
+
+    /// Forces debounced writes to disk immediately. Call before the app could
+    /// quit — e.g. `applicationWillTerminate` — or after a deliberate one-shot
+    /// mutation (preset apply, import, reset) rather than waiting on the debounce
+    /// for changes that aren't part of a rapid-fire edit.
     package func flushPendingSaves() {
-        guard saveAppGroupsWorkItem != nil else { return }
-        saveAppGroupsWorkItem?.cancel()
-        saveAppGroupsWorkItem = nil
-        saveAppGroups()
+        placementsSaver.flush()
+        appGroupsSaver.flush()
     }
 
     @Published private(set) var knownAppNames: [String] {
@@ -373,6 +400,10 @@ package final class AppSettings: ObservableObject {
         var updated = placements
         updated[screen.stableDisplayKey] = placement
         updated.removeValue(forKey: String(screen.displayID))
+        // A drag re-sends the same placement whenever the pointer moves within a
+        // pixel; publishing it anyway would invalidate the view and re-run the
+        // repositioner for no change.
+        guard updated != placements else { return }
         placements = updated
     }
 

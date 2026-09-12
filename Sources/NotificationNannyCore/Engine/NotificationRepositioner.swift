@@ -57,7 +57,7 @@ package final class NotificationRepositioner: ObservableObject {
         self.settings = settings
         settings.settingsDidChange
             .throttle(for: .milliseconds(16), scheduler: DispatchQueue.main, latest: true)
-            .sink { [weak self] in self?.burstReposition() }
+            .sink { [weak self] in self?.applySettingsChange() }
             .store(in: &cancellables)
         settings.settingsDidChange
             .throttle(for: .milliseconds(8), scheduler: DispatchQueue.main, latest: true)
@@ -194,21 +194,55 @@ package final class NotificationRepositioner: ObservableObject {
     }
 
     private let destroySweepDebouncer = Debouncer()
+    private let settingsSettleDebouncer = Debouncer()
+    private var burstWorkItems: [DispatchWorkItem] = []
 
     private func scheduleDestroySweep() {
         destroySweepDebouncer.schedule(delay: 0.12) { [weak self] in self?.repositionVisibleWindows() }
     }
 
-    private func burstReposition() {
+    /// Settings edits: move what's on screen now, once.
+    ///
+    /// Deliberately *not* a burst. This fires at up to 60 Hz while the position
+    /// tile or a slider is being dragged, and each pass is synchronous
+    /// cross-process AX IPC. Bursting per frame queued ~9 sweeps × 60 fps with a
+    /// 2.5 s tail, which pinned the main thread and made dragging crawl — worse
+    /// with a banner on screen, since every visible window multiplies the work.
+    ///
+    /// The single debounced settle pass catches changes that land mid-drag while
+    /// macOS happens to be re-laying out; one drag produces one tail pass, not
+    /// hundreds.
+    private func applySettingsChange() {
         if let settings, !settings.isActive {
             customBannerManager.dismissAll()
             overlayContent.removeAll()
         }
         repositionVisibleWindows()
-        for delay in [0.03, 0.06, 0.1, 0.2, 0.4, 0.8, 1.5, 2.5] as [Double] {
-            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
-                self?.repositionVisibleWindows()
-            }
+        settingsSettleDebouncer.schedule(delay: 0.25) { [weak self] in
+            self?.repositionVisibleWindows()
+        }
+    }
+
+    private static let burstDelays: [Double] = [0.03, 0.06, 0.1, 0.2, 0.4, 0.8, 1.5, 2.5]
+
+    /// Re-asserts position on a decaying schedule, for events where macOS does its
+    /// own asynchronous re-layout after the fact — a banner appearing, a display
+    /// reconfiguration, waking from sleep. One pass loses that race.
+    ///
+    /// Overlapping bursts cancel their predecessor: without that, back-to-back
+    /// notifications stack their tails on top of each other.
+    private func burstReposition() {
+        if let settings, !settings.isActive {
+            customBannerManager.dismissAll()
+            overlayContent.removeAll()
+        }
+        burstWorkItems.forEach { $0.cancel() }
+        burstWorkItems.removeAll(keepingCapacity: true)
+        repositionVisibleWindows()
+        for delay in Self.burstDelays {
+            let item = DispatchWorkItem { [weak self] in self?.repositionVisibleWindows() }
+            burstWorkItems.append(item)
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: item)
         }
     }
 
