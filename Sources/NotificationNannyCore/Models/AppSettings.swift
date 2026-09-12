@@ -34,6 +34,7 @@ package final class AppSettings: ObservableObject {
         static let bannerAnimation      = "bannerAnimation"
         static let hideMenuBarIcon      = "hideMenuBarIcon"
         static let snoozedUntil         = "snoozedUntil"
+        static let redactBannerContent  = "redactBannerContent"
     }
 
     private static let defaultKnownAppsFileURL: URL = {
@@ -107,6 +108,13 @@ package final class AppSettings: ObservableObject {
 
     @Published package var holdWhileAsleep: Bool {
         didSet { defaults.set(holdWhileAsleep, forKey: Key.holdWhileAsleep) }
+    }
+
+    /// Blurs the title/body text on the custom banner overlay instead of hiding the
+    /// notification outright — for shoulder-surfing privacy without losing the "something
+    /// arrived" signal. Forces the custom-banner path (native banners can't be redacted).
+    @Published package var redactBannerContent: Bool {
+        didSet { defaults.set(redactBannerContent, forKey: Key.redactBannerContent) }
     }
 
     @Published package var autoDismissSeconds: Double {
@@ -252,8 +260,32 @@ package final class AppSettings: ObservableObject {
         didSet { savePresets() }
     }
 
+    // appGroups is edited at high frequency (a per-group scale slider fires on every
+    // drag frame, for example). SwiftUI's diffing of the @Published array itself is
+    // cheap; re-encoding the whole array to JSON and writing UserDefaults on every
+    // single frame is not. Debounce the disk write; `flushPendingSaves()` guarantees
+    // nothing is lost if the app quits mid-debounce.
     @Published var appGroups: [AppGroup] {
-        didSet { saveAppGroups() }
+        didSet { scheduleSaveAppGroups() }
+    }
+    private var saveAppGroupsWorkItem: DispatchWorkItem?
+
+    private func scheduleSaveAppGroups() {
+        saveAppGroupsWorkItem?.cancel()
+        let item = DispatchWorkItem { [weak self] in self?.saveAppGroups() }
+        saveAppGroupsWorkItem = item
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25, execute: item)
+    }
+
+    /// Forces the debounced `appGroups` write to disk immediately. Call before the
+    /// app could quit — e.g. `applicationWillTerminate` — or after a deliberate
+    /// one-shot mutation (preset apply, import, reset) rather than waiting on the
+    /// debounce for changes that aren't part of a rapid-fire edit.
+    package func flushPendingSaves() {
+        guard saveAppGroupsWorkItem != nil else { return }
+        saveAppGroupsWorkItem?.cancel()
+        saveAppGroupsWorkItem = nil
+        saveAppGroups()
     }
 
     @Published private(set) var knownAppNames: [String] {
@@ -275,6 +307,7 @@ package final class AppSettings: ObservableObject {
         self.followActiveScreen    = (defaults.object(forKey: Key.followActiveScreen) as? Bool) ?? false
         self.pauseDuringFocus      = (defaults.object(forKey: Key.pauseDuringFocus) as? Bool) ?? false
         self.holdWhileAsleep       = (defaults.object(forKey: Key.holdWhileAsleep) as? Bool) ?? false
+        self.redactBannerContent  = (defaults.object(forKey: Key.redactBannerContent) as? Bool) ?? false
         self.autoDismissSeconds    = defaults.double(forKey: Key.autoDismiss)
         let storedScale = defaults.double(forKey: Key.bannerScale)
         self.bannerScale = storedScale == 0 ? 1.0 : storedScale
@@ -464,6 +497,7 @@ package final class AppSettings: ObservableObject {
         case .native: return false
         case .custom: return true
         case nil:
+            if redactBannerContent { return true }
             if abs(scale - 1.0) > 0.001 { return true }
             if animation != .default { return true }
             if hasBannerTextColor { return true }
@@ -490,6 +524,7 @@ package final class AppSettings: ObservableObject {
         var protectDesktopWidgets: Bool?
         var followActiveScreen: Bool?
         var pauseDuringFocus: Bool?
+        var redactBannerContent: Bool?
         var appGroups: [AppGroup]
         var presets: [Preset]
     }
@@ -506,6 +541,7 @@ package final class AppSettings: ObservableObject {
             protectDesktopWidgets: protectDesktopWidgets,
             followActiveScreen: followActiveScreen,
             pauseDuringFocus: pauseDuringFocus,
+            redactBannerContent: redactBannerContent,
             appGroups: appGroups,
             presets: presets
         )
@@ -531,8 +567,10 @@ package final class AppSettings: ObservableObject {
         protectDesktopWidgets = imported.protectDesktopWidgets ?? true
         followActiveScreen  = imported.followActiveScreen ?? false
         pauseDuringFocus    = imported.pauseDuringFocus ?? false
+        redactBannerContent = imported.redactBannerContent ?? false
         appGroups           = imported.appGroups
         presets             = imported.presets
+        flushPendingSaves()
     }
 
     func saveCurrentAsPreset(name: String) {
@@ -561,6 +599,7 @@ package final class AppSettings: ObservableObject {
         pauseWhileStreaming = preset.pauseWhileStreaming
         appGroups          = preset.appGroups
         bannerAnimation    = preset.bannerAnimation
+        flushPendingSaves()
     }
 
     func deletePreset(_ preset: Preset) {
@@ -580,6 +619,8 @@ package final class AppSettings: ObservableObject {
         bannerTextTint     = nil
         bannerAnimation    = .default
         hideMenuBarIcon    = false
+        redactBannerContent = false
+        flushPendingSaves()
     }
 
     private func savePlacements() {

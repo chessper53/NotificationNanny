@@ -57,6 +57,19 @@ struct BannerDecisionTests {
         #expect(s.shouldUseCustomBanner(for: "Mail") == true)
     }
 
+    @Test func redactBannerContent_activatesCustom() {
+        let s = makeSettings()
+        s.redactBannerContent = true
+        #expect(s.shouldUseCustomBanner(for: "Mail") == true)
+    }
+
+    @Test func redactBannerContent_doesNotOverrideExplicitNativeGroup() {
+        let s = makeSettings()
+        s.redactBannerContent = true
+        addGroup(s, app: "Slack") { $0.bannerMode = .native }
+        #expect(s.shouldUseCustomBanner(for: "Slack") == false)
+    }
+
     // MARK: - Per-group overrides
 
     @Test func groupModeNative_forcesNative_evenWithScale() {

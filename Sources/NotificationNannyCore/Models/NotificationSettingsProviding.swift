@@ -12,6 +12,7 @@ package protocol NotificationSettingsProviding: AnyObject {
     var followActiveScreen: Bool { get }
     var pauseDuringFocus: Bool { get }
     var holdWhileAsleep: Bool { get }
+    var redactBannerContent: Bool { get }
     var targetDisplayID: CGDirectDisplayID { get }
     func resolvedTargetScreen() -> NSScreen?
     func resolvedTargetScreen(for appName: String?) -> NSScreen?
