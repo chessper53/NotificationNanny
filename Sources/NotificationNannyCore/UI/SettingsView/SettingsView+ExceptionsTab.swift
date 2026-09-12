@@ -11,6 +11,7 @@ struct ExceptionsTabView: View {
     @State private var selectedGroupID: UUID? = nil
     @State private var groupMode: GroupMode = .browsing
     @State private var newGroupName = ""
+    @State private var appFilter = ""
     private let iconCache = AppIconCache.shared
 
     var body: some View {
@@ -78,6 +79,8 @@ struct ExceptionsTabView: View {
                 selectedGroupID = nil
             }
         }
+        // A filter left over from the previous group would silently hide apps.
+        .onChange(of: selectedGroupID) { _, _ in appFilter = "" }
     }
 
     @ViewBuilder
@@ -133,10 +136,7 @@ struct ExceptionsTabView: View {
             .padding(10)
             .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 8))
 
-            VStack(alignment: .leading, spacing: 6) {
-                LocalizedText("Assigned Apps").font(.footnote.weight(.semibold)).foregroundStyle(Color(white: 0.45))
-                appAssignmentRow(for: group)
-            }
+            appAssignmentSection(for: group)
 
             Button { repositioner.sendTestNotification(groupID: group.id) } label: {
                 Label("Test \"\(group.name)\"", systemImage: "paperplane.fill").frame(maxWidth: .infinity)
@@ -147,44 +147,121 @@ struct ExceptionsTabView: View {
         .background(Color.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 10))
     }
 
+    /// Apps in the group, then everything else.
+    ///
+    /// The previous version listed `knownAppNames` as one flat checklist, which
+    /// answered "which apps exist" rather than the question actually being asked,
+    /// "what is in this group" — you had to scroll a 140pt box to find out. It also
+    /// hid any assigned app that wasn't in `knownAppNames` (imported groups,
+    /// presets, an app that hasn't notified since launch), leaving it assigned with
+    /// no way to remove it. Assigned rows now come from `group.appNames` directly,
+    /// so nothing can be stranded.
     @ViewBuilder
-    private func appAssignmentRow(for group: AppGroup) -> some View {
-        ScrollView(showsIndicators: true) {
-            VStack(alignment: .leading, spacing: 1) {
-                if settings.knownAppNames.isEmpty {
-                    LocalizedText("No apps seen yet — receive a notification from any app and it will appear here.")
-                        .font(.caption2).foregroundStyle(.tertiary).padding(.horizontal, 6).padding(.vertical, 6)
-                } else {
-                    ForEach(settings.knownAppNames, id: \.self) { appName in
-                        let inThisGroup = group.appNames.contains(appName)
-                        Toggle(isOn: Binding(
-                            get: { inThisGroup },
-                            set: { on in
-                                if on { settings.addApp(appName, toGroup: group.id) }
-                                else  { settings.removeApp(appName, fromGroup: group.id) }
+    private func appAssignmentSection(for group: AppGroup) -> some View {
+        let assigned = group.appNames.sorted { $0.localizedStandardCompare($1) == .orderedAscending }
+        let query = appFilter.trimmingCharacters(in: .whitespaces)
+        let available = settings.knownAppNames
+            .filter { !group.appNames.contains($0) }
+            .filter { query.isEmpty || $0.localizedCaseInsensitiveContains(query) }
+
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 6) {
+                LocalizedText("Assigned Apps")
+                    .font(.footnote.weight(.semibold)).foregroundStyle(Color(white: 0.45))
+                Text("\(assigned.count)")
+                    .font(.caption2.monospacedDigit().weight(.medium))
+                    .padding(.horizontal, 5).padding(.vertical, 1)
+                    .background(Color.nannyAccent.opacity(0.22), in: Capsule())
+                Spacer()
+                // Only worth the space once scanning the list by eye stops working.
+                if settings.knownAppNames.count > 8 {
+                    HStack(spacing: 3) {
+                        Image(systemName: "magnifyingglass")
+                            .font(.caption2).foregroundStyle(.tertiary)
+                        TextField(loc.string("Filter"), text: $appFilter)
+                            .textFieldStyle(.plain).font(.caption)
+                            .frame(width: 110)
+                        if !appFilter.isEmpty {
+                            Button { appFilter = "" } label: {
+                                Image(systemName: "xmark.circle.fill").font(.caption2)
                             }
-                        )) {
-                            HStack(spacing: 6) {
-                                if let icon = cachedIcon(for: appName) {
-                                    Image(nsImage: icon).resizable().frame(width: 16, height: 16)
-                                }
-                                Text(appName).font(.caption).lineLimit(1)
-                            }
+                            .buttonStyle(.plain).foregroundStyle(.tertiary)
                         }
-                        .toggleStyle(.checkbox).controlSize(.small)
-                        .padding(.vertical, 2).padding(.horizontal, 6)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(
-                            inThisGroup ? Color.nannyAccent.opacity(0.08) : Color.clear,
-                            in: RoundedRectangle(cornerRadius: 4)
-                        )
                     }
+                    .padding(.horizontal, 6).padding(.vertical, 3)
+                    .background(Color.white.opacity(0.06), in: Capsule())
                 }
             }
-            .padding(.vertical, 4)
+
+            ScrollView(showsIndicators: true) {
+                LazyVStack(alignment: .leading, spacing: 1) {
+                    ForEach(assigned, id: \.self) { appName in
+                        appRow(appName, group: group, isAssigned: true)
+                    }
+
+                    if !assigned.isEmpty && !available.isEmpty {
+                        Divider().padding(.vertical, 3).padding(.horizontal, 6)
+                    }
+
+                    ForEach(available, id: \.self) { appName in
+                        appRow(appName, group: group, isAssigned: false)
+                    }
+
+                    if assigned.isEmpty && available.isEmpty {
+                        LocalizedText(settings.knownAppNames.isEmpty
+                            ? "No apps seen yet — receive a notification from any app and it will appear here."
+                            : "No apps match your filter.")
+                            .font(.caption2).foregroundStyle(.tertiary)
+                            .padding(.horizontal, 6).padding(.vertical, 6)
+                    }
+                }
+                .padding(.vertical, 4)
+            }
+            .frame(minHeight: 60, maxHeight: 160)
+            .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 6))
         }
-        .frame(minHeight: 60, maxHeight: 140)
-        .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 6))
+    }
+
+    @ViewBuilder
+    private func appRow(_ appName: String, group: AppGroup, isAssigned: Bool) -> some View {
+        // An app can sit in several groups, but only the first match wins when a
+        // notification arrives, so say so rather than letting the rule silently
+        // never fire.
+        let conflict = isAssigned ? nil : settings.group(for: appName).map(\.name)
+
+        Button {
+            if isAssigned { settings.removeApp(appName, fromGroup: group.id) }
+            else          { settings.addApp(appName, toGroup: group.id) }
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: isAssigned ? "checkmark.circle.fill" : "circle")
+                    .font(.caption)
+                    .foregroundStyle(isAssigned ? Color.nannyAccent : Color.secondary.opacity(0.5))
+                if let icon = cachedIcon(for: appName) {
+                    Image(nsImage: icon).resizable().frame(width: 16, height: 16)
+                } else {
+                    // Blank, not a placeholder glyph: anything drawn here sits
+                    // right next to the selection circle and reads as a second
+                    // checkbox. Reserving the space keeps the names aligned.
+                    Color.clear.frame(width: 16, height: 16)
+                }
+                Text(appName).font(.caption).lineLimit(1)
+                if let conflict {
+                    Spacer(minLength: 4)
+                    Text(loc.string("in") + " \"\(conflict)\"")
+                        .font(.caption2).foregroundStyle(.tertiary).lineLimit(1)
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(.vertical, 3).padding(.horizontal, 6)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .background(
+            isAssigned ? Color.nannyAccent.opacity(0.1) : Color.clear,
+            in: RoundedRectangle(cornerRadius: 4)
+        )
     }
 
     private func cachedIcon(for appName: String) -> NSImage? {

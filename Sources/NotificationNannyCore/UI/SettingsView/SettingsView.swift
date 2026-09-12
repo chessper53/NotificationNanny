@@ -43,12 +43,18 @@ package struct SettingsView: View {
 
             HStack(spacing: 0) {
                 VStack(alignment: .leading, spacing: 2) {
-                    sidebarItem("Position",   systemImage: "scope",                   tab: .position)
-                    sidebarItem("Exceptions", systemImage: "app.badge",               tab: .exceptions)
-                    sidebarItem("Banner",     systemImage: "textformat.size",         tab: .banner)
-                    sidebarItem("Presets",    systemImage: "star",                    tab: .presets)
+                    // Each icon depicts what the tab does, rather than gesturing at
+                    // the general area: a banner in a screen corner for Position, a
+                    // configured app for Exceptions, appearance for Banner, a stack
+                    // of saved configurations for Presets, a drive for Backup (which
+                    // imports as well as exports, so a tray-and-up-arrow read wrong).
+                    // All are SF Symbols 4 or earlier, so they resolve on macOS 14.
+                    sidebarItem("Position",   systemImage: "rectangle.inset.topright.filled", tab: .position)
+                    sidebarItem("Exceptions", systemImage: "app.badge.checkmark",     tab: .exceptions)
+                    sidebarItem("Banner",     systemImage: "paintpalette",            tab: .banner)
+                    sidebarItem("Presets",    systemImage: "rectangle.stack",         tab: .presets)
                     sidebarItem("General",    systemImage: "gearshape",               tab: .general)
-                    sidebarItem("Backup",     systemImage: "tray.and.arrow.up",       tab: .backup)
+                    sidebarItem("Backup",     systemImage: "externaldrive",           tab: .backup)
                     Spacer()
                     sidebarItem("Diagnostics", systemImage: "stethoscope",            tab: .debug)
                     sidebarItem("Help",       systemImage: "questionmark.circle",     tab: .help)

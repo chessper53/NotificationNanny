@@ -42,7 +42,9 @@ struct HelpTabView: View {
             .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
 
             HStack(alignment: .top, spacing: 8) {
-                Image(systemName: "wrench.and.screwdriver").font(.caption).foregroundStyle(.secondary).padding(.top, 1)
+                // Matches the Diagnostics tab's own icon, since that's what this
+                // note is pointing at.
+                Image(systemName: "stethoscope").font(.caption).foregroundStyle(.secondary).padding(.top, 1)
                 LocalizedMarkdownText("Diagnostics and activity logs now live in the **Diagnostics** tab — handy if you want to inspect them before filing a report.")
                     .font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             }
@@ -50,7 +52,7 @@ struct HelpTabView: View {
             .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 8))
 
             HStack(alignment: .top, spacing: 8) {
-                Image(systemName: "person.crop.circle").font(.caption).foregroundStyle(.secondary).padding(.top, 1)
+                Image(systemName: "hand.wave").font(.caption).foregroundStyle(.secondary).padding(.top, 1)
                 LocalizedText("I work full time, nevertheless I read every issue and try to respond to everyone.")
                     .font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             }
