@@ -2,25 +2,27 @@ import SwiftUI
 
 struct PresetsTabView: View {
     @EnvironmentObject var settings: AppSettings
+    @ObservedObject private var loc = LocalizationManager.shared
 
     private enum PresetMode: Equatable { case idle, renaming(UUID) }
 
     @State private var presetMode: PresetMode = .idle
     @State private var pendingName = ""
     @State private var appliedPresetID: UUID? = nil
+    @State private var pendingApply: Preset? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Save and switch between named configurations. Presets capture your full setup including per-app rules.")
+            LocalizedText("Save and switch between named configurations. Presets capture your full setup including per-app rules.")
                 .font(.callout)
                 .foregroundStyle(Color(white: 0.55))
                 .fixedSize(horizontal: false, vertical: true)
 
-            Text("Presets").font(.caption.weight(.medium)).foregroundStyle(.secondary)
+            LocalizedText("Presets").font(.caption.weight(.medium)).foregroundStyle(.secondary)
 
             VStack(alignment: .leading, spacing: 0) {
                 if settings.presets.isEmpty {
-                    Text("No presets yet.")
+                    LocalizedText("No presets yet.")
                         .font(.caption2).foregroundStyle(.tertiary)
                         .padding(.horizontal, 14).padding(.vertical, 10)
                 } else {
@@ -35,24 +37,44 @@ struct PresetsTabView: View {
                 if settings.presets.count < 5 {
                     if !settings.presets.isEmpty { Divider().padding(.leading, 14) }
                     HStack(spacing: 6) {
-                        TextField("Name", text: $pendingName)
+                        TextField(loc.string("Name"), text: $pendingName)
                             .textFieldStyle(.roundedBorder).controlSize(.small).font(.caption)
                             .onSubmit { commitPreset() }
-                        Button("Save", action: commitPreset)
+                        Button(loc.string("Save"), action: commitPreset)
                             .buttonStyle(.borderedProminent).controlSize(.mini)
                             .disabled(pendingName.trimmingCharacters(in: .whitespaces).isEmpty)
-                        Button("Cancel") { pendingName = "" }.buttonStyle(.borderless).controlSize(.mini)
+                        Button(loc.string("Cancel")) { pendingName = "" }.buttonStyle(.borderless).controlSize(.mini)
                     }
                     .padding(.horizontal, 14).padding(.vertical, 10)
                 } else {
                     Divider().padding(.leading, 14)
-                    Text("5 preset limit reached")
+                    LocalizedText("5 preset limit reached")
                         .font(.caption2).foregroundStyle(.tertiary)
                         .padding(.horizontal, 14).padding(.vertical, 10)
                 }
             }
             .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
         }
+        .confirmationDialog(
+            loc.string("Replace your current exception groups?"),
+            isPresented: Binding(get: { pendingApply != nil }, set: { if !$0 { pendingApply = nil } }),
+            titleVisibility: .visible
+        ) {
+            Button(loc.string("Apply Preset"), role: .destructive) {
+                guard let preset = pendingApply else { return }
+                applyPreset(preset)
+                pendingApply = nil
+            }
+            Button(loc.string("Cancel"), role: .cancel) { pendingApply = nil }
+        } message: {
+            Text("“\(pendingApply?.name ?? "")” was saved with a different set of exception groups. Applying it will replace your current groups — this can't be undone.")
+        }
+    }
+
+    private func applyPreset(_ preset: Preset) {
+        settings.applyPreset(preset)
+        appliedPresetID = preset.id
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { appliedPresetID = nil }
     }
 
     @ViewBuilder
@@ -62,7 +84,7 @@ struct PresetsTabView: View {
                 TextField("", text: $pendingName)
                     .textFieldStyle(.roundedBorder).controlSize(.small).font(.caption)
                     .onSubmit { commitRename(preset) }
-                Button("Done") { commitRename(preset) }
+                Button(loc.string("Done")) { commitRename(preset) }
                     .buttonStyle(.borderedProminent).controlSize(.mini)
                     .disabled(pendingName.trimmingCharacters(in: .whitespaces).isEmpty)
                 Button { cancelRename() } label: { Image(systemName: "xmark").font(.caption2) }
@@ -72,9 +94,11 @@ struct PresetsTabView: View {
         } else {
             HStack(spacing: 4) {
                 Button {
-                    settings.applyPreset(preset)
-                    appliedPresetID = preset.id
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { appliedPresetID = nil }
+                    if !settings.appGroups.isEmpty, settings.appGroups != preset.appGroups {
+                        pendingApply = preset
+                    } else {
+                        applyPreset(preset)
+                    }
                 } label: {
                     Label(
                         appliedPresetID == preset.id ? "Applied!" : preset.name,

@@ -21,6 +21,7 @@
 | 1.6     | 2026-06-18 | Claude   | Desktop-widget protection (`protectDesktopWidgets`); pause-during-Focus (`FocusModeMonitor`, `pauseDuringFocus`); `LogEntryRow` view extraction; export schema carries the new toggles; CHANGELOG.md added |
 | 1.7     | 2026-08-09 | Claude   | `NotificationNannyCore` regrouped from a flat 31-file directory into `Engine/`, `Models/`, `UI/{SettingsView,MenuBar,Overlay}/`, `System/`, `Diagnostics/` (file moves only, no logic changes); `AXNotificationCenterAlert`/`AlertStack` recognised as banner subroles (fixes Persistent-style notifications not repositioning); custom-overlay background no longer forces dark HUD appearance; readiness-gate exhaustion and previously-silent skip paths now log a user-visible reason + AX subrole |
 | 1.8     | 2026-08-10 | Claude   | Global custom-banner text color (`bannerTextTint`, `effectiveBannerTextColor: Color?` — nil means adaptive `.primary`/`.secondary`/`.tertiary`, deliberately not a hardcoded default, so it can't regress the 1.7 appearance fix); universal (arm64+x86_64) release builds verified via `lipo` in `release.yml` + `scripts/test-release-workflow.sh` |
+| 1.9     | 2026-08-10 | Claude   | `AXObserverController` extracted from `NotificationRepositioner` (§11 P1#1); `AppIconCache` (persistent, shared between the repositioner's hot path and the Exceptions tab); menu-bar right-click quick actions (pause 15/30/60, Settings, Quit — separate from the left-click Settings window); privacy redaction toggle (`redactBannerContent`, blurs custom-banner title/body); `BannerAnimation.Spec` consolidates the four per-case switches into one; Preset-apply confirmation when it would overwrite different exception groups (§11 P2#4); debounced `appGroups` persistence + `flushPendingSaves()` (§11 P3#9); per-tag/search log filtering in the Diagnostics tab; conditional `UNUserNotificationCenter` path for test notifications (§11 P2#6); `FocusModeMonitor`'s Focus-file read moved to a background-refreshing task, off the main actor; String Catalog scaffolding (`Resources/Localizable.xcstrings`, inert until populated); `AXIntegrationTests.swift` (conditionally-enabled live AX pipeline test); CI `release-consistency` job (`scripts/test-version-consistency.sh` + wires the previously-unused `test-release-workflow.sh` into `ci.yml`) |
 
 **Status:** CURRENT
 
@@ -69,7 +70,9 @@ NotificationNanny (v7.7.0)
 - `AppCoordinator` — Root lifecycle object; owns settings, repositioner, status bar, settings window
 - `AppSettings` — Reactive settings store; persists to UserDefaults + JSON; implements `NotificationSettingsProviding`
 - `NotificationRepositioner` — AX observation loop, banner repositioning, scale hammering, sleep/wake handling
+- `AXObserverController` — Owns AXObserver attach/detach and NC-process discovery; delivers raw AX events to a closure the repositioner supplies (extracted from `NotificationRepositioner`)
 - `AppNameResolver` — AX attribute parsing, banner-element tree walk, per-window app-name cache (extracted from `NotificationRepositioner`)
+- `AppIconCache` — `@MainActor` cache mapping app name → `NSImage`, shared (`.shared`) between the repositioner's per-notification icon lookup and the Exceptions tab's app picker
 - `CustomBannerManager` — Manages `NSPanel`-based custom overlay windows keyed by AX element hash
 - `CustomBannerView` — SwiftUI view rendered inside the custom overlay panel
 - `NannyLogger` — In-memory ring buffer (1000 entries) observable by the UI; injectable into `NotificationRepositioner`
@@ -196,7 +199,9 @@ NotificationNanny (SPM Package)
 ├── NotificationNannyCore          (library target — all app logic)
 │   ├── Engine/                    AX observation loop + supporting primitives
 │   │   ├── NotificationRepositioner.swift  AX engine + repositioning (orchestrator)
+│   │   ├── AXObserverController.swift  AXObserver attach/detach lifecycle + NC-process discovery
 │   │   ├── AppNameResolver.swift  AX attribute parsing, banner-element search, app-name cache
+│   │   ├── AppIconCache.swift     Persistent icon-lookup cache, shared across the app
 │   │   ├── AXSupport.swift        AXUIElement extension: size/point/string/children/staticText + cleanAXString
 │   │   ├── PrivateWindowAPI.swift CGS/SkyLight SPI wrapper (setTransform, setAlpha, windowID)
 │   │   └── NotificationProbe.swift Diagnostic window enumeration
@@ -792,14 +797,14 @@ Resolved items are labelled "resolved" below; the rest are open.
 
 #### 1. `NotificationRepositioner` is a God Class — partially resolved
 
-**Resolved:** `AppNameResolver` extracted (AX attribute parsing, banner-element tree walk, per-window cache). `PrivateWindowAPI` extracted (all private SPI). The class is now ~750 lines (down from ~1050).
+**Resolved:** `AppNameResolver` extracted (AX attribute parsing, banner-element tree walk, per-window cache). `PrivateWindowAPI` extracted (all private SPI). `AXObserverController` extracted (`AXObserverController.swift`) — owns AXObserver attach/detach, NC-process discovery, and delivers raw AX events to a single `onEvent` closure; `NotificationRepositioner.ncApp`/`ncPid` are now thin passthroughs. The class is down to ~950 lines including the new banner-decision code added since (redaction, per-tag logging, icon cache) — the observer-lifecycle slice that used to live inline is gone.
 
 **Still open:**
 ```
-NotificationRepositioner (orchestrator only)
-├── AXObserverController   — attach/detach observer, process finding   (not yet extracted)
+NotificationRepositioner (orchestrator + banner decision logic)
 └── BannerGeometryEngine   — targetOrigin, stacking, screen resolution (not yet extracted)
 ```
+`targetOrigin` stays inline: it reads `dismissedKeys`, `testGroupID`, and several settings-derived values that are repositioner-owned state, not pure geometry — extracting it cleanly needs those dependencies threaded through explicitly rather than captured, which is a larger, riskier change than the observer-lifecycle split above.
 
 #### 2. Scale Gauntlet — resolved
 
@@ -813,19 +818,21 @@ NotificationRepositioner (orchestrator only)
 
 ### P2 — Medium Impact / Architecture
 
-#### 4. `Preset` Embeds a Full Deep Copy of `[AppGroup]`
+#### 4. `Preset` Embeds a Full Deep Copy of `[AppGroup]` — partially resolved
 
-**Problem:** `Preset` stores a complete snapshot of `appGroups`. Applying a preset replaces the live array entirely — any group the user modified after saving the preset is silently overwritten. No schema version field makes future migrations harder.
+**Resolved:** `PresetsTabView` now compares `settings.appGroups` against the preset's snapshot before applying; if they differ (and the user has any groups configured), a confirmation dialog explains the groups will be replaced before proceeding. The silent-overwrite footgun is gone.
 
-**Suggestion:** Add a `presetsIncludeGroups: Bool` flag the user can opt in to. At minimum, version the export schema.
+**Still open:** The underlying model is unchanged — `Preset` still stores a full `[AppGroup]` snapshot with no merge option, and the export schema version (`1`) hasn't moved. The confirmation dialog prevents the *surprise*, not the overwrite itself; a `presetsIncludeGroups: Bool` opt-in (or a real merge) is still a possible follow-up.
 
 #### 5. `AppGroup` / `Preset` Color Anti-Pattern — resolved
 
 **Resolved:** `BannerTint: Codable` value type introduced (`r, g, b: Double`). `AppGroup.bannerTint: BannerTint?` replaces the three-optional fields. `Preset.bannerTint: BannerTint?` replaces the `bannerColorR/G/B + hasBannerColor` quad. `AppSettings` exposes `bannerTint: BannerTint?` as a computed property while retaining separate R/G/B UserDefaults keys for storage compatibility. Both `AppGroup` and `Preset` decoders silently migrate old data on first read.
 
-#### 6. `osascript` for Test Notifications — kept intentionally
+#### 6. `osascript` for Test Notifications — partially resolved
 
-**Status:** UNUserNotificationCenter was attempted but requires the app to have notification permission granted before the first test — unreliable on fresh installs. osascript is retained. `terminationHandler` now logs the exit code and stderr to the Logs tab so failures are visible.
+**Resolved:** `AppCoordinator` now requests `UNUserNotificationCenter` authorization once, silently, at first launch — well before a test notification could ever be needed. `TestNotification.send`/`sendCustom` check the live authorization status per call: if granted, they post via `UNUserNotificationCenter.add(request:)` directly (no subprocess); otherwise they fall back to the existing `osascript` path unconditionally. Users who grant the (silent, one-time) permission request skip the subprocess entirely; users who deny or never respond see identical behavior to before.
+
+**Still open:** `sendBurst` (the back-to-back race repro tool) stays on `osascript` regardless of permission — its tight `delay 0.4` sequencing inside one AppleScript run is more reliable for reproducing that specific race than coordinating multiple independent `UNUserNotificationCenter` deliveries.
 
 #### 7. `pgrep` Subprocess as NC Process Fallback — resolved
 
@@ -839,9 +846,11 @@ NotificationRepositioner (orchestrator only)
 
 **Resolved:** Cache is now owned by `AppNameResolver`. `invalidate(key:)` is called on every `kAXUIElementDestroyedNotification` before the custom-banner dismiss. `invalidateAll()` is called when the observer tears down.
 
-#### 9. `@Published var appGroups` Triggers Full Array Republish
+#### 9. `@Published var appGroups` Triggers Full Array Republish — partially resolved
 
-**Open.** Mutating any field of any group republishes the entire array. Impact is bounded by SwiftUI's diffing on `ForEach(Identifiable)` but causes unnecessary work for large group lists.
+**Resolved:** The expensive part of a full republish — re-encoding the whole array to JSON and writing `UserDefaults` — is now debounced (250ms) instead of happening on every single mutation. A per-group scale slider dragged continuously used to serialize and persist the entire `appGroups` array on every frame; now it does so once, after the drag settles. `AppSettings.flushPendingSaves()` forces the pending write immediately and is called after deliberate one-shot mutations (`resetAllSettings`, `applyPreset`, `importData`) and from `applicationWillTerminate`, so nothing is lost if the app quits mid-debounce.
+
+**Still open:** The underlying storage model is unchanged — `appGroups` is still a single `[AppGroup]` `@Published` array, so `objectWillChange` still fires (cheaply — no disk I/O) for the whole `AppSettings` object on every field edit, invalidating any view holding `@EnvironmentObject var settings: AppSettings` regardless of whether it reads `appGroups`. Moving to per-ID storage (`[UUID: AppGroup]`) would address that but touches ~25 call sites across `SettingsView+BannerTab.swift` and `SettingsView+ExceptionsTab.swift` that mutate by array index (`settings.appGroups[i].bannerScale = v`) — a larger, harder-to-verify-without-live-UI-testing change than the debounce above.
 
 **Suggestion:** `@Published var appGroupsByID: [UUID: AppGroup]` alongside the ordered array, or use `$settings.appGroups` element bindings in SwiftUI.
 
@@ -1021,4 +1030,4 @@ The per-entry log row (timestamp, level capsule, tag capsule, message) was extra
 
 ---
 
-*Architecture document last updated 2026-06-18 (v1.6 — desktop-widget protection, pause-during-Focus, LogEntryRow extraction)*
+*Architecture document last updated 2026-08-10 (v1.9 — AXObserverController extraction, persistent icon cache, menu-bar quick actions, privacy redaction, debounced appGroups persistence, and other items from §11's open list)*

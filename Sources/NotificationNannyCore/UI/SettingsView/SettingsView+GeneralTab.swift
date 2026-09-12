@@ -1,17 +1,36 @@
+import AppKit
 import SwiftUI
 
 struct GeneralTabView: View {
     @EnvironmentObject var settings: AppSettings
     @EnvironmentObject var launchAtLogin: LaunchAtLogin
+    @ObservedObject private var loc = LocalizationManager.shared
 
     @State private var showResetConfirmation = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("App-wide settings for startup, timing, and notification behaviour. These apply globally and are not affected by presets or per-app rules.")
+            LocalizedText("App-wide settings for startup, timing, and notification behaviour. These apply globally and are not affected by presets or per-app rules.")
                 .font(.callout)
                 .foregroundStyle(Color(white: 0.55))
                 .fixedSize(horizontal: false, vertical: true)
+
+            section("Language") {
+                HStack {
+                    LocalizedText("App Language").font(.callout)
+                    Spacer()
+                    Picker("", selection: Binding(
+                        get: { loc.language },
+                        set: { loc.setLanguage($0) }
+                    )) {
+                        ForEach(AppLanguage.allCases) { lang in
+                            Text(lang.displayName).tag(lang)
+                        }
+                    }
+                    .labelsHidden().pickerStyle(.menu).controlSize(.small).fixedSize()
+                }
+                .padding(.horizontal, 14).padding(.vertical, 10)
+            }
 
             section("Startup") {
                 toggleRow("Launch at login", isOn: Binding(
@@ -30,6 +49,8 @@ struct GeneralTabView: View {
                 toggleRow("Pause while screen sharing", isOn: $settings.pauseWhileStreaming)
                 Divider().padding(.leading, 14)
                 toggleRow("Pause during Focus / Do Not Disturb", isOn: $settings.pauseDuringFocus)
+                Divider().padding(.leading, 14)
+                toggleRow("Blur banner text (privacy)", isOn: $settings.redactBannerContent)
             }
 
             section("Placement & safety") {
@@ -49,25 +70,30 @@ struct GeneralTabView: View {
             Button(role: .destructive) {
                 showResetConfirmation = true
             } label: {
-                Label("Reset All Settings", systemImage: "arrow.counterclockwise")
+                Label {
+                    LocalizedText("Reset All Settings")
+                } icon: {
+                    Image(systemName: "arrow.counterclockwise")
+                }
             }
             .buttonStyle(.borderless)
             .font(.caption)
-            .confirmationDialog("Reset all settings?",
+            .confirmationDialog(loc.string("Reset all settings?"),
                                 isPresented: $showResetConfirmation,
                                 titleVisibility: .visible) {
-                Button("Reset", role: .destructive) { settings.resetAllSettings() }
-                Button("Cancel", role: .cancel) {}
+                Button(loc.string("Reset"), role: .destructive) { settings.resetAllSettings() }
+                Button(loc.string("Cancel"), role: .cancel) {}
             } message: {
-                Text("This will clear all positions, exceptions, presets and restore defaults. This cannot be undone.")
+                LocalizedText("This will clear all positions, exceptions, presets and restore defaults. This cannot be undone.")
             }
         }
     }
 
     @ViewBuilder
-    private func section<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
+    private func section<Content: View>(_ titleKey: String, @ViewBuilder content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(title.uppercased())
+            LocalizedText(titleKey)
+                .textCase(.uppercase)
                 .font(.caption2.weight(.semibold)).foregroundStyle(.tertiary).kerning(0.5)
                 .padding(.leading, 4)
             VStack(spacing: 0) { content() }
@@ -75,9 +101,9 @@ struct GeneralTabView: View {
         }
     }
 
-    private func toggleRow(_ label: String, isOn: Binding<Bool>) -> some View {
+    private func toggleRow(_ labelKey: String, isOn: Binding<Bool>) -> some View {
         HStack {
-            Text(label).font(.callout)
+            LocalizedText(labelKey).font(.callout)
             Spacer()
             Toggle("", isOn: isOn).labelsHidden().toggleStyle(.switch).controlSize(.small)
         }
@@ -87,7 +113,7 @@ struct GeneralTabView: View {
 
     private var autoDismissRow: some View {
         HStack(spacing: 8) {
-            Text("Auto-dismiss").font(.callout)
+            LocalizedText("Auto-dismiss").font(.callout)
             Spacer()
             if settings.autoDismissSeconds > 0 {
                 TextField("", value: $settings.autoDismissSeconds,
@@ -97,7 +123,7 @@ struct GeneralTabView: View {
                     .font(.caption2.monospacedDigit())
                 Stepper("", value: $settings.autoDismissSeconds, in: 1...300, step: 1)
                     .labelsHidden().controlSize(.mini)
-                Text("s").font(.caption2).foregroundStyle(.secondary)
+                LocalizedText("s").font(.caption2).foregroundStyle(.secondary)
             }
             Toggle("", isOn: Binding(
                 get: { settings.autoDismissSeconds > 0 },

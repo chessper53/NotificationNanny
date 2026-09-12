@@ -1,0 +1,168 @@
+/* Sidebar tabs */
+"Position" = "Position";
+"Exceptions" = "Exceptions";
+"Banner" = "Banner";
+"Presets" = "Presets";
+"General" = "General";
+"Backup" = "Backup";
+"Diagnostics" = "Diagnostics";
+"Help" = "Help";
+"Disable" = "Disable";
+"Enable" = "Enable";
+"Quit" = "Quit";
+
+/* Permission / update banners */
+"Accessibility access granted" = "Accessibility access granted";
+"Accessibility access required" = "Accessibility access required";
+"NotificationNanny needs this to reposition and intercept notification banners." = "NotificationNanny needs this to reposition and intercept notification banners.";
+"Grant Access" = "Grant Access";
+"Update Now" = "Update Now";
+"View Release" = "View Release";
+"Relaunch" = "Relaunch";
+"Updating via Homebrew…" = "Updating via Homebrew…";
+"Relaunch to apply changes" = "Relaunch to apply changes";
+"Update failed" = "Update failed";
+
+/* Shared controls */
+"Horizontal" = "Horizontal";
+"Vertical" = "Vertical";
+"Fine-tune" = "Fine-tune";
+"Reset" = "Reset";
+"Cancel" = "Cancel";
+"Clear" = "Clear";
+"Save" = "Save";
+"Send" = "Send";
+"Send Test Notification" = "Send Test Notification";
+
+/* Position tab */
+"Choose where banners appear. Drag the indicator on the preview or use the sliders to fine-tune the position." = "Choose where banners appear. Drag the indicator on the preview or use the sliders to fine-tune the position.";
+"Default Position" = "Default Position";
+"Auto" = "Auto";
+
+/* Banner tab */
+"Experimental. The custom banner replaces the system one entirely. Some notification actions like inline replies may not work. Behavior can vary between apps and macOS versions." = "Experimental. The custom banner replaces the system one entirely. Some notification actions like inline replies may not work. Behavior can vary between apps and macOS versions.";
+"Custom renderer activates automatically when scale ≠ 100%, a tint color is set, or banner mode is forced. It replaces the system banner with a custom one that supports scaling, tinting, and animation." = "Custom renderer activates automatically when scale ≠ 100%, a tint color is set, or banner mode is forced. It replaces the system banner with a custom one that supports scaling, tinting, and animation.";
+"Default Scale" = "Default Scale";
+"Background Color" = "Background Color";
+"Custom" = "Custom";
+"Pick any custom color" = "Pick any custom color";
+"Tint active — custom renderer on" = "Tint active — custom renderer on";
+"No tint" = "No tint";
+"Text Color" = "Text Color";
+"Custom text color active — custom renderer on" = "Custom text color active — custom renderer on";
+"Default — follows system appearance" = "Default — follows system appearance";
+"Animation" = "Animation";
+"Replay" = "Replay";
+"System-style slide-in. Other animations activate the custom renderer." = "System-style slide-in. Other animations activate the custom renderer.";
+"Custom animation active — replaces the system banner." = "Custom animation active — replaces the system banner.";
+"Per-app overrides" = "Per-app overrides";
+"Using default" = "Using default";
+"Customize" = "Customize";
+"Animation for this group" = "Animation for this group";
+"Color" = "Color";
+"Test" = "Test";
+"px" = "px";
+
+/* Custom banner overlay chrome */
+"now" = "now";
+
+/* Exceptions tab */
+"Create groups of apps and give each group its own rules: position, screen, banner type, and scale. Apps not in any group use the defaults." = "Create groups of apps and give each group its own rules: position, screen, banner type, and scale. Apps not in any group use the defaults.";
+"No exceptions yet." = "No exceptions yet.";
+"Name" = "Name";
+"Create" = "Create";
+"Screen:" = "Screen:";
+"Default" = "Default";
+"Assigned Apps" = "Assigned Apps";
+"No apps seen yet — receive a notification from any app and it will appear here." = "No apps seen yet — receive a notification from any app and it will appear here.";
+
+/* Presets tab */
+"Save and switch between named configurations. Presets capture your full setup including per-app rules." = "Save and switch between named configurations. Presets capture your full setup including per-app rules.";
+"No presets yet." = "No presets yet.";
+"5 preset limit reached" = "5 preset limit reached";
+"Done" = "Done";
+"Replace your current exception groups?" = "Replace your current exception groups?";
+"Apply Preset" = "Apply Preset";
+
+/* General tab */
+"App-wide settings for startup, timing, and notification behaviour. These apply globally and are not affected by presets or per-app rules." = "App-wide settings for startup, timing, and notification behaviour. These apply globally and are not affected by presets or per-app rules.";
+"Language" = "Language";
+"App Language" = "App Language";
+"System Default" = "System Default";
+"Restart NotificationNanny to apply the new language." = "Restart NotificationNanny to apply the new language.";
+"Startup" = "Startup";
+"Launch at login" = "Launch at login";
+"Hide menu bar icon" = "Hide menu bar icon";
+"Timing" = "Timing";
+"Auto-dismiss" = "Auto-dismiss";
+"s" = "s";
+"Pausing" = "Pausing";
+"Pause while screen sharing" = "Pause while screen sharing";
+"Pause during Focus / Do Not Disturb" = "Pause during Focus / Do Not Disturb";
+"Blur banner text (privacy)" = "Blur banner text (privacy)";
+"Placement & safety" = "Placement & safety";
+"Send to the screen with the cursor" = "Send to the screen with the cursor";
+"Don't move Notification Center" = "Don't move Notification Center";
+"Don't move desktop widgets" = "Don't move desktop widgets";
+"Hold banners while display is asleep" = "Hold banners while display is asleep";
+"Reset All Settings" = "Reset All Settings";
+"Reset all settings?" = "Reset all settings?";
+"This will clear all positions, exceptions, presets and restore defaults. This cannot be undone." = "This will clear all positions, exceptions, presets and restore defaults. This cannot be undone.";
+
+/* Backup tab */
+"Export your settings to a file or import a previously saved backup. Everything is included: positions, scale, per-app rules, presets, and general toggles." = "Export your settings to a file or import a previously saved backup. Everything is included: positions, scale, per-app rules, presets, and general toggles.";
+"Export Settings…" = "Export Settings…";
+"Save a backup to a JSON file" = "Save a backup to a JSON file";
+"Import Settings…" = "Import Settings…";
+"Restore from a previously exported file" = "Restore from a previously exported file";
+"Replace all settings?" = "Replace all settings?";
+"Import" = "Import";
+"This will overwrite all current positions, exceptions, presets and general settings. This cannot be undone." = "This will overwrite all current positions, exceptions, presets and general settings. This cannot be undone.";
+
+/* Help tab */
+"Need help or have an idea?" = "Need help or have an idea?";
+"Report a bug" = "Report a bug";
+"Diagnostics attached · full log copied to clipboard" = "Diagnostics attached · full log copied to clipboard";
+"Auto-attaches diagnostics & logs" = "Auto-attaches diagnostics & logs";
+"Request a feature" = "Request a feature";
+"Got an idea for an improvement" = "Got an idea for an improvement";
+"View all issues" = "View all issues";
+"Browse open and completed issues" = "Browse open and completed issues";
+"Source code" = "Source code";
+"NotificationNanny is open source" = "NotificationNanny is open source";
+"Diagnostics and activity logs now live in the **Diagnostics** tab — handy if you want to inspect them before filing a report." = "Diagnostics and activity logs now live in the **Diagnostics** tab — handy if you want to inspect them before filing a report.";
+"I work full time, nevertheless I read every issue and try to respond to everyone." = "I work full time, nevertheless I read every issue and try to respond to everyone.";
+"Diagnostics are only attached when you file a report. Nothing is collected or transmitted otherwise." = "Diagnostics are only attached when you file a report. Nothing is collected or transmitted otherwise.";
+
+/* Diagnostics tab */
+"Copies your settings, system info, and recent activity. Paste it into your bug report." = "Copies your settings, system info, and recent activity. Paste it into your bug report.";
+"Copied to clipboard" = "Copied to clipboard";
+"Copy Diagnostics" = "Copy Diagnostics";
+"Developer" = "Developer";
+"Apply a report" = "Apply a report";
+"Paste a diagnostics report to take over its settings (position, behavior toggles, auto-dismiss, scale) for local reproduction." = "Paste a diagnostics report to take over its settings (position, behavior toggles, auto-dismiss, scale) for local reproduction.";
+"Paste" = "Paste";
+"Apply Settings" = "Apply Settings";
+"Activity log" = "Activity log";
+"Save…" = "Save…";
+"Filter messages…" = "Filter messages…";
+"All tags" = "All tags";
+"No entries yet. Trigger a notification to start logging." = "No entries yet. Trigger a notification to start logging.";
+"No entries match the current filter." = "No entries match the current filter.";
+"Edge-case tools" = "Edge-case tools";
+"Dump AX tree" = "Dump AX tree";
+"Logs the live Notification Center window tree for any banners on screen." = "Logs the live Notification Center window tree for any banners on screen.";
+"Dump" = "Dump";
+"Back-to-back burst" = "Back-to-back burst";
+"Fires several notifications in rapid succession to reproduce the rapid-message race." = "Fires several notifications in rapid succession to reproduce the rapid-message race.";
+"Edge-case notifications" = "Edge-case notifications";
+"Send a tricky notification through the real path to test extraction, wrapping, and unicode. Renders custom only when custom mode is active for the sender." = "Send a tricky notification through the real path to test extraction, wrapping, and unicode. Renders custom only when custom mode is active for the sender.";
+
+/* Menu bar right-click quick actions (AppKit, NSLocalizedString) */
+"Resume (paused until %@)" = "Resume (paused until %@)";
+"15 minutes" = "15 minutes";
+"30 minutes" = "30 minutes";
+"1 hour" = "1 hour";
+"Pause for…" = "Pause for…";
+"Settings…" = "Settings…";
+"Quit NotificationNanny" = "Quit NotificationNanny";
