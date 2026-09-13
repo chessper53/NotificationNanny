@@ -99,8 +99,6 @@ struct ExceptionsTabView: View {
             ?? settings.resolvedTargetScreen()
             ?? NSScreen.main ?? screens[0]
         let placementBinding = settings.placementBinding(for: group.id)
-        let visible = exScreen.visibleFrame
-        let isDefault = placementBinding.wrappedValue.xOffset == 0 && placementBinding.wrappedValue.yOffset == 0
 
         VStack(alignment: .leading, spacing: 12) {
             HStack {
@@ -124,26 +122,7 @@ struct ExceptionsTabView: View {
                 }
             }
 
-            DraggableScreenTile(screen: exScreen, placement: placementBinding)
-                .frame(maxWidth: .infinity, alignment: .center)
-
-            VStack(alignment: .leading, spacing: 8) {
-                HStack {
-                    LocalizedText("Fine-tune").font(.caption.weight(.medium)).foregroundStyle(.secondary)
-                    Spacer()
-                    Button(loc.string("Reset")) {
-                        placementBinding.wrappedValue.xOffset = 0
-                        placementBinding.wrappedValue.yOffset = 0
-                    }
-                    .buttonStyle(.borderless).font(.caption).foregroundStyle(Color.nannyAccent).disabled(isDefault)
-                }
-                SettingsSliderRow(title: "Horizontal", value: placementBinding.xOffset,
-                                  range: -Double(visible.width)...Double(visible.width))
-                SettingsSliderRow(title: "Vertical",   value: placementBinding.yOffset,
-                                  range: -Double(visible.height)...Double(visible.height))
-            }
-            .padding(10)
-            .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 8))
+            PlacementEditor(screen: exScreen, placement: placementBinding, screenWidth: 196)
 
             appAssignmentSection(for: group)
 
