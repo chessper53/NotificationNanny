@@ -166,23 +166,32 @@ struct DraggableScreenTile: View {
     private static let realBannerSize = CGSize(width: 372, height: 100)
 
     var body: some View {
+        // The preview shows the whole display, not just the visible frame.
+        // Banner placement is measured from the visible frame — which already
+        // excludes the menu bar — so drawing a menu bar *inside* a visible-frame
+        // preview counted it twice, and a top-anchored banner appeared to sit
+        // over the menu bar when in reality it sits below it.
+        let frame   = screen.frame
         let visible = screen.visibleFrame
+        let menuBarHeight = max(0, frame.maxY - visible.maxY)
+        let dockHeight    = max(0, visible.minY - frame.minY)
+        let visibleLeft   = visible.minX - frame.minX
+
         // One scale for both axes. The old code clamped tile height into
         // 100...220 and then compensated with separate x/y scales, which meant
         // the preview was a stretched version of the display and dragging didn't
-        // correspond to where the banner actually landed. Fitting a single scale
-        // inside the budget keeps the preview geometrically similar to the real
-        // screen, so the mapping is 1:1.
-        let scale = min(maxWidth / max(visible.width, 1),
-                        maxHeight / max(visible.height, 1))
-        let tileWidth  = visible.width  * scale
-        let tileHeight = visible.height * scale
+        // correspond to where the banner actually landed.
+        let scale = min(maxWidth / max(frame.width, 1),
+                        maxHeight / max(frame.height, 1))
+        let tileWidth  = frame.width  * scale
+        let tileHeight = frame.height * scale
         let bannerWidth  = Self.realBannerSize.width  * scale
         let bannerHeight = Self.realBannerSize.height * scale
-        let bannerCenterReal = bannerCenterInVisibleCoords(visible: visible)
+
+        let centreInVisible = bannerCentreInVisible(visible: visible)
         let bannerCenterTile = CGPoint(
-            x: (bannerCenterReal.x - visible.minX) * scale,
-            y: (bannerCenterReal.y - visible.minY) * scale
+            x: (visibleLeft + centreInVisible.x) * scale,
+            y: (menuBarHeight + centreInVisible.y) * scale
         )
 
         return DeviceChrome(screen: screen,
@@ -191,7 +200,13 @@ struct DraggableScreenTile: View {
                 Rectangle().fill(Self.wallpaper)
                 Rectangle()
                     .fill(Color.white.opacity(0.16))
-                    .frame(height: max(4, 25 * scale))
+                    .frame(height: menuBarHeight * scale)
+                if dockHeight > 2 {
+                    Rectangle()
+                        .fill(Color.white.opacity(0.10))
+                        .frame(height: dockHeight * scale)
+                        .offset(y: tileHeight - dockHeight * scale)
+                }
                 // Drawn without clamping: a config saved with the old sliders can
                 // sit partly off-screen, and the preview should show that honestly
                 // rather than quietly pretending it's somewhere else.
@@ -205,14 +220,23 @@ struct DraggableScreenTile: View {
             .gesture(
                 DragGesture(minimumDistance: 0, coordinateSpace: .local)
                     .onChanged { value in
-                        updatePlacement(fromTilePoint: value.location,
-                                        scale: scale, visible: visible)
+                        commitDrag(at: value.location, scale: scale, visible: visible,
+                                   visibleLeft: visibleLeft, menuBarHeight: menuBarHeight)
                     }
             )
             .onTapGesture { tap in
-                updatePlacement(fromTilePoint: tap, scale: scale, visible: visible)
+                commitDrag(at: tap, scale: scale, visible: visible,
+                           visibleLeft: visibleLeft, menuBarHeight: menuBarHeight)
             }
         }
+    }
+
+    /// Tile point (full-frame, top-left origin) back into visible-frame coords.
+    private func commitDrag(at point: CGPoint, scale: CGFloat, visible: CGRect,
+                            visibleLeft: CGFloat, menuBarHeight: CGFloat) {
+        updatePlacement(visiblePoint: CGPoint(x: point.x / scale - visibleLeft,
+                                              y: point.y / scale - menuBarHeight),
+                        visible: visible)
     }
 
     /// Stands in for the desktop picture so the banner chips read as sitting on a
@@ -223,7 +247,9 @@ struct DraggableScreenTile: View {
         startPoint: .topLeading, endPoint: .bottomTrailing
     )
 
-    private func bannerCenterInVisibleCoords(visible: CGRect) -> CGPoint {
+    /// Banner centre in visible-frame coordinates, top-left origin — the same
+    /// frame of reference the repositioner uses when it places the real window.
+    private func bannerCentreInVisible(visible: CGRect) -> CGPoint {
         let banner = Self.realBannerSize
         let inset: CGFloat = 8
         let x: CGFloat
@@ -238,23 +264,21 @@ struct DraggableScreenTile: View {
         case .middleLeft, .middleCenter, .middleRight:  y = (visible.height - banner.height) / 2
         case .bottomLeft, .bottomCenter, .bottomRight:  y = visible.height - banner.height - inset
         }
-        let cx = visible.minX + x + banner.width / 2 + CGFloat(placement.xOffset)
-        let cy = visible.minY + y + banner.height / 2 + CGFloat(placement.yOffset)
-        return CGPoint(x: cx, y: cy)
+        return CGPoint(x: x + banner.width / 2 + CGFloat(placement.xOffset),
+                       y: y + banner.height / 2 + CGFloat(placement.yOffset))
     }
 
     /// Clamped so a drag can only ever produce an on-screen banner. This is now
     /// the only way to set a placement — the old offset sliders ran to ±the full
     /// screen width, which is how banners ended up off-screen. Existing stored
     /// offsets are left alone; they're only replaced once the user drags.
-    private func updatePlacement(fromTilePoint point: CGPoint,
-                                 scale: CGFloat, visible: CGRect) {
+    private func updatePlacement(visiblePoint point: CGPoint, visible: CGRect) {
         let banner = Self.realBannerSize
         let inset: CGFloat = 8
         let centreX = max(inset + banner.width / 2,
-                          min(visible.width  - inset - banner.width  / 2, point.x / scale))
+                          min(visible.width  - inset - banner.width  / 2, point.x))
         let centreY = max(inset + banner.height / 2,
-                          min(visible.height - inset - banner.height / 2, point.y / scale))
+                          min(visible.height - inset - banner.height / 2, point.y))
 
         let bandX: AnchorBand
         switch centreX {
