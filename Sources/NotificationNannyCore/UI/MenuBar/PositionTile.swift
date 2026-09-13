@@ -2,18 +2,163 @@ import SwiftUI
 import AppKit
 import UserNotifications
 
+// MARK: - Device chassis
+
+/// Draws the screen preview inside a physical-looking display: a laptop lid and
+/// base for the built-in screen, a monitor on a stand for anything external.
+///
+/// Worth the pixels because it makes a multi-display setup legible at a glance —
+/// you recognise which preview is the MacBook without reading the picker — and it
+/// frames the preview as "your screen" rather than an abstract grey rectangle.
+struct DeviceChrome<Content: View>: View {
+    let screen: NSScreen
+    let screenSize: CGSize
+    @ViewBuilder var content: () -> Content
+
+    private var isLaptop: Bool { CGDisplayIsBuiltin(screen.displayID) != 0 }
+    /// Notched Macs report a non-zero top safe area; drawing the notch only when
+    /// the real display has one keeps the preview honest.
+    private var hasNotch: Bool { screen.safeAreaInsets.top > 0 }
+
+    private var bezel: CGFloat { isLaptop ? 5 : 6 }
+    private var chin: CGFloat { isLaptop ? 10 : 16 }
+
+    // Not `static` — DeviceChrome is generic over its content, and generic types
+    // can't hold static stored properties.
+    private var shell: LinearGradient {
+        LinearGradient(colors: [Color(white: 0.42), Color(white: 0.26)],
+                       startPoint: .top, endPoint: .bottom)
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            ZStack {
+                RoundedRectangle(cornerRadius: isLaptop ? 11 : 8, style: .continuous)
+                    .fill(shell)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: isLaptop ? 11 : 8, style: .continuous)
+                            .stroke(Color.white.opacity(0.22), lineWidth: 0.8)
+                    )
+                VStack(spacing: 0) {
+                    ZStack(alignment: .top) {
+                        content()
+                            .clipShape(RoundedRectangle(cornerRadius: isLaptop ? 5 : 3,
+                                                        style: .continuous))
+                        if hasNotch {
+                            UnevenRoundedRectangle(bottomLeadingRadius: 3, bottomTrailingRadius: 3,
+                                                   style: .continuous)
+                                .fill(Color.black)
+                                .frame(width: screenSize.width * 0.17, height: 6)
+                        }
+                    }
+                    if !isLaptop {
+                        // Monitors carry their logo area below the glass.
+                        Spacer(minLength: 0).frame(height: chin - bezel)
+                    }
+                }
+                .padding(bezel)
+            }
+            .frame(width: screenSize.width + bezel * 2,
+                   height: screenSize.height + bezel * 2 + (isLaptop ? 0 : chin - bezel))
+
+            if isLaptop { laptopBase } else { monitorStand }
+        }
+        // Sits the whole device on the panel rather than letting it float.
+        .shadow(color: .black.opacity(0.45), radius: 6, y: 3)
+    }
+
+    /// Wedge under the lid, with the finger recess Apple puts on the front edge.
+    private var laptopBase: some View {
+        ZStack(alignment: .top) {
+            UnevenRoundedRectangle(bottomLeadingRadius: 4, bottomTrailingRadius: 4, style: .continuous)
+                .fill(LinearGradient(colors: [Color(white: 0.34), Color(white: 0.20)],
+                                     startPoint: .top, endPoint: .bottom))
+                .frame(width: screenSize.width + bezel * 2 + 16, height: 9)
+            Capsule()
+                .fill(Color.black.opacity(0.30))
+                .frame(width: screenSize.width * 0.16, height: 3)
+                .offset(y: 0.5)
+        }
+        .overlay(alignment: .top) {
+            Rectangle().fill(Color.white.opacity(0.18)).frame(height: 0.8)
+        }
+    }
+
+    private var monitorStand: some View {
+        VStack(spacing: 0) {
+            Rectangle()
+                .fill(LinearGradient(colors: [Color(white: 0.30), Color(white: 0.22)],
+                                     startPoint: .leading, endPoint: .trailing))
+                .frame(width: 26, height: 12)
+            Capsule()
+                .fill(LinearGradient(colors: [Color(white: 0.36), Color(white: 0.22)],
+                                     startPoint: .top, endPoint: .bottom))
+                .frame(width: screenSize.width * 0.34, height: 6)
+        }
+    }
+}
+
+// MARK: - Placement editor
+
+/// The device preview and its fine-tune sliders, side by side.
+///
+/// Stacked vertically these cost about 120pt more height, which was enough to
+/// push the Exceptions tab into scrolling. Shared by the Position and Exceptions
+/// tabs, which previously carried near-identical copies of the fine-tune block.
+struct PlacementEditor: View {
+    let screen: NSScreen
+    @Binding var placement: ScreenPlacement
+    var screenWidth: CGFloat = 208
+
+    @ObservedObject private var loc = LocalizationManager.shared
+
+    var body: some View {
+        let visible = screen.visibleFrame
+        let isDefault = placement.xOffset == 0 && placement.yOffset == 0
+
+        HStack(alignment: .top, spacing: 12) {
+            DraggableScreenTile(screen: screen, placement: $placement, screenWidth: screenWidth)
+
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    LocalizedText("Fine-tune")
+                        .font(.caption.weight(.medium)).foregroundStyle(.secondary)
+                    Spacer()
+                    Button(loc.string("Reset")) {
+                        placement.xOffset = 0
+                        placement.yOffset = 0
+                    }
+                    .buttonStyle(.borderless).font(.caption)
+                    .foregroundStyle(Color.nannyAccent).disabled(isDefault)
+                }
+                SettingsSliderRow(title: "Horizontal", value: $placement.xOffset,
+                                  range: -Double(visible.width)...Double(visible.width))
+                SettingsSliderRow(title: "Vertical", value: $placement.yOffset,
+                                  range: -Double(visible.height)...Double(visible.height))
+                Spacer(minLength: 0)
+            }
+            .padding(10)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 8))
+        }
+    }
+}
+
 // MARK: - Shared drag tile
 
 struct DraggableScreenTile: View {
     let screen: NSScreen
     @Binding var placement: ScreenPlacement
+    /// Width of the picture area. The chassis drawn around it adds its own bezel
+    /// and base on top of this.
+    var screenWidth: CGFloat = 288
 
     private static let realBannerSize = CGSize(width: 372, height: 100)
 
     var body: some View {
         let visible = screen.visibleFrame
         let aspect = visible.width / max(visible.height, 1)
-        let tileWidth:  CGFloat = 288
+        let tileWidth:  CGFloat = screenWidth
         let tileHeight: CGFloat = min(220, max(100, tileWidth / aspect))
         // Use separate x/y scales — tile height is clamped on wide displays,
         // so a single scale based on width gives wrong y positions.
@@ -27,39 +172,46 @@ struct DraggableScreenTile: View {
             y: (bannerCenterReal.y - visible.minY) * scaleY
         )
 
-        return ZStack(alignment: .topLeading) {
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(Color.secondary.opacity(0.08))
-                .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .stroke(Color.secondary.opacity(0.25), lineWidth: 1))
-            Rectangle()
-                .fill(Color.secondary.opacity(0.12))
-                .frame(height: 6)
-                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-            BannerChip(width: bannerWidth, height: bannerHeight)
-                .opacity(0.3)
-                .position(
-                    x: bannerCenterTile.x,
-                    y: bannerCenterTile.y + (placement.position.stacksUpward ? -(bannerHeight + 4) : (bannerHeight + 4))
-                )
-            BannerChip(width: bannerWidth, height: bannerHeight)
-                .position(x: bannerCenterTile.x, y: bannerCenterTile.y)
-        }
-        .frame(width: tileWidth, height: tileHeight)
-        .contentShape(Rectangle())
-        // Gesture on the ZStack so .local coords = tile coords, not chip-local coords
-        .gesture(
-            DragGesture(minimumDistance: 0, coordinateSpace: .local)
-                .onChanged { value in
-                    updatePlacement(fromTilePoint: value.location,
-                                    scaleX: scaleX, scaleY: scaleY, visible: visible)
-                }
-        )
-        .onTapGesture { tap in
-            updatePlacement(fromTilePoint: tap,
-                            scaleX: scaleX, scaleY: scaleY, visible: visible)
+        return DeviceChrome(screen: screen,
+                            screenSize: CGSize(width: tileWidth, height: tileHeight)) {
+            ZStack(alignment: .topLeading) {
+                Rectangle().fill(Self.wallpaper)
+                Rectangle()
+                    .fill(Color.white.opacity(0.16))
+                    .frame(height: 6)
+                BannerChip(width: bannerWidth, height: bannerHeight)
+                    .opacity(0.3)
+                    .position(
+                        x: bannerCenterTile.x,
+                        y: bannerCenterTile.y + (placement.position.stacksUpward ? -(bannerHeight + 4) : (bannerHeight + 4))
+                    )
+                BannerChip(width: bannerWidth, height: bannerHeight)
+                    .position(x: bannerCenterTile.x, y: bannerCenterTile.y)
+            }
+            .frame(width: tileWidth, height: tileHeight)
+            .contentShape(Rectangle())
+            // Gesture on the ZStack so .local coords = tile coords, not chip-local coords
+            .gesture(
+                DragGesture(minimumDistance: 0, coordinateSpace: .local)
+                    .onChanged { value in
+                        updatePlacement(fromTilePoint: value.location,
+                                        scaleX: scaleX, scaleY: scaleY, visible: visible)
+                    }
+            )
+            .onTapGesture { tap in
+                updatePlacement(fromTilePoint: tap,
+                                scaleX: scaleX, scaleY: scaleY, visible: visible)
+            }
         }
     }
+
+    /// Stands in for the desktop picture so the banner chips read as sitting on a
+    /// screen rather than floating in an empty box.
+    private static let wallpaper = LinearGradient(
+        colors: [Color(red: 0.13, green: 0.15, blue: 0.20),
+                 Color(red: 0.08, green: 0.09, blue: 0.12)],
+        startPoint: .topLeading, endPoint: .bottomTrailing
+    )
 
     private func bannerCenterInVisibleCoords(visible: CGRect) -> CGPoint {
         let banner = Self.realBannerSize

@@ -18,8 +18,6 @@ struct PositionTabView: View {
 
     var body: some View {
         let visible = defaultScreen.visibleFrame
-        let isDefault = defaultPlacementBinding.wrappedValue.xOffset == 0
-                     && defaultPlacementBinding.wrappedValue.yOffset == 0
 
         VStack(alignment: .leading, spacing: 14) {
             LocalizedText("Choose where banners appear. Drag the indicator on the preview or use the sliders to fine-tune the position.")
@@ -48,29 +46,8 @@ struct PositionTabView: View {
                 }
             }
 
-            DraggableScreenTile(screen: defaultScreen, placement: defaultPlacementBinding)
-                .frame(maxWidth: .infinity, alignment: .center)
-
-            VStack(alignment: .leading, spacing: 10) {
-                HStack {
-                    LocalizedText("Fine-tune").font(.caption.weight(.medium)).foregroundStyle(.secondary)
-                    Spacer()
-                    Button(loc.string("Reset")) {
-                        defaultPlacementBinding.wrappedValue.xOffset = 0
-                        defaultPlacementBinding.wrappedValue.yOffset = 0
-                    }
-                    .buttonStyle(.borderless)
-                    .font(.caption)
-                    .foregroundStyle(Color.nannyAccent)
-                    .disabled(isDefault)
-                }
-                SettingsSliderRow(title: "Horizontal", value: defaultPlacementBinding.xOffset,
-                                  range: -Double(visible.width)...Double(visible.width))
-                SettingsSliderRow(title: "Vertical",   value: defaultPlacementBinding.yOffset,
-                                  range: -Double(visible.height)...Double(visible.height))
-            }
-            .padding(12)
-            .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
+            PlacementEditor(screen: defaultScreen, placement: defaultPlacementBinding,
+                            screenWidth: 236)
 
             Button {
                 repositioner.sendTestNotification(groupID: nil)
