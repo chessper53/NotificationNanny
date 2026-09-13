@@ -8,6 +8,15 @@ struct ExceptionsTabView: View {
 
     private enum GroupMode: Equatable { case browsing, adding }
 
+    /// One row of the app picker. App names are unique within the picker, so the
+    /// name is the identity — and it stays stable as a row moves between the
+    /// assigned and available halves.
+    private struct AppPick: Identifiable, Equatable {
+        let name: String
+        let isAssigned: Bool
+        var id: String { name }
+    }
+
     @State private var selectedGroupID: UUID? = nil
     @State private var groupMode: GroupMode = .browsing
     @State private var newGroupName = ""
@@ -193,21 +202,25 @@ struct ExceptionsTabView: View {
                 }
             }
 
+            // One ForEach over one array, not two siblings with a conditional
+            // Divider between them. Clicking a row moves it between the assigned
+            // and available sets; across two ForEachs that reshuffles structural
+            // identity and SwiftUI would leave rows showing another row's
+            // checkmark. The separator rides along inside the row that starts the
+            // available section so the identity space stays flat.
+            let rows = assigned.map { AppPick(name: $0, isAssigned: true) }
+                     + available.map { AppPick(name: $0, isAssigned: false) }
+
             ScrollView(showsIndicators: true) {
                 LazyVStack(alignment: .leading, spacing: 1) {
-                    ForEach(assigned, id: \.self) { appName in
-                        appRow(appName, group: group, isAssigned: true)
+                    ForEach(rows) { row in
+                        if row.name == available.first && !assigned.isEmpty {
+                            Divider().padding(.vertical, 3).padding(.horizontal, 6)
+                        }
+                        appRow(row.name, group: group, isAssigned: row.isAssigned)
                     }
 
-                    if !assigned.isEmpty && !available.isEmpty {
-                        Divider().padding(.vertical, 3).padding(.horizontal, 6)
-                    }
-
-                    ForEach(available, id: \.self) { appName in
-                        appRow(appName, group: group, isAssigned: false)
-                    }
-
-                    if assigned.isEmpty && available.isEmpty {
+                    if rows.isEmpty {
                         LocalizedText(settings.knownAppNames.isEmpty
                             ? "No apps seen yet — receive a notification from any app and it will appear here."
                             : "No apps match your filter.")
@@ -224,10 +237,9 @@ struct ExceptionsTabView: View {
 
     @ViewBuilder
     private func appRow(_ appName: String, group: AppGroup, isAssigned: Bool) -> some View {
-        // An app can sit in several groups, but only the first match wins when a
-        // notification arrives, so say so rather than letting the rule silently
-        // never fire.
-        let conflict = isAssigned ? nil : settings.group(for: appName).map(\.name)
+        // Membership is exclusive — addApp pulls the name out of every other group
+        // — so this is a "will be moved out of X" warning, not a conflict.
+        let currentOwner = isAssigned ? nil : settings.group(for: appName).map(\.name)
 
         Button {
             if isAssigned { settings.removeApp(appName, fromGroup: group.id) }
@@ -246,10 +258,11 @@ struct ExceptionsTabView: View {
                     Color.clear.frame(width: 16, height: 16)
                 }
                 Text(appName).font(.caption).lineLimit(1)
-                if let conflict {
+                if let currentOwner {
                     Spacer(minLength: 4)
-                    Text(loc.string("in") + " \"\(conflict)\"")
+                    Text(loc.string("in") + " \"\(currentOwner)\"")
                         .font(.caption2).foregroundStyle(.tertiary).lineLimit(1)
+                        .help(loc.string("Assigning this app here will move it out of this group."))
                 }
                 Spacer(minLength: 0)
             }
