@@ -468,16 +468,29 @@ package final class AppSettings: ObservableObject {
         appGroups[i].name = name
     }
 
+    /// Assigning moves the app: a notification only ever matches the first group
+    /// containing it, so membership is exclusive.
+    ///
+    /// Built as one value and assigned once. Mutating `appGroups` in place published
+    /// an objectWillChange per step, so observers briefly saw the app belonging to no
+    /// group at all — a torn intermediate state the picker could render.
     func addApp(_ appName: String, toGroup groupID: UUID) {
-        for i in appGroups.indices { appGroups[i].appNames.removeAll { $0 == appName } }
-        guard let i = appGroups.firstIndex(where: { $0.id == groupID }) else { return }
-        appGroups[i].appNames.append(appName)
-        appGroups[i].appNames.sort()
+        guard appGroups.contains(where: { $0.id == groupID }) else { return }
+        var updated = appGroups
+        for i in updated.indices { updated[i].appNames.removeAll { $0 == appName } }
+        if let i = updated.firstIndex(where: { $0.id == groupID }) {
+            updated[i].appNames.append(appName)
+            updated[i].appNames.sort { $0.localizedStandardCompare($1) == .orderedAscending }
+        }
+        appGroups = updated
     }
 
     func removeApp(_ appName: String, fromGroup groupID: UUID) {
-        guard let i = appGroups.firstIndex(where: { $0.id == groupID }) else { return }
-        appGroups[i].appNames.removeAll { $0 == appName }
+        guard let i = appGroups.firstIndex(where: { $0.id == groupID }),
+              appGroups[i].appNames.contains(appName) else { return }
+        var updated = appGroups
+        updated[i].appNames.removeAll { $0 == appName }
+        appGroups = updated
     }
 
     package func effectiveBannerScale(for appName: String?) -> Double {

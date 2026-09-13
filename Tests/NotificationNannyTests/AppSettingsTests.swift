@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import Foundation
 import Testing
 @testable import NotificationNannyCore
@@ -72,6 +73,42 @@ struct AppSettingsTests {
         s.addApp("Slack", toGroup: id)
         s.addApp("Messages", toGroup: id)
         #expect(s.appGroups.first?.appNames == ["Messages", "Slack", "Zoom"])
+    }
+
+    // Reassigning used to mutate appGroups in place: remove from every group,
+    // then append to the target. Each step published separately, so observers saw
+    // a state where the app belonged to no group at all. The Exceptions picker
+    // rendered that torn state and ended up showing checkmarks against the wrong
+    // rows.
+    @Test func addApp_neverPublishesAStateWithTheAppInNoGroup() {
+        let (s, _) = makeSettings()
+        let g1 = s.addGroup(name: "G1")
+        let g2 = s.addGroup(name: "G2")
+        s.addApp("Slack", toGroup: g1)
+
+        var snapshots: [[AppGroup]] = []
+        let sub = s.$appGroups.sink { snapshots.append($0) }
+        s.addApp("Slack", toGroup: g2)
+        sub.cancel()
+
+        #expect(!snapshots.isEmpty)
+        for (i, snap) in snapshots.enumerated() {
+            let owners = snap.filter { $0.appNames.contains("Slack") }.count
+            #expect(owners == 1, "published state \(i) had Slack in \(owners) group(s), expected exactly 1")
+        }
+    }
+
+    @Test func removeApp_appNotInGroup_publishesNothing() {
+        let (s, _) = makeSettings()
+        let id = s.addGroup(name: "G")
+        s.addApp("Slack", toGroup: id)
+
+        var emissions = 0
+        let sub = s.$appGroups.dropFirst().sink { _ in emissions += 1 }
+        s.removeApp("NotInThisGroup", fromGroup: id)
+        sub.cancel()
+
+        #expect(emissions == 0, "a no-op removal should not invalidate observers")
     }
 
     @Test func removeApp_fromGroup() {
