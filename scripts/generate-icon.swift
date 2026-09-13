@@ -5,7 +5,7 @@
 import AppKit
 import CoreGraphics
 
-let accent = NSColor(srgbRed: 0x9A / 255, green: 0x6B / 255, blue: 0xAB / 255, alpha: 1)
+let accent = NSColor(srgbRed: 0xE8 / 255, green: 0x83 / 255, blue: 0x3A / 255, alpha: 1)
 
 // Computed, not stored: top-level `let`s initialise in source order, and this is
 // read from makeIcon() above where `here` is declared.
