@@ -21,24 +21,6 @@ struct BannerTabView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            HStack(alignment: .top, spacing: 8) {
-                Image(systemName: "flask")
-                    .font(.caption).foregroundStyle(Color(red: 1.0, green: 0.55, blue: 0.0)).padding(.top, 1)
-                LocalizedText("Experimental. The custom banner replaces the system one entirely. Some notification actions like inline replies may not work. Behavior can vary between apps and macOS versions.")
-                    .font(.caption).foregroundStyle(Color(white: 0.75)).fixedSize(horizontal: false, vertical: true)
-            }
-            .padding(10)
-            .background(Color.orange.opacity(0.22), in: RoundedRectangle(cornerRadius: 8))
-
-            HStack(alignment: .top, spacing: 8) {
-                Image(systemName: "info.circle")
-                    .font(.caption).foregroundStyle(.secondary).padding(.top, 1)
-                LocalizedText("Custom renderer activates automatically when scale ≠ 100%, a tint color is set, or banner mode is forced. It replaces the system banner with a custom one that supports scaling, tinting, and animation.")
-                    .font(.caption).foregroundStyle(Color(white: 0.6)).fixedSize(horizontal: false, vertical: true)
-            }
-            .padding(10)
-            .background(Color.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 8))
-
             VStack(alignment: .leading, spacing: 10) {
                 HStack {
                     LocalizedText("Default Scale").font(.caption.weight(.medium)).foregroundStyle(.secondary)
@@ -89,7 +71,7 @@ struct BannerTabView: View {
                     }
                     .help(loc.string("Pick any custom color"))
                 }
-                LocalizedText(settings.hasBannerColor ? "Tint active — custom renderer on" : "No tint")
+                LocalizedText(settings.hasBannerColor ? "Tint active. Custom renderer on" : "No tint")
                     .font(.caption2).foregroundStyle(.tertiary)
             }
             .padding(12)
@@ -117,8 +99,8 @@ struct BannerTabView: View {
                     Spacer()
                 }
                 LocalizedText(settings.hasBannerTextColor
-                     ? "Custom text color active — custom renderer on"
-                     : "Default — follows system appearance")
+                     ? "Custom text color active. Custom renderer on"
+                     : "Default. Follows system appearance")
                     .font(.caption2).foregroundStyle(.tertiary)
             }
             .padding(12)
@@ -159,7 +141,7 @@ struct BannerTabView: View {
 
                 LocalizedText(settings.bannerAnimation == .default
                      ? "System-style slide-in. Other animations activate the custom renderer."
-                     : "Custom animation active — replaces the system banner.")
+                     : "Custom animation active. Replaces the system banner.")
                     .font(.caption2).foregroundStyle(.tertiary)
             }
             .padding(12)
