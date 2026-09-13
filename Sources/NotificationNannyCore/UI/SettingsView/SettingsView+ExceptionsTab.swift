@@ -122,8 +122,13 @@ struct ExceptionsTabView: View {
                 }
             }
 
+            // Sized so the whole group panel — preview, appearance, app list and
+            // the test button — clears the fixed 640pt window even while the
+            // accessibility banner is taking a strip off the top.
             PlacementEditor(screen: exScreen, placement: placementBinding,
-                            maxWidth: 408, maxHeight: 210)
+                            maxWidth: 408, maxHeight: 148)
+
+            GroupAppearanceControls(groupID: group.id)
 
             appAssignmentSection(for: group)
 
@@ -192,7 +197,10 @@ struct ExceptionsTabView: View {
                      + available.map { AppPick(name: $0, isAssigned: false) }
 
             ScrollView(showsIndicators: true) {
-                LazyVStack(alignment: .leading, spacing: 1) {
+                // Plain VStack, not Lazy: the list tops out around twenty rows, and
+                // LazyVStack was opening the scroller part-way down, hiding exactly
+                // the assigned rows this section exists to show.
+                VStack(alignment: .leading, spacing: 1) {
                     ForEach(rows) { row in
                         if row.name == available.first && !assigned.isEmpty {
                             Divider().padding(.vertical, 3).padding(.horizontal, 6)
