@@ -20,7 +20,7 @@ struct PositionTabView: View {
         let visible = defaultScreen.visibleFrame
 
         VStack(alignment: .leading, spacing: 14) {
-            LocalizedText("Choose where banners appear. Drag the banner on the preview — it maps one-to-one to your real screen.")
+            LocalizedText("Choose where banners appear. Drag the banner on the preview. It matches your real screen exactly.")
                 .font(.callout)
                 .foregroundStyle(Color(white: 0.55))
                 .fixedSize(horizontal: false, vertical: true)

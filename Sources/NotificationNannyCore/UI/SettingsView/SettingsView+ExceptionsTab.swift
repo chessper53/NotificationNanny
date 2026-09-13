@@ -210,7 +210,7 @@ struct ExceptionsTabView: View {
 
                     if rows.isEmpty {
                         LocalizedText(settings.knownAppNames.isEmpty
-                            ? "No apps seen yet — receive a notification from any app and it will appear here."
+                            ? "No apps seen yet. Receive a notification from any app and it will appear here."
                             : "No apps match your filter.")
                             .font(.caption2).foregroundStyle(.tertiary)
                             .padding(.horizontal, 6).padding(.vertical, 6)

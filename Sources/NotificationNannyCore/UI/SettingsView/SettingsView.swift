@@ -59,7 +59,7 @@ package struct SettingsView: View {
                     sidebarItem("Exceptions", systemImage: "app.badge.checkmark",     tab: .exceptions)
                     sidebarItem("Presets",    systemImage: "rectangle.stack",         tab: .presets)
                     sidebarItem("General",    systemImage: "gearshape",               tab: .general)
-                    sidebarItem("Backup",     systemImage: "externaldrive",           tab: .backup)
+                    sidebarItem("Import & Export", systemImage: "externaldrive",           tab: .backup)
                     Spacer()
                     sidebarItem("Diagnostics", systemImage: "stethoscope",            tab: .debug)
                     sidebarItem("Help",       systemImage: "questionmark.circle",     tab: .help)
