@@ -119,7 +119,9 @@ final class BannerAnimationController {
 
 struct CustomBannerView: View {
     let content: BannerContent
-    let scale: CGFloat
+    /// Mutable so a scale change while the banner is on screen re-renders it at
+    /// the new size rather than stretching what is already drawn.
+    var scale: CGFloat
     let animation: BannerAnimation
     let tint: Color
     let textColor: Color?
@@ -341,6 +343,10 @@ final class CustomBannerManager {
         let controller: BannerAnimationController
         var dismissTimer: DispatchSourceTimer?
         let onUnderlyingDismiss: (() -> Void)?
+        /// Kept so a live scale change can re-render the SwiftUI content instead
+        /// of stretching the already-rendered view.
+        let hosting: NSHostingView<CustomBannerView>
+        var scale: CGFloat
     }
 
     private var active: [CFHashCode: Entry] = [:]
@@ -366,7 +372,7 @@ final class CustomBannerManager {
         let onOpenAction:   () -> Void = { [weak self] in onOpen(); self?.dismissFromUser(key: key) }
 
         let s = CGFloat(scale)
-        let bannerHeight: CGFloat = 62 * s
+        let bannerHeight = Self.bannerHeight(forScale: s)
         let frame  = Self.axRect(axOrigin: axTopLeft, size: CGSize(width: width, height: bannerHeight))
         let bounds = CGRect(origin: .zero, size: frame.size)
 
@@ -385,7 +391,9 @@ final class CustomBannerManager {
         panel.alphaValue = 1
         panel.orderFront(nil)
 
-        var entry = Entry(panel: panel, controller: controller, onUnderlyingDismiss: onUnderlyingDismiss)
+        var entry = Entry(panel: panel, controller: controller,
+                          onUnderlyingDismiss: onUnderlyingDismiss,
+                          hosting: hosting, scale: s)
         if autoDismissSeconds > 0 {
             let timer = DispatchSource.makeTimerSource(queue: .main)
             timer.schedule(deadline: .now() + autoDismissSeconds)
@@ -438,23 +446,38 @@ final class CustomBannerManager {
         }
     }
 
-    func move(key: CFHashCode, axTopLeft: CGPoint, width: CGFloat) {
-        guard let entry = active[key] else { return }
-        let h = entry.panel.frame.size.height
-        let target = Self.axRect(axOrigin: axTopLeft, size: CGSize(width: width, height: h))
+    func move(key: CFHashCode, axTopLeft: CGPoint, width: CGFloat, scale: CGFloat? = nil) {
+        guard var entry = active[key] else { return }
+
+        // A live scale change has to re-render the SwiftUI content at the new
+        // scale. Previously only the panel's width was touched while its height
+        // stayed at whatever it was when the banner appeared, and the hosting
+        // view autoresized — so the already-rendered banner was stretched into
+        // the new frame instead of laid out again, which is the "squish".
+        if let scale, abs(scale - entry.scale) > 0.001 {
+            entry.hosting.rootView.scale = scale
+            entry.scale = scale
+            active[key] = entry
+        }
+
+        let height = Self.bannerHeight(forScale: entry.scale)
+        let target = Self.axRect(axOrigin: axTopLeft, size: CGSize(width: width, height: height))
         let current = entry.panel.frame
         guard current != target else { return }
 
         // Dragging the position tile drives this at screen refresh rate. When only
-        // the origin moves — the common case — setFrameOrigin skips the resize and
-        // redraw path; setFrame(display: true) was forcing a synchronous re-render
-        // of the panel's blurred, SwiftUI-hosted content on every single frame.
+        // the origin moves, which is the common case, setFrameOrigin skips the
+        // resize and redraw path; setFrame(display: true) was forcing a
+        // synchronous re-render of the blurred, SwiftUI-hosted content every frame.
         if current.size == target.size {
             entry.panel.setFrameOrigin(target.origin)
         } else {
             entry.panel.setFrame(target, display: true, animate: false)
+            entry.hosting.frame = CGRect(origin: .zero, size: target.size)
         }
     }
+
+    static func bannerHeight(forScale scale: CGFloat) -> CGFloat { 62 * scale }
 
     private func makePanel(frame: NSRect, contentView: NSView) -> NSPanel {
         let panel = NSPanel(contentRect: frame,

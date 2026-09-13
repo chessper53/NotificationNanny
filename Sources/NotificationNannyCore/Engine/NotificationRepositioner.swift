@@ -60,7 +60,7 @@ package final class NotificationRepositioner: ObservableObject {
             .sink { [weak self] in self?.applySettingsChange() }
             .store(in: &cancellables)
         settings.settingsDidChange
-            .throttle(for: .milliseconds(8), scheduler: DispatchQueue.main, latest: true)
+            .throttle(for: .milliseconds(16), scheduler: DispatchQueue.main, latest: true)
             .sink { [weak self] in
                 guard let self, self.testGroupID != nil, let win = self.testBannerWindow else { return }
                 self.snapWindow(win, stackIndex: 0)
@@ -266,7 +266,11 @@ package final class NotificationRepositioner: ObservableObject {
         for (i, (window, base)) in baseTargets.enumerated() {
             let idx = baseTargets[..<i].filter { sameAnchor($0.1, base) }.count
             log.debug("repositionVisibleWindows: window[\(i)] stackIndex=\(idx) anchor=\(base.placement.position.rawValue, privacy: .public)")
-            snapWindow(window, stackIndex: idx)
+            // `base` was computed above with stackIndex 0, and snapWindow would
+            // otherwise recompute the identical thing — doubling the AX traffic
+            // of every sweep. It only carries over when this window is first at
+            // its anchor, since the stack offset is baked into the target.
+            snapWindow(window, stackIndex: idx, precomputed: idx == 0 ? base : nil)
         }
     }
 
@@ -316,6 +320,19 @@ package final class NotificationRepositioner: ObservableObject {
         guard AXUIElementCopyAttributeValue(el, "AXAttributedDescription" as CFString, &ref) == .success,
               let val = ref, CFGetTypeID(val) == CFAttributedStringGetTypeID() else { return nil }
         return CFAttributedStringGetString((val as! CFAttributedString)) as String
+    }
+
+    /// Screen-sharing state doesn't change at 60 Hz, but `isCapturing()` walks the
+    /// whole system window list — and it was running once per window per frame
+    /// while the position tile was being dragged. Half a second of staleness is
+    /// imperceptible for "pause while streaming".
+    private var capturingCache: (checkedAt: Date, value: Bool)?
+
+    private func isCapturingThrottled() -> Bool {
+        if let c = capturingCache, Date().timeIntervalSince(c.checkedAt) < 0.5 { return c.value }
+        let value = Self.isCapturing()
+        capturingCache = (Date(), value)
+        return value
     }
 
     private static func isCapturing() -> Bool {
@@ -521,7 +538,7 @@ package final class NotificationRepositioner: ObservableObject {
             return nil
         }
         let testGroupID = effectiveTestGroup(for: window)
-        if settings.pauseWhileStreaming, Self.isCapturing() {
+        if settings.pauseWhileStreaming, isCapturingThrottled() {
             log.debug("targetOrigin: skipped — capturing")
             return nil
         }
@@ -611,9 +628,10 @@ package final class NotificationRepositioner: ObservableObject {
                                 bannerOffsetInWindow: bannerOffset, bannerSize: bannerSz)
     }
 
-    private func snapWindow(_ window: AXUIElement, stackIndex: Int = 0) {
+    private func snapWindow(_ window: AXUIElement, stackIndex: Int = 0,
+                            precomputed: RepositionTarget? = nil) {
         log.debug("snapWindow: called stackIndex=\(stackIndex)")
-        guard let t = targetOrigin(for: window, stackIndex: stackIndex) else {
+        guard let t = precomputed ?? targetOrigin(for: window, stackIndex: stackIndex) else {
             log.debug("snapWindow: no target origin, bailing")
             return
         }
@@ -658,7 +676,8 @@ package final class NotificationRepositioner: ObservableObject {
                 }
                 customBannerManager.move(key: CFHash(window),
                                          axTopLeft: CGPoint(x: anchoredX, y: bannerAXOrigin.y),
-                                         width: scaledWidth)
+                                         width: scaledWidth,
+                                         scale: CGFloat(scale))
                 return
             }
         }
