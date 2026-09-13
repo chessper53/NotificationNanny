@@ -8,7 +8,7 @@ package struct SettingsView: View {
     @EnvironmentObject var launchAtLogin: LaunchAtLogin
     @ObservedObject private var loc = LocalizationManager.shared
 
-    enum NavTab: Hashable { case position, exceptions, presets, general, banner, backup, help, debug }
+    enum NavTab: Hashable { case position, exceptions, presets, general, banner, help, debug }
 
     @State private var activeTab: NavTab = .position
     @State private var newerVersion: String? = nil
@@ -52,14 +52,14 @@ package struct SettingsView: View {
                     // Ordered the way the settings build on each other: set where
                     // banners go, then what they look like, then per-app overrides
                     // of those two, then presets that save the combination. App
-                    // preferences and data management come last. Exceptions used
-                    // to sit above Banner, ahead of the appearance it overrides.
+                    // preferences come last, with import/export inside General.
+                    // Exceptions used to sit above Banner, ahead of the
+                    // appearance it overrides.
                     sidebarItem("Position",   systemImage: "rectangle.inset.topright.filled", tab: .position)
                     sidebarItem("Banner",     systemImage: "paintpalette",            tab: .banner)
                     sidebarItem("Exceptions", systemImage: "app.badge.checkmark",     tab: .exceptions)
                     sidebarItem("Presets",    systemImage: "rectangle.stack",         tab: .presets)
                     sidebarItem("General",    systemImage: "gearshape",               tab: .general)
-                    sidebarItem("Import & Export", systemImage: "externaldrive",           tab: .backup)
                     Spacer()
                     sidebarItem("Diagnostics", systemImage: "stethoscope",            tab: .debug)
                     sidebarItem("Help",       systemImage: "questionmark.circle",     tab: .help)
@@ -136,7 +136,6 @@ package struct SettingsView: View {
                         case .exceptions: ExceptionsTabView()
                         case .presets:    PresetsTabView()
                         case .general:    GeneralTabView()
-                        case .backup:     BackupTabView()
                         case .help:       HelpTabView()
                         case .debug:      DebugTabView()
                         }

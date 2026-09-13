@@ -1,12 +1,12 @@
 /* ==========================================================================
    Tokens
-   Brand pulled from the app itself: nannyAccent (amber, MenuBarContent.swift)
+   Brand pulled from the app itself: nannyAccent (purple, MenuBarContent.swift)
    and the icon's own gradient stops (graphite).
    ========================================================================== */
 
 :root {
-  --accent: #e8833a;
-  --accent-strong: #f09b5e;
+  --accent: #9a6bab;
+  --accent-strong: #b183c4;
   --grad-a: #1a1c21;
   --grad-b: #2a2d34;
 
@@ -41,8 +41,8 @@
 
 @media (prefers-color-scheme: light) {
   :root {
-    --accent: #a85514;
-    --accent-strong: #8a4310;
+    --accent: #7c4f8e;
+    --accent-strong: #6a4179;
     --bg: #f7f6f4;
     --bg-raised: #ffffff;
     --surface: rgba(18, 18, 20, 0.035);
