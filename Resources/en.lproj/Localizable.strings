@@ -35,7 +35,7 @@
 "Send Test Notification" = "Send Test Notification";
 
 /* Position tab */
-"Choose where banners appear. Drag the indicator on the preview or use the sliders to fine-tune the position." = "Choose where banners appear. Drag the indicator on the preview or use the sliders to fine-tune the position.";
+"Choose where banners appear. Drag the banner on the preview — it maps one-to-one to your real screen." = "Choose where banners appear. Drag the banner on the preview — it maps one-to-one to your real screen.";
 "Default Position" = "Default Position";
 "Auto" = "Auto";
 

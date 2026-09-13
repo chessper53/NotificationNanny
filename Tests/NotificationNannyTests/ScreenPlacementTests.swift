@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import Testing
 @testable import NotificationNannyCore
@@ -26,5 +27,35 @@ struct ScreenPlacementTests {
             let decoded = try JSONDecoder().decode(ScreenPlacement.self, from: data)
             #expect(decoded.position == position, "Failed round-trip for \(position)")
         }
+    }
+
+    // The offset sliders are gone and new placements can only come from dragging
+    // a clamped preview. Configs saved while the sliders existed can hold offsets
+    // far outside the screen, and those must keep decoding and keep their values
+    // — clamping on load would silently move a banner the user had deliberately
+    // placed, and would rewrite presets and backups on import.
+    @Test func decodesLegacyOutOfRangeOffsetsUnchanged() throws {
+        let legacy = #"{"position":"topLeft","xOffset":3200.0,"yOffset":-1800.0}"#
+        let decoded = try JSONDecoder().decode(ScreenPlacement.self, from: Data(legacy.utf8))
+        #expect(decoded.position == .topLeft)
+        #expect(decoded.xOffset == 3200)
+        #expect(decoded.yOffset == -1800)
+    }
+
+    @MainActor
+    @Test func legacyPlacementSurvivesSettingsRoundTrip() throws {
+        let suite = "NotificationNannyLegacyPlacement_\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { UserDefaults.standard.removePersistentDomain(forName: suite) }
+
+        guard let screen = NSScreen.main else { return }
+        let wild = ScreenPlacement(position: .bottomRight, xOffset: 5000, yOffset: -4000)
+
+        let a = AppSettings(defaults: defaults)
+        a.setPlacement(wild, for: screen)
+        a.flushPendingSaves()
+
+        let read = AppSettings(defaults: defaults).placement(for: screen)
+        #expect(read == wild, "a placement from an older config must not be clamped or dropped")
     }
 }

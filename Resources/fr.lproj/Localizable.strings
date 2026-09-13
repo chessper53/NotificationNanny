@@ -35,7 +35,7 @@
 "Send Test Notification" = "Envoyer une notification test";
 
 /* Position tab */
-"Choose where banners appear. Drag the indicator on the preview or use the sliders to fine-tune the position." = "Choisissez où les bannières apparaissent. Faites glisser l'indicateur dans l'aperçu ou utilisez les curseurs pour ajuster la position.";
+"Choose where banners appear. Drag the banner on the preview — it maps one-to-one to your real screen." = "Choisissez où les bannières apparaissent. Faites glisser la bannière dans l'aperçu — il correspond exactement à votre écran.";
 "Default Position" = "Position par défaut";
 "Auto" = "Auto";
 
