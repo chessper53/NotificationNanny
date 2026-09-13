@@ -4,7 +4,7 @@
 "Banner" = "Bannière";
 "Presets" = "Préréglages";
 "General" = "Général";
-"Backup" = "Sauvegarde";
+"Import & Export" = "Import et export";
 "Diagnostics" = "Diagnostics";
 "Help" = "Aide";
 "Disable" = "Désactiver";
@@ -35,26 +35,24 @@
 "Send Test Notification" = "Envoyer une notification test";
 
 /* Position tab */
-"Choose where banners appear. Drag the banner on the preview — it maps one-to-one to your real screen." = "Choisissez où les bannières apparaissent. Faites glisser la bannière dans l'aperçu — il correspond exactement à votre écran.";
+"Choose where banners appear. Drag the banner on the preview. It matches your real screen exactly." = "Choisissez où les bannières apparaissent. Faites glisser la bannière dans l'aperçu. Il correspond exactement à votre écran.";
 "Default Position" = "Position par défaut";
 "Auto" = "Auto";
 
 /* Banner tab */
-"Experimental. The custom banner replaces the system one entirely. Some notification actions like inline replies may not work. Behavior can vary between apps and macOS versions." = "Expérimental. La bannière personnalisée remplace entièrement celle du système. Certaines actions comme les réponses en ligne peuvent ne pas fonctionner. Le comportement peut varier selon les apps et les versions de macOS.";
-"Custom renderer activates automatically when scale ≠ 100%, a tint color is set, or banner mode is forced. It replaces the system banner with a custom one that supports scaling, tinting, and animation." = "Le rendu personnalisé s'active automatiquement si l'échelle ≠ 100 %, une couleur de teinte est définie, ou le mode bannière est forcé. Il remplace la bannière système par une version personnalisée prenant en charge l'échelle, la teinte et l'animation.";
 "Default Scale" = "Échelle par défaut";
 "Background Color" = "Couleur de fond";
 "Custom" = "Personnalisée";
 "Pick any custom color" = "Choisir une couleur personnalisée";
-"Tint active — custom renderer on" = "Teinte active — rendu personnalisé activé";
+"Tint active. Custom renderer on" = "Teinte active, rendu personnalisé activé";
 "No tint" = "Aucune teinte";
 "Text Color" = "Couleur du texte";
-"Custom text color active — custom renderer on" = "Couleur de texte personnalisée active — rendu personnalisé activé";
-"Default — follows system appearance" = "Par défaut — suit l'apparence du système";
+"Custom text color active. Custom renderer on" = "Couleur de texte personnalisée active, rendu personnalisé activé";
+"Default. Follows system appearance" = "Par défaut, suit l'apparence du système";
 "Animation" = "Animation";
 "Replay" = "Rejouer";
 "System-style slide-in. Other animations activate the custom renderer." = "Glissement façon système. Les autres animations activent le rendu personnalisé.";
-"Custom animation active — replaces the system banner." = "Animation personnalisée active — remplace la bannière système.";
+"Custom animation active. Replaces the system banner." = "Animation personnalisée active, remplace la bannière système.";
 "Per-app overrides" = "Réglages par app";
 "Using default" = "Réglages par défaut";
 "Customize" = "Personnaliser";
@@ -74,7 +72,7 @@
 "Screen:" = "Écran :";
 "Default" = "Par défaut";
 "Assigned Apps" = "Apps assignées";
-"No apps seen yet — receive a notification from any app and it will appear here." = "Aucune app détectée pour l'instant — recevez une notification de n'importe quelle app et elle apparaîtra ici.";
+"No apps seen yet. Receive a notification from any app and it will appear here." = "Aucune app détectée pour l'instant. Recevez une notification de n'importe quelle app et elle apparaîtra ici.";
 
 /* Presets tab */
 "Save and switch between named configurations. Presets capture your full setup including per-app rules." = "Enregistrez et basculez entre des configurations nommées. Les préréglages capturent toute votre configuration, y compris les règles par app.";
@@ -130,7 +128,7 @@
 "Browse open and completed issues" = "Parcourir les tickets ouverts et résolus";
 "Source code" = "Code source";
 "NotificationNanny is open source" = "NotificationNanny est open source";
-"Diagnostics and activity logs now live in the **Diagnostics** tab — handy if you want to inspect them before filing a report." = "Les diagnostics et journaux d'activité se trouvent désormais dans l'onglet **Diagnostics** — pratique pour les consulter avant de signaler un problème.";
+"Diagnostics and activity logs now live in the **Diagnostics** tab. Handy if you want to inspect them before filing a report." = "Les diagnostics et journaux d'activité se trouvent désormais dans l'onglet **Diagnostics**. Pratique pour les consulter avant de signaler un problème.";
 "I work full time, nevertheless I read every issue and try to respond to everyone." = "Je travaille à temps plein, mais je lis chaque ticket et j'essaie de répondre à tout le monde.";
 "Diagnostics are only attached when you file a report. Nothing is collected or transmitted otherwise." = "Les diagnostics ne sont joints que lorsque vous envoyez un rapport. Rien n'est collecté ni transmis autrement.";
 

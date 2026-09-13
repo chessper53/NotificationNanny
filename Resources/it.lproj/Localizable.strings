@@ -4,7 +4,7 @@
 "Banner" = "Banner";
 "Presets" = "Preimpostazioni";
 "General" = "Generale";
-"Backup" = "Backup";
+"Import & Export" = "Importa ed esporta";
 "Diagnostics" = "Diagnostica";
 "Help" = "Aiuto";
 "Disable" = "Disattiva";
@@ -35,26 +35,24 @@
 "Send Test Notification" = "Invia notifica di prova";
 
 /* Position tab */
-"Choose where banners appear. Drag the banner on the preview — it maps one-to-one to your real screen." = "Scegli dove appaiono i banner. Trascina il banner nell'anteprima — corrisponde esattamente al tuo schermo.";
+"Choose where banners appear. Drag the banner on the preview. It matches your real screen exactly." = "Scegli dove appaiono i banner. Trascina il banner nell'anteprima. Corrisponde esattamente al tuo schermo.";
 "Default Position" = "Posizione predefinita";
 "Auto" = "Auto";
 
 /* Banner tab */
-"Experimental. The custom banner replaces the system one entirely. Some notification actions like inline replies may not work. Behavior can vary between apps and macOS versions." = "Sperimentale. Il banner personalizzato sostituisce completamente quello di sistema. Alcune azioni, come le risposte in linea, potrebbero non funzionare. Il comportamento può variare tra app e versioni di macOS.";
-"Custom renderer activates automatically when scale ≠ 100%, a tint color is set, or banner mode is forced. It replaces the system banner with a custom one that supports scaling, tinting, and animation." = "Il rendering personalizzato si attiva automaticamente quando la scala ≠ 100%, viene impostato un colore di tinta o la modalità banner è forzata. Sostituisce il banner di sistema con uno personalizzato che supporta scala, tinta e animazione.";
 "Default Scale" = "Scala predefinita";
 "Background Color" = "Colore di sfondo";
 "Custom" = "Personalizzato";
 "Pick any custom color" = "Scegli un colore personalizzato";
-"Tint active — custom renderer on" = "Tinta attiva — rendering personalizzato attivo";
+"Tint active. Custom renderer on" = "Tinta attiva, rendering personalizzato attivo";
 "No tint" = "Nessuna tinta";
 "Text Color" = "Colore del testo";
-"Custom text color active — custom renderer on" = "Colore del testo personalizzato attivo — rendering personalizzato attivo";
-"Default — follows system appearance" = "Predefinito — segue l'aspetto di sistema";
+"Custom text color active. Custom renderer on" = "Colore del testo personalizzato attivo, rendering personalizzato attivo";
+"Default. Follows system appearance" = "Predefinito, segue l'aspetto di sistema";
 "Animation" = "Animazione";
 "Replay" = "Ripeti";
 "System-style slide-in. Other animations activate the custom renderer." = "Scorrimento in stile sistema. Le altre animazioni attivano il rendering personalizzato.";
-"Custom animation active — replaces the system banner." = "Animazione personalizzata attiva — sostituisce il banner di sistema.";
+"Custom animation active. Replaces the system banner." = "Animazione personalizzata attiva, sostituisce il banner di sistema.";
 "Per-app overrides" = "Impostazioni per app";
 "Using default" = "Predefinite in uso";
 "Customize" = "Personalizza";
@@ -74,7 +72,7 @@
 "Screen:" = "Schermo:";
 "Default" = "Predefinito";
 "Assigned Apps" = "App assegnate";
-"No apps seen yet — receive a notification from any app and it will appear here." = "Ancora nessuna app rilevata — ricevi una notifica da qualsiasi app e comparirà qui.";
+"No apps seen yet. Receive a notification from any app and it will appear here." = "Ancora nessuna app rilevata. Ricevi una notifica da qualsiasi app e comparirà qui.";
 
 /* Presets tab */
 "Save and switch between named configurations. Presets capture your full setup including per-app rules." = "Salva e passa tra configurazioni con nome. Le preimpostazioni memorizzano l'intera configurazione, incluse le regole per app.";
@@ -130,7 +128,7 @@
 "Browse open and completed issues" = "Sfoglia i ticket aperti e completati";
 "Source code" = "Codice sorgente";
 "NotificationNanny is open source" = "NotificationNanny è open source";
-"Diagnostics and activity logs now live in the **Diagnostics** tab — handy if you want to inspect them before filing a report." = "Diagnostica e registri attività ora si trovano nella scheda **Diagnostica** — utile per controllarli prima di inviare una segnalazione.";
+"Diagnostics and activity logs now live in the **Diagnostics** tab. Handy if you want to inspect them before filing a report." = "Diagnostica e registri attività ora si trovano nella scheda **Diagnostica**. Utile per controllarli prima di inviare una segnalazione.";
 "I work full time, nevertheless I read every issue and try to respond to everyone." = "Lavoro a tempo pieno, ma leggo comunque ogni ticket e cerco di rispondere a tutti.";
 "Diagnostics are only attached when you file a report. Nothing is collected or transmitted otherwise." = "La diagnostica viene allegata solo quando invii una segnalazione. In nessun altro caso viene raccolto o trasmesso alcunché.";
 

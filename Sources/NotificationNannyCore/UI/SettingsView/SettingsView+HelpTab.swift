@@ -45,7 +45,7 @@ struct HelpTabView: View {
                 // Matches the Diagnostics tab's own icon, since that's what this
                 // note is pointing at.
                 Image(systemName: "stethoscope").font(.caption).foregroundStyle(.secondary).padding(.top, 1)
-                LocalizedMarkdownText("Diagnostics and activity logs now live in the **Diagnostics** tab — handy if you want to inspect them before filing a report.")
+                LocalizedMarkdownText("Diagnostics and activity logs now live in the **Diagnostics** tab. Handy if you want to inspect them before filing a report.")
                     .font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             }
             .padding(10)

@@ -28,6 +28,10 @@ struct GroupAppearanceControls: View {
                 .font(.caption.weight(.medium)).foregroundStyle(.secondary)
 
             if hasCustom {
+                // Small-A / large-A flanking the track, the same idiom as the
+                // global scale control. A bare slider next to "Appearance" gave
+                // no clue it was sizing anything.
+                Text("A").font(.system(size: 9)).foregroundStyle(.secondary)
                 Slider(value: scaleBinding, in: 0.5...2.5)
                     // Snap to exactly 100%: without this the slider settles on
                     // 0.99-ish and the group counts as customised forever.
@@ -35,7 +39,9 @@ struct GroupAppearanceControls: View {
                         if abs(v - 1.0) < 0.02 { scaleBinding.wrappedValue = 1.0 }
                     }
                     .controlSize(.mini)
-                    .frame(minWidth: 70)
+                    .frame(minWidth: 62)
+                    .help(loc.string("Banner scale for this group"))
+                Text("A").font(.system(size: 14, weight: .medium)).foregroundStyle(.secondary)
                 Text("\(Int(scaleBinding.wrappedValue * 100))%")
                     .font(.caption2.monospacedDigit()).foregroundStyle(.secondary)
                     .frame(width: 34, alignment: .trailing)

@@ -4,7 +4,7 @@
 "Banner" = "Banner";
 "Presets" = "Presets";
 "General" = "General";
-"Backup" = "Backup";
+"Import & Export" = "Import & Export";
 "Diagnostics" = "Diagnostics";
 "Help" = "Help";
 "Disable" = "Disable";
@@ -35,26 +35,24 @@
 "Send Test Notification" = "Send Test Notification";
 
 /* Position tab */
-"Choose where banners appear. Drag the banner on the preview — it maps one-to-one to your real screen." = "Choose where banners appear. Drag the banner on the preview — it maps one-to-one to your real screen.";
+"Choose where banners appear. Drag the banner on the preview. It matches your real screen exactly." = "Choose where banners appear. Drag the banner on the preview. It matches your real screen exactly.";
 "Default Position" = "Default Position";
 "Auto" = "Auto";
 
 /* Banner tab */
-"Experimental. The custom banner replaces the system one entirely. Some notification actions like inline replies may not work. Behavior can vary between apps and macOS versions." = "Experimental. The custom banner replaces the system one entirely. Some notification actions like inline replies may not work. Behavior can vary between apps and macOS versions.";
-"Custom renderer activates automatically when scale ≠ 100%, a tint color is set, or banner mode is forced. It replaces the system banner with a custom one that supports scaling, tinting, and animation." = "Custom renderer activates automatically when scale ≠ 100%, a tint color is set, or banner mode is forced. It replaces the system banner with a custom one that supports scaling, tinting, and animation.";
 "Default Scale" = "Default Scale";
 "Background Color" = "Background Color";
 "Custom" = "Custom";
 "Pick any custom color" = "Pick any custom color";
-"Tint active — custom renderer on" = "Tint active — custom renderer on";
+"Tint active. Custom renderer on" = "Tint active. Custom renderer on";
 "No tint" = "No tint";
 "Text Color" = "Text Color";
-"Custom text color active — custom renderer on" = "Custom text color active — custom renderer on";
-"Default — follows system appearance" = "Default — follows system appearance";
+"Custom text color active. Custom renderer on" = "Custom text color active. Custom renderer on";
+"Default. Follows system appearance" = "Default. Follows system appearance";
 "Animation" = "Animation";
 "Replay" = "Replay";
 "System-style slide-in. Other animations activate the custom renderer." = "System-style slide-in. Other animations activate the custom renderer.";
-"Custom animation active — replaces the system banner." = "Custom animation active — replaces the system banner.";
+"Custom animation active. Replaces the system banner." = "Custom animation active. Replaces the system banner.";
 "Per-app overrides" = "Per-app overrides";
 "Using default" = "Using default";
 "Customize" = "Customize";
@@ -74,7 +72,7 @@
 "Screen:" = "Screen:";
 "Default" = "Default";
 "Assigned Apps" = "Assigned Apps";
-"No apps seen yet — receive a notification from any app and it will appear here." = "No apps seen yet — receive a notification from any app and it will appear here.";
+"No apps seen yet. Receive a notification from any app and it will appear here." = "No apps seen yet. Receive a notification from any app and it will appear here.";
 
 /* Presets tab */
 "Save and switch between named configurations. Presets capture your full setup including per-app rules." = "Save and switch between named configurations. Presets capture your full setup including per-app rules.";
@@ -130,7 +128,7 @@
 "Browse open and completed issues" = "Browse open and completed issues";
 "Source code" = "Source code";
 "NotificationNanny is open source" = "NotificationNanny is open source";
-"Diagnostics and activity logs now live in the **Diagnostics** tab — handy if you want to inspect them before filing a report." = "Diagnostics and activity logs now live in the **Diagnostics** tab — handy if you want to inspect them before filing a report.";
+"Diagnostics and activity logs now live in the **Diagnostics** tab. Handy if you want to inspect them before filing a report." = "Diagnostics and activity logs now live in the **Diagnostics** tab. Handy if you want to inspect them before filing a report.";
 "I work full time, nevertheless I read every issue and try to respond to everyone." = "I work full time, nevertheless I read every issue and try to respond to everyone.";
 "Diagnostics are only attached when you file a report. Nothing is collected or transmitted otherwise." = "Diagnostics are only attached when you file a report. Nothing is collected or transmitted otherwise.";
 
