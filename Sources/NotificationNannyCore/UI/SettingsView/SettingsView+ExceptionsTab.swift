@@ -122,7 +122,8 @@ struct ExceptionsTabView: View {
                 }
             }
 
-            PlacementEditor(screen: exScreen, placement: placementBinding, screenWidth: 196)
+            PlacementEditor(screen: exScreen, placement: placementBinding,
+                            maxWidth: 408, maxHeight: 210)
 
             appAssignmentSection(for: group)
 

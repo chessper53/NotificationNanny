@@ -49,9 +49,14 @@ package struct SettingsView: View {
                     // of saved configurations for Presets, a drive for Backup (which
                     // imports as well as exports, so a tray-and-up-arrow read wrong).
                     // All are SF Symbols 4 or earlier, so they resolve on macOS 14.
+                    // Ordered the way the settings build on each other: set where
+                    // banners go, then what they look like, then per-app overrides
+                    // of those two, then presets that save the combination. App
+                    // preferences and data management come last. Exceptions used
+                    // to sit above Banner, ahead of the appearance it overrides.
                     sidebarItem("Position",   systemImage: "rectangle.inset.topright.filled", tab: .position)
-                    sidebarItem("Exceptions", systemImage: "app.badge.checkmark",     tab: .exceptions)
                     sidebarItem("Banner",     systemImage: "paintpalette",            tab: .banner)
+                    sidebarItem("Exceptions", systemImage: "app.badge.checkmark",     tab: .exceptions)
                     sidebarItem("Presets",    systemImage: "rectangle.stack",         tab: .presets)
                     sidebarItem("General",    systemImage: "gearshape",               tab: .general)
                     sidebarItem("Backup",     systemImage: "externaldrive",           tab: .backup)
@@ -325,25 +330,3 @@ private struct WindowSizeLock: NSViewRepresentable {
     func updateNSView(_ nsView: NSView, context: Context) {}
 }
 
-// Shared helper: labelled slider + numeric field pair. Used by Position and Exceptions tabs.
-struct SettingsSliderRow: View {
-    let title: String
-    @Binding var value: Double
-    let range: ClosedRange<Double>
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            LocalizedText(title).font(.caption2).foregroundStyle(.secondary)
-            HStack(spacing: 8) {
-                Slider(value: $value, in: range).controlSize(.mini)
-                TextField("0", value: $value, format: .number.precision(.fractionLength(0)))
-                    .textFieldStyle(.roundedBorder)
-                    .controlSize(.mini)
-                    .multilineTextAlignment(.trailing)
-                    .frame(width: 56)
-                    .font(.caption2.monospacedDigit())
-                LocalizedText("px").font(.caption2).foregroundStyle(.secondary)
-            }
-        }
-    }
-}
