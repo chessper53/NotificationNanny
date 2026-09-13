@@ -100,47 +100,56 @@ struct DeviceChrome<Content: View>: View {
 
 // MARK: - Placement editor
 
-/// The device preview and its fine-tune sliders, side by side.
+/// The device preview, plus a one-line read-out of where the banner sits.
 ///
-/// Stacked vertically these cost about 120pt more height, which was enough to
-/// push the Exceptions tab into scrolling. Shared by the Position and Exceptions
-/// tabs, which previously carried near-identical copies of the fine-tune block.
+/// The offset sliders this replaces were the only control that could push a
+/// banner off-screen — they ran to ±the full screen width — and they cost enough
+/// width that the preview had to stay small. Dragging on a true-to-scale preview
+/// does the same job directly, so the preview gets the space instead.
+///
+/// Shared by the Position and Exceptions tabs, which previously carried
+/// near-identical copies of the fine-tune block.
 struct PlacementEditor: View {
     let screen: NSScreen
     @Binding var placement: ScreenPlacement
-    var screenWidth: CGFloat = 208
+    var maxWidth: CGFloat = 430
+    var maxHeight: CGFloat = 280
 
     @ObservedObject private var loc = LocalizationManager.shared
 
     var body: some View {
-        let visible = screen.visibleFrame
         let isDefault = placement.xOffset == 0 && placement.yOffset == 0
 
-        HStack(alignment: .top, spacing: 12) {
-            DraggableScreenTile(screen: screen, placement: $placement, screenWidth: screenWidth)
+        VStack(spacing: 7) {
+            DraggableScreenTile(screen: screen, placement: $placement,
+                                maxWidth: maxWidth, maxHeight: maxHeight)
 
-            VStack(alignment: .leading, spacing: 8) {
-                HStack {
-                    LocalizedText("Fine-tune")
-                        .font(.caption.weight(.medium)).foregroundStyle(.secondary)
-                    Spacer()
-                    Button(loc.string("Reset")) {
-                        placement.xOffset = 0
-                        placement.yOffset = 0
-                    }
-                    .buttonStyle(.borderless).font(.caption)
-                    .foregroundStyle(Color.nannyAccent).disabled(isDefault)
+            HStack(spacing: 6) {
+                LocalizedText(placement.position.label)
+                    .font(.caption.weight(.medium)).foregroundStyle(.secondary)
+                if !isDefault {
+                    Text(offsetSummary)
+                        .font(.caption2.monospacedDigit()).foregroundStyle(.tertiary)
                 }
-                SettingsSliderRow(title: "Horizontal", value: $placement.xOffset,
-                                  range: -Double(visible.width)...Double(visible.width))
-                SettingsSliderRow(title: "Vertical", value: $placement.yOffset,
-                                  range: -Double(visible.height)...Double(visible.height))
-                Spacer(minLength: 0)
+                Spacer()
+                Button(loc.string("Reset")) {
+                    placement.xOffset = 0
+                    placement.yOffset = 0
+                }
+                .buttonStyle(.borderless).font(.caption)
+                .foregroundStyle(Color.nannyAccent).disabled(isDefault)
             }
-            .padding(10)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 8))
+            .frame(maxWidth: maxWidth)
         }
+        .frame(maxWidth: .infinity)
+    }
+
+    /// Keeps the numbers the sliders used to show, without giving them a control
+    /// that can put the banner somewhere invalid.
+    private var offsetSummary: String {
+        let x = Int(placement.xOffset.rounded())
+        let y = Int(placement.yOffset.rounded())
+        return "\(x >= 0 ? "+" : "")\(x), \(y >= 0 ? "+" : "")\(y) px"
     }
 }
 
@@ -149,27 +158,31 @@ struct PlacementEditor: View {
 struct DraggableScreenTile: View {
     let screen: NSScreen
     @Binding var placement: ScreenPlacement
-    /// Width of the picture area. The chassis drawn around it adds its own bezel
-    /// and base on top of this.
-    var screenWidth: CGFloat = 288
+    /// Budget for the picture area. The preview is scaled to fit inside this
+    /// while keeping the display's real proportions, so it never fills both.
+    var maxWidth: CGFloat = 430
+    var maxHeight: CGFloat = 280
 
     private static let realBannerSize = CGSize(width: 372, height: 100)
 
     var body: some View {
         let visible = screen.visibleFrame
-        let aspect = visible.width / max(visible.height, 1)
-        let tileWidth:  CGFloat = screenWidth
-        let tileHeight: CGFloat = min(220, max(100, tileWidth / aspect))
-        // Use separate x/y scales — tile height is clamped on wide displays,
-        // so a single scale based on width gives wrong y positions.
-        let scaleX = tileWidth  / max(visible.width,  1)
-        let scaleY = tileHeight / max(visible.height, 1)
-        let bannerWidth  = max(36, Self.realBannerSize.width  * scaleX)
-        let bannerHeight = max(14, Self.realBannerSize.height * scaleY)
+        // One scale for both axes. The old code clamped tile height into
+        // 100...220 and then compensated with separate x/y scales, which meant
+        // the preview was a stretched version of the display and dragging didn't
+        // correspond to where the banner actually landed. Fitting a single scale
+        // inside the budget keeps the preview geometrically similar to the real
+        // screen, so the mapping is 1:1.
+        let scale = min(maxWidth / max(visible.width, 1),
+                        maxHeight / max(visible.height, 1))
+        let tileWidth  = visible.width  * scale
+        let tileHeight = visible.height * scale
+        let bannerWidth  = Self.realBannerSize.width  * scale
+        let bannerHeight = Self.realBannerSize.height * scale
         let bannerCenterReal = bannerCenterInVisibleCoords(visible: visible)
         let bannerCenterTile = CGPoint(
-            x: (bannerCenterReal.x - visible.minX) * scaleX,
-            y: (bannerCenterReal.y - visible.minY) * scaleY
+            x: (bannerCenterReal.x - visible.minX) * scale,
+            y: (bannerCenterReal.y - visible.minY) * scale
         )
 
         return DeviceChrome(screen: screen,
@@ -178,29 +191,26 @@ struct DraggableScreenTile: View {
                 Rectangle().fill(Self.wallpaper)
                 Rectangle()
                     .fill(Color.white.opacity(0.16))
-                    .frame(height: 6)
-                BannerChip(width: bannerWidth, height: bannerHeight)
-                    .opacity(0.3)
-                    .position(
-                        x: bannerCenterTile.x,
-                        y: bannerCenterTile.y + (placement.position.stacksUpward ? -(bannerHeight + 4) : (bannerHeight + 4))
-                    )
+                    .frame(height: max(4, 25 * scale))
+                // Drawn without clamping: a config saved with the old sliders can
+                // sit partly off-screen, and the preview should show that honestly
+                // rather than quietly pretending it's somewhere else.
                 BannerChip(width: bannerWidth, height: bannerHeight)
                     .position(x: bannerCenterTile.x, y: bannerCenterTile.y)
             }
             .frame(width: tileWidth, height: tileHeight)
+            .clipped()
             .contentShape(Rectangle())
             // Gesture on the ZStack so .local coords = tile coords, not chip-local coords
             .gesture(
                 DragGesture(minimumDistance: 0, coordinateSpace: .local)
                     .onChanged { value in
                         updatePlacement(fromTilePoint: value.location,
-                                        scaleX: scaleX, scaleY: scaleY, visible: visible)
+                                        scale: scale, visible: visible)
                     }
             )
             .onTapGesture { tap in
-                updatePlacement(fromTilePoint: tap,
-                                scaleX: scaleX, scaleY: scaleY, visible: visible)
+                updatePlacement(fromTilePoint: tap, scale: scale, visible: visible)
             }
         }
     }
@@ -233,14 +243,18 @@ struct DraggableScreenTile: View {
         return CGPoint(x: cx, y: cy)
     }
 
+    /// Clamped so a drag can only ever produce an on-screen banner. This is now
+    /// the only way to set a placement — the old offset sliders ran to ±the full
+    /// screen width, which is how banners ended up off-screen. Existing stored
+    /// offsets are left alone; they're only replaced once the user drags.
     private func updatePlacement(fromTilePoint point: CGPoint,
-                                 scaleX: CGFloat, scaleY: CGFloat, visible: CGRect) {
+                                 scale: CGFloat, visible: CGRect) {
         let banner = Self.realBannerSize
         let inset: CGFloat = 8
         let centreX = max(inset + banner.width / 2,
-                          min(visible.width  - inset - banner.width  / 2, point.x / scaleX))
+                          min(visible.width  - inset - banner.width  / 2, point.x / scale))
         let centreY = max(inset + banner.height / 2,
-                          min(visible.height - inset - banner.height / 2, point.y / scaleY))
+                          min(visible.height - inset - banner.height / 2, point.y / scale))
 
         let bandX: AnchorBand
         switch centreX {

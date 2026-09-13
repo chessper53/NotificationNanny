@@ -20,7 +20,7 @@ struct PositionTabView: View {
         let visible = defaultScreen.visibleFrame
 
         VStack(alignment: .leading, spacing: 14) {
-            LocalizedText("Choose where banners appear. Drag the indicator on the preview or use the sliders to fine-tune the position.")
+            LocalizedText("Choose where banners appear. Drag the banner on the preview — it maps one-to-one to your real screen.")
                 .font(.callout)
                 .foregroundStyle(Color(white: 0.55))
                 .fixedSize(horizontal: false, vertical: true)
@@ -47,7 +47,7 @@ struct PositionTabView: View {
             }
 
             PlacementEditor(screen: defaultScreen, placement: defaultPlacementBinding,
-                            screenWidth: 236)
+                            maxWidth: 438, maxHeight: 300)
 
             Button {
                 repositioner.sendTestNotification(groupID: nil)
