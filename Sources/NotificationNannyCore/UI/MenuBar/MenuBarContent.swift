@@ -2,14 +2,14 @@ import SwiftUI
 import AppKit
 
 extension Color {
-    /// Amber, adapting per appearance: the bright icon amber reads well on dark
-    /// surfaces but drops under 3:1 as caption text on a light settings window,
-    /// so light mode gets a deeper burnt amber.
+    /// The project's original purple, adapting per appearance: the lighter
+    /// purple reads on the dark settings window but drops under 3:1 as caption
+    /// text on a light one, so light mode gets a deeper version.
     static let nannyAccent = Color(nsColor: NSColor(name: "nannyAccent") { appearance in
         let isDark = appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
         return isDark
-            ? NSColor(srgbRed: 0xE8 / 255, green: 0x83 / 255, blue: 0x3A / 255, alpha: 1)
-            : NSColor(srgbRed: 0xA8 / 255, green: 0x55 / 255, blue: 0x14 / 255, alpha: 1)
+            ? NSColor(srgbRed: 0x9A / 255, green: 0x6B / 255, blue: 0xAB / 255, alpha: 1)
+            : NSColor(srgbRed: 0x7C / 255, green: 0x4F / 255, blue: 0x8E / 255, alpha: 1)
     })
 }
 

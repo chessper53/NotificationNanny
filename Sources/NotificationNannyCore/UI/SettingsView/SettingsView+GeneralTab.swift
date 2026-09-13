@@ -67,6 +67,17 @@ struct GeneralTabView: View {
                 Text(error).font(.caption2).foregroundStyle(.red)
             }
 
+            // Import/export was its own sidebar tab. It is app-wide data
+            // management that sits naturally beside Reset All Settings, and as a
+            // top-level item its label wrapped onto two lines in the sidebar.
+            VStack(alignment: .leading, spacing: 6) {
+                LocalizedText("Import & Export")
+                    .textCase(.uppercase)
+                    .font(.caption2.weight(.semibold)).foregroundStyle(.tertiary).kerning(0.5)
+                    .padding(.leading, 4)
+                BackupTabView()
+            }
+
             Button(role: .destructive) {
                 showResetConfirmation = true
             } label: {

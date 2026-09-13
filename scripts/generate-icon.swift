@@ -5,7 +5,7 @@
 import AppKit
 import CoreGraphics
 
-let amber = NSColor(srgbRed: 0xE8 / 255, green: 0x83 / 255, blue: 0x3A / 255, alpha: 1)
+let accent = NSColor(srgbRed: 0x9A / 255, green: 0x6B / 255, blue: 0xAB / 255, alpha: 1)
 
 // Computed, not stored: top-level `let`s initialise in source order, and this is
 // read from makeIcon() above where `here` is declared.
@@ -133,10 +133,10 @@ func makeIcon(size: CGFloat, glyphScale: CGFloat = 0.62) -> NSBitmapImageRep? {
         )
     }
 
-    // The nanny bell, in amber. The artwork is one flat shape, so unlike the
-    // old bell.badge.fill there's no separate badge layer to colour — the glyph
+    // The nanny bell, in the brand accent. The artwork is one flat shape, so unlike the
+    // old bell.badge.fill there's no separate badge layer to colour, so the glyph
     // itself carries the accent.
-    if let glyph = tinted(glyphURL, color: amber, size: size * glyphScale) {
+    if let glyph = tinted(glyphURL, color: accent, size: size * glyphScale) {
         // Centre on the glyph's actual ink: the shared crop box is sized to fit
         // the slashed variant too, so the plain bell sits inside extra margin.
         let ink = inkBounds(of: glyph) ?? CGRect(origin: .zero, size: glyph.size)
