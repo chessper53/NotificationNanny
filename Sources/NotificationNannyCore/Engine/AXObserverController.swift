@@ -14,10 +14,17 @@ final class AXObserverController {
     private var observer: AXObserver?
     private var onEvent: ((AXUIElement, String) -> Void)?
 
+    /// `kAXLayoutChangedNotification` matters from macOS 26 on. A banner is no longer its own
+    /// window: it is a SwiftUI view added inside one persistent fullscreen `AXSystemDialog`
+    /// host. Because that host is not torn down between banners, `kAXWindowCreatedNotification`
+    /// never fires for a banner at all — measured as 0 on 27.0, against 3 layout-changed events
+    /// per banner. Layout-changed is the only arrival signal, so without it a banner is only
+    /// ever repositioned by accident, when some *other* element's destroy event happens to
+    /// trigger a sweep.
     private static let watchedNotifications: [String] = [
         kAXWindowCreatedNotification, kAXFocusedWindowChangedNotification,
         kAXWindowMovedNotification, kAXMainWindowChangedNotification,
-        kAXUIElementDestroyedNotification,
+        kAXUIElementDestroyedNotification, kAXLayoutChangedNotification,
     ]
 
     deinit {
