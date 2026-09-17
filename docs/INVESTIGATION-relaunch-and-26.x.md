@@ -11,7 +11,7 @@ the corner"), which is why the thread reads as a single catastrophic regression.
 
 ## Ground truth measured on macOS 27.0 (26A428)
 
-Run of `scripts/ax-probe.swift` (lives on `migrate-app-to-26.6.2`) against a live
+Run of [`scripts/ax-probe.swift`](../scripts/ax-probe.swift) against a live
 banner. This is measurement, not inference:
 
 ```
@@ -75,17 +75,17 @@ wrong signal and correcting late.
 
 ## Ranked list of things to check
 
-### 1. Missing `AXLayoutChanged` subscription — confirmed, highest confidence
+### 1. Missing `AXLayoutChanged` subscription — confirmed, now fixed on this branch
 
-Measured above. Port `dddfaf6` onto `feat/8.0-ui-and-performance`. The branch has
-since extracted `AXObserverController`, so it is not a clean cherry-pick: the
-notification list moved out of `NotificationRepositioner`, while the
-`layoutChangeDebouncer` + sweep handling stays in it.
+Measured above. `dddfaf6` has been ported onto `feat/8.0-ui-and-performance`. It
+was not a clean cherry-pick: the notification list had moved out to
+`AXObserverController`, while the `layoutChangeDebouncer` and sweep handling stay
+in `NotificationRepositioner`.
 
-Verify after porting by re-running the probe and confirming a banner moves on
-first arrival after a cold start, with no prior banner to trigger a destroy sweep.
-That "first banner after launch" case is the one the destroy-sweep accident
-cannot cover, so it is the honest test.
+**Still unverified on a real machine.** The honest test is the *first* banner
+after a cold start, with no prior banner to have triggered a destroy sweep —
+that is the one case the old accidental path cannot cover. A banner that moves
+only after you have already had one banner proves nothing.
 
 ### 2. "Hide menu bar icon" is a one-way door — strong candidate for report #1
 
