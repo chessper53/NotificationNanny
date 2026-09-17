@@ -153,6 +153,17 @@ package final class NotificationRepositioner: ObservableObject {
             return
         }
 
+        if notification == kAXLayoutChangedNotification as String {
+            // Measured on 26.5.2 and again on 27.0: one banner produces three of these. They
+            // can also arrive for the application element rather than a window, so don't trust
+            // `element` — sweep whatever windows are currently up, coalesced.
+            axLog.debug("handleAXEvent: layoutChanged — scheduling sweep")
+            layoutChangeDebouncer.schedule(delay: 0.05) { [weak self] in
+                self?.repositionVisibleWindows()
+            }
+            return
+        }
+
         if notification == kAXWindowCreatedNotification as String {
             let name = appName(for: element)
             if let name {
@@ -194,6 +205,7 @@ package final class NotificationRepositioner: ObservableObject {
     }
 
     private let destroySweepDebouncer = Debouncer()
+    private let layoutChangeDebouncer = Debouncer()
     private let settingsSettleDebouncer = Debouncer()
     private var burstWorkItems: [DispatchWorkItem] = []
 
