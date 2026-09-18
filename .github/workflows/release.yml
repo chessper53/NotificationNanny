@@ -1,59 +1,105 @@
 name: Release
 
+# Verifies the artifact a release actually published. It deliberately does not
+# build or upload anything.
+#
+# This used to be a second builder: it rebuilt the app with UNIVERSAL=1 and
+# uploaded the result. Because release.sh has already built, uploaded and
+# hashed its own zip locally by then, that upload always collided and the run
+# failed on every single release from 7.3.1 onward. RELEASING.md called the
+# failure harmless, and the collision itself was, but two consequences were not:
+#
+#   1. A red X on every release meant a genuine failure was indistinguishable
+#      from the expected one, so the Actions tab carried no signal.
+#   2. The "verify universal binary" step inspected CI's own build and then the
+#      run died before doing anything with it, so nothing ever checked the zip
+#      users download. Whether a release shipped universal rested entirely on
+#      remembering to type UNIVERSAL=1.
+#
+# Resolving the collision with --clobber would have been worse: the cask's
+# sha256 is computed by release.sh from its local zip, so replacing the asset
+# with a differently-built one breaks `brew install` for everyone.
+#
+# So CI checks the published artifact instead. Red now means a real problem.
+
 on:
   release:
     types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag to verify, e.g. v8.0.0
+        required: true
 
 jobs:
-  build-and-update-cask:
+  verify-published-artifact:
+    name: Verify published artifact
     runs-on: macos-latest
     permissions:
-      contents: write
+      contents: read
 
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: main
 
-      - name: Get version
+      - name: Resolve tag and version
         id: version
-        run: echo "version=${GITHUB_REF_NAME#v}" >> $GITHUB_OUTPUT
-
-      - name: Build
-        run: UNIVERSAL=1 ./build-app.sh
-
-      - name: Verify universal binary
         run: |
-          executable="build/NotificationNanny.app/Contents/MacOS/NotificationNanny"
+          tag="${{ github.event.inputs.tag || github.ref_name }}"
+          echo "tag=${tag}" >> "$GITHUB_OUTPUT"
+          echo "version=${tag#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Download the published zip
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release download "${{ steps.version.outputs.tag }}" \
+            --pattern '*.zip' --dir published
+          ls -la published
+
+      - name: Verify the binary is universal
+        run: |
+          cd published
+          unzip -q ./*.zip
+          executable="NotificationNanny.app/Contents/MacOS/NotificationNanny"
           architectures="$(lipo -archs "$executable")"
+          echo "architectures: ${architectures}"
           for architecture in arm64 x86_64; do
             if [[ " $architectures " != *" $architecture "* ]]; then
-              echo "error: release binary is missing $architecture (found: $architectures)" >&2
+              echo "::error::Published binary is missing ${architecture} (found: ${architectures}). It was probably built without UNIVERSAL=1, which leaves Intel Macs unable to launch it." >&2
               exit 1
             fi
           done
 
-      - name: Zip
-        run: cd build && zip -r "../NotificationNanny-${{ steps.version.outputs.version }}.zip" NotificationNanny.app
-
-      - name: SHA256
-        id: sha
-        run: echo "sha256=$(shasum -a 256 "NotificationNanny-${{ steps.version.outputs.version }}.zip" | awk '{print $1}')" >> $GITHUB_OUTPUT
-
-      - name: Attach zip to release
-        run: gh release upload "$GITHUB_REF_NAME" "NotificationNanny-${{ steps.version.outputs.version }}.zip"
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Update cask
+      - name: Verify the app is signed and its Info.plist matches the tag
         run: |
-          sed -i '' 's/version "[^"]*"/version "${{ steps.version.outputs.version }}"/' Casks/notificationnanny.rb
-          sed -i '' 's/sha256 "[^"]*"/sha256 "${{ steps.sha.outputs.sha256 }}"/' Casks/notificationnanny.rb
+          cd published
+          codesign --verify --strict --verbose=2 NotificationNanny.app
+          plist="NotificationNanny.app/Contents/Info.plist"
+          stamped="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$plist")"
+          if [[ "${stamped}" != "${{ steps.version.outputs.version }}" ]]; then
+            echo "::error::Info.plist says ${stamped} but the tag says ${{ steps.version.outputs.version }}." >&2
+            exit 1
+          fi
 
-      - name: Commit cask
+      # release.sh pushes the cask bump moments after creating the release, so
+      # the checkout above can predate it. Poll rather than racing it.
+      - name: Verify the cask points at this exact zip
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add Casks/notificationnanny.rb
-          git commit -m "chore: bump cask to v${{ steps.version.outputs.version }}"
-          git push origin HEAD:main
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          expected_sha="$(shasum -a 256 published/*.zip | awk '{print $1}')"
+          version="${{ steps.version.outputs.version }}"
+          for attempt in $(seq 1 10); do
+            git fetch --quiet origin main
+            git checkout --quiet FETCH_HEAD -- Casks/notificationnanny.rb
+            cask_version="$(sed -n 's/.*version "\([^"]*\)".*/\1/p' Casks/notificationnanny.rb)"
+            cask_sha="$(sed -n 's/.*sha256 "\([^"]*\)".*/\1/p' Casks/notificationnanny.rb)"
+            if [[ "${cask_version}" == "${version}" && "${cask_sha}" == "${expected_sha}" ]]; then
+              echo "Cask matches the published zip."
+              exit 0
+            fi
+            echo "attempt ${attempt}: cask at ${cask_version}/${cask_sha:0:12}, want ${version}/${expected_sha:0:12}"
+            sleep 15
+          done
+          echo "::error::Cask never matched the published zip. brew install will fail its integrity check until Casks/notificationnanny.rb has version ${version} and sha256 ${expected_sha}." >&2
+          exit 1

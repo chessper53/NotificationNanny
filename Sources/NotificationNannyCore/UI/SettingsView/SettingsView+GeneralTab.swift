@@ -7,6 +7,7 @@ struct GeneralTabView: View {
     @ObservedObject private var loc = LocalizationManager.shared
 
     @State private var showResetConfirmation = false
+    @State private var showHideIconConfirmation = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -38,7 +39,27 @@ struct GeneralTabView: View {
                     set: { launchAtLogin.setEnabled($0) }
                 ))
                 Divider().padding(.leading, 14)
-                toggleRow("Hide menu bar icon", isOn: $settings.hideMenuBarIcon)
+                // Hiding the icon removes the only visible way back into Settings,
+                // so turning it on asks first and names the way back. Turning it
+                // off needs no ceremony, hence the asymmetric binding.
+                toggleRow("Hide menu bar icon", isOn: Binding(
+                    get: { settings.hideMenuBarIcon },
+                    set: { shouldHide in
+                        if shouldHide {
+                            showHideIconConfirmation = true
+                        } else {
+                            settings.hideMenuBarIcon = false
+                        }
+                    }
+                ))
+            }
+            .confirmationDialog(loc.string("Hide the menu bar icon?"),
+                                isPresented: $showHideIconConfirmation,
+                                titleVisibility: .visible) {
+                Button(loc.string("Hide")) { settings.hideMenuBarIcon = true }
+                Button(loc.string("Cancel"), role: .cancel) {}
+            } message: {
+                LocalizedText("NotificationNanny keeps running and keeps moving your banners. To open Settings again, launch NotificationNanny from your Applications folder.")
             }
 
             section("Timing") {
