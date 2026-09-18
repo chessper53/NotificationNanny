@@ -47,7 +47,7 @@ macOS gives you one place for notification banners and no way to change it. Noti
 
 ## Documentation
 
-For contributors: [Contributing](docs/CONTRIBUTING.md) covers setup and conventions, [Architecture](docs/ARCHITECTURE.md) covers internals and module structure, [Debugging](docs/DEBUGGING.md) covers the local build/run/debug loop, and [Releasing](docs/RELEASING.md) covers how to cut a release.
+[Architecture](docs/ARCHITECTURE.md) is the place to start: setup, what the project uses, internals, module structure, and coding conventions. [Debugging](docs/DEBUGGING.md) covers the local build/run/debug loop, and [Releasing](docs/RELEASING.md) covers how to cut a release.
 
 ## How it works
 
