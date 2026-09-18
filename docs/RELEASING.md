@@ -12,8 +12,13 @@ echo "7.6.0" > VERSION
 git commit -am "chore: bump version to 7.6.0"
 
 # 2. Cut the release (builds, zips, publishes, bumps cask, pushes)
-./release.sh 7.6.0
+UNIVERSAL=1 ./release.sh 7.6.0
 ```
+
+`UNIVERSAL=1` is not optional for a real release. Without it you ship an
+arm64-only binary that Intel Macs cannot launch at all. It needs full Xcode.
+CI catches the mistake right after publishing, but it catches it, it does not
+prevent it, so the flag belongs in the command you actually run.
 
 Users then upgrade with:
 
@@ -68,9 +73,10 @@ Events," that permission hasn't been granted yet.
 
 ## Build architecture
 
-`build-app.sh` defaults to the **host architecture only** (currently `arm64`) so it
-works with just the Command Line Tools. Historical releases (≤ 7.5.0) shipped
-arm64-only.
+`build-app.sh` defaults to the **host architecture only** (currently `arm64`).
+That default is a leftover from when the build worked with just the Command Line
+Tools, which stopped being true with CLT 27.0 in September 2026. Releases 7.5.0
+and earlier shipped arm64-only; 7.6.0 onward are universal.
 
 To ship a **universal** (arm64 + x86_64) binary for Intel Macs you need **full
 Xcode** installed, then:
@@ -82,11 +88,32 @@ UNIVERSAL=1 ./release.sh 7.6.0
 ## A note on the `release.yml` workflow
 
 [`.github/workflows/release.yml`](../.github/workflows/release.yml) triggers on
-*release published* and tries to build + upload + bump the cask in CI. Because
-`release.sh` already does all of that locally, that CI run is **redundant** and
-will **fail on the duplicate zip upload** — this is harmless and expected. If you
-prefer a clean Actions tab, you can either delete `release.yml` (rely solely on
-`release.sh`) or make its upload step use `--clobber`.
+*release published* and **verifies the artifact you just shipped**. It does not
+build and does not upload. It checks four things:
+
+1. the published binary is universal (arm64 + x86_64),
+2. the app is validly signed,
+3. `Info.plist` matches the tag,
+4. the cask's `sha256` matches the published zip.
+
+**A failure here is real and worth acting on.** If it reports a missing
+architecture, you released without `UNIVERSAL=1`; rebuild and replace the asset
+before users pull it.
+
+It used to be a second builder that rebuilt with `UNIVERSAL=1` and uploaded the
+result, which collided with the zip `release.sh` had already attached and failed
+on every release from 7.3.1 to 7.7.0. That was written off as harmless, but it
+meant a genuine failure looked exactly like the expected one, and the universal
+check ran against CI's own build and then died before the run could use it, so
+nothing ever inspected what users actually download.
+
+> Do not "fix" the old collision with `--clobber`. `release.sh` computes the
+> cask's `sha256` from its own local zip, so replacing the asset with a
+> differently-built one makes `brew install` fail its integrity check for
+> everyone. Two builders producing two zips with two hashes was the defect.
+
+You can run it by hand against any existing tag from the Actions tab
+(*Run workflow*, enter e.g. `v7.7.0`).
 
 > The old `auto-release.yml` (which published a release on every `VERSION` change)
 > was removed deliberately — it fired releases unintentionally on doc commits.
