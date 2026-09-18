@@ -1,5 +1,9 @@
 #!/usr/bin/env bash
-# Build NotificationNanny.app from the SwiftPM sources — no Xcode required.
+# Build NotificationNanny.app from the SwiftPM sources.
+#
+# Needs full Xcode. This used to work with just the Command Line Tools, but the
+# CLT 27.0 release (2026-09-15) ships no libSwiftUIMacros.dylib, so every @State
+# in the UI layer fails to expand. UNIVERSAL=1 has always needed full Xcode.
 #
 # Output: ./build/NotificationNanny.app
 #
@@ -18,9 +22,9 @@ VERSION="${VERSION:-$(cat VERSION 2>/dev/null | tr -d '[:space:]' || echo dev)}"
 BUILD_DIR="build"
 APP_DIR="${BUILD_DIR}/${APP_NAME}.app"
 
-# A universal build (--arch arm64 --arch x86_64) needs full Xcode. Default to the
-# host arch so this works with just the Command Line Tools. Set UNIVERSAL=1 to
-# opt in if you have full Xcode.
+# Defaults to the host arch. Set UNIVERSAL=1 for a release: without it, Intel
+# Macs cannot launch the result at all. The default is a leftover from when a
+# host-arch build was the only thing the Command Line Tools could manage.
 SWIFT_BUILD_ARGS=(-c release)
 if [[ "${UNIVERSAL:-0}" == "1" ]]; then
     SWIFT_BUILD_ARGS+=(--arch arm64 --arch x86_64)
