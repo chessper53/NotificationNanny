@@ -64,7 +64,7 @@
       </a>
       <nav class="nav-links">
         <a href="#features">Features</a>
-        <a href="#screenshots">Screenshots</a>
+        <!-- <a href="#demo">Demo</a> --><a href="#screenshots">Screenshots</a>
         <a href="#install">Install</a>
         <a href="https://github.com/chessper53/NotificationNanny" class="nav-gh">GitHub</a>
       </nav>
@@ -143,6 +143,45 @@
         </a>
       </div>
     </section>
+
+    <!-- Demo
+         Styling is already live in styles.css (.demo-frame / .demo-caption) and
+         the nav link is in place but commented out alongside this block.
+
+         To go live, two steps:
+           1. Drop the clip at site/assets/demo.mp4 (and docs/demo.mp4 if the
+              README should use a local copy rather than a GitHub attachment).
+           2. Uncomment this section and the "Demo" nav link above.
+
+         Left commented deliberately: referencing a file that is not committed
+         yet would ship a play button that does nothing, and pages.yml deploys
+         site/ as-is with no check that referenced assets exist.
+
+    <section class="section" id="demo">
+      <div class="wrap">
+        <h2 class="section-title">See it in ten seconds</h2>
+        <p class="section-sub">Pick a corner, send a test notification, watch it land there.</p>
+      </div>
+      <div class="wrap">
+        <div class="demo-frame">
+          <div class="window-chrome" aria-hidden="true"><span></span><span></span><span></span></div>
+          <video
+            controls
+            muted
+            loop
+            playsinline
+            preload="metadata"
+            width="860"
+            poster="assets/screenshots/position.png">
+            <source src="assets/demo.mp4" type="video/mp4" />
+            Your browser cannot play this clip.
+            <a href="assets/demo.mp4">Download it instead.</a>
+          </video>
+        </div>
+        <p class="demo-caption">No audio. Recorded on macOS 27.</p>
+      </div>
+    </section>
+    -->
 
     <!-- Screenshots -->
     <section class="section" id="screenshots">
