@@ -29,6 +29,35 @@
 
 ## Quick Reference
 
+### Getting Set Up
+
+- macOS 14+ and **full Xcode**.
+- No third-party dependencies — pure Swift Package Manager.
+
+```sh
+git clone https://github.com/chessper53/NotificationNanny
+cd NotificationNanny
+make build        # or: swift build
+./dev.sh          # kill, build, reset permission, launch
+```
+
+**Command Line Tools alone are no longer sufficient.** The CLT 27.0 update
+(2026-09-15) does not ship `libSwiftUIMacros.dylib`, so every `@State` and
+`@StateObject` in the UI layer fails to expand:
+
+```
+error: external macro implementation type 'SwiftUIMacros.StateMacro' could not
+       be found for macro 'State()'; plugin for module 'SwiftUIMacros' not found
+```
+
+The plugin ships only inside `Xcode.app`. CI is unaffected — `ci.yml` selects
+full Xcode on the runner — so this breaks local builds silently while CI stays
+green. `build-app.sh`'s header still claims no Xcode is required; that was true
+before this CLT release.
+
+See [DEBUGGING.md](DEBUGGING.md) for the full build/run/debug loop and why
+code-signing plus Accessibility permission matter.
+
 ### Workspace Structure
 
 ```
@@ -665,7 +694,10 @@ sequenceDiagram
 
 ### Build & Distribution
 
-- **Build system:** SPM (`Package.swift`) for development/testing; custom `build-app.sh` for release bundle assembly
+- **Build system:** SPM (`Package.swift`) for development/testing; `dev.sh` (debug) and `build-app.sh` (release) for `.app` assembly
+- **Bundle assembly:** both scripts delegate to `scripts/assemble-bundle.sh`, so a dev bundle and a release bundle differ only in how the binary was compiled — never in what lands inside the `.app`
+- **Signing:** ad-hoc (`codesign --sign -`). The designated requirement is a bare `cdhash`, with no team identifier, so it changes on every build — which means a TCC Accessibility grant does **not** survive an upgrade. Users re-grant on each new version. Only a stable Developer ID identity would change this.
+- **Architecture:** host arch only by default; `UNIVERSAL=1` adds x86_64 but needs full Xcode. Shipped releases have been arm64-only.
 - **Distribution:** Homebrew Cask (`chessper53/notificationnanny`)
 - **CI:** GitHub Actions (`.github/workflows/ci.yml`, `release.yml`, `auto-release.yml`)
 - **Version source of truth:** `VERSION` file (e.g. `6.4.0`), injected into `Info.plist` at build time
@@ -726,6 +758,21 @@ sequenceDiagram
 
 - **Purpose:** Replaces the `bannerColorR/G/B: Double?` triple-optional anti-pattern with a single optional value, reducing mis-use surface and making "color is set" states unambiguous.
 - **Migration:** Both `AppGroup` and `Preset` have custom Codable decoders that read the new `bannerTint` key OR fall back to the legacy separate `bannerColorR/G/B` keys. Old data is silently upgraded on first read; new data is written using only `bannerTint`. `AppSettings` retains the raw R/G/B UserDefaults keys for storage but exposes only `bannerTint: BannerTint?` externally.
+
+### Coding Conventions
+
+- Match the surrounding code: `@MainActor` throughout, Combine `@Published` for
+  settings, the `NotificationSettingsProviding` protocol for repositioner inputs.
+- Keep private SPI declarations in `PrivateWindowAPI.swift` — don't scatter
+  `@_silgen_name` across business logic.
+- New settings: add the key, the `@Published` property with a persisting `didSet`,
+  protocol conformance if the repositioner reads it, and an entry in the export
+  schema (use an `Optional` field so old backups still decode).
+- Add tests for domain logic (geometry, placement, settings, groups, presets) in
+  `Tests/NotificationNannyTests/`. The AX observation loop, custom-banner windows,
+  and private SPI are verified manually — they need a live system.
+- Before committing: `make test` passes, `./dev.sh` behaves as intended against
+  real notifications, and [CHANGELOG.md](CHANGELOG.md) reflects the change.
 
 ---
 
@@ -1016,10 +1063,11 @@ The per-entry log row (timestamp, level capsule, tag capsule, message) was extra
 - [CHANGELOG.md](CHANGELOG.md) — Release history and per-version change summary
 - [RELEASING.md](RELEASING.md) — How to cut and publish a release
 - [DEBUGGING.md](DEBUGGING.md) — Local build / run / debug loop
-- [CONTRIBUTING.md](CONTRIBUTING.md) — Contributor guide
 - [VERSION](../VERSION) — Single source of truth for the version string
 - [Makefile](../Makefile) — Common development commands
-- [build-app.sh](../build-app.sh) — Release bundle assembly script
+- [build-app.sh](../build-app.sh) — Release build entry point
+- [dev.sh](../dev.sh) — Debug build + relaunch loop
+- [scripts/assemble-bundle.sh](../scripts/assemble-bundle.sh) — Shared `.app` assembly and signing
 - [.github/workflows/ci.yml](../.github/workflows/ci.yml) — CI configuration
 
 ### External
@@ -1030,4 +1078,4 @@ The per-entry log row (timestamp, level capsule, tag capsule, message) was extra
 
 ---
 
-*Architecture document last updated 2026-08-10 (v1.9 — AXObserverController extraction, persistent icon cache, menu-bar quick actions, privacy redaction, debounced appGroups persistence, and other items from §11's open list)*
+*Architecture document last updated 2026-09-18 (v2.0 — absorbed CONTRIBUTING.md: setup, toolchain requirements and coding conventions now live here, so this is the single document covering how the project works, builds and is put together)*
