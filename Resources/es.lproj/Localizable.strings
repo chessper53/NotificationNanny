@@ -91,6 +91,9 @@
 "Startup" = "Inicio";
 "Launch at login" = "Abrir al iniciar sesión";
 "Hide menu bar icon" = "Ocultar icono en la barra de menús";
+"Hide the menu bar icon?" = "¿Ocultar el icono de la barra de menús?";
+"Hide" = "Ocultar";
+"NotificationNanny keeps running and keeps moving your banners. To open Settings again, launch NotificationNanny from your Applications folder." = "NotificationNanny sigue funcionando y sigue moviendo las notificaciones. Para volver a abrir los Ajustes, inicia NotificationNanny desde la carpeta Aplicaciones.";
 "Timing" = "Temporización";
 "Auto-dismiss" = "Cierre automático";
 "s" = "s";

@@ -91,6 +91,9 @@
 "Startup" = "Startup";
 "Launch at login" = "Launch at login";
 "Hide menu bar icon" = "Hide menu bar icon";
+"Hide the menu bar icon?" = "Hide the menu bar icon?";
+"Hide" = "Hide";
+"NotificationNanny keeps running and keeps moving your banners. To open Settings again, launch NotificationNanny from your Applications folder." = "NotificationNanny keeps running and keeps moving your banners. To open Settings again, launch NotificationNanny from your Applications folder.";
 "Timing" = "Timing";
 "Auto-dismiss" = "Auto-dismiss";
 "s" = "s";

@@ -697,7 +697,7 @@ sequenceDiagram
 - **Build system:** SPM (`Package.swift`) for development/testing; `dev.sh` (debug) and `build-app.sh` (release) for `.app` assembly
 - **Bundle assembly:** both scripts delegate to `scripts/assemble-bundle.sh`, so a dev bundle and a release bundle differ only in how the binary was compiled — never in what lands inside the `.app`
 - **Signing:** ad-hoc (`codesign --sign -`). The designated requirement is a bare `cdhash`, with no team identifier, so it changes on every build — which means a TCC Accessibility grant does **not** survive an upgrade. Users re-grant on each new version. Only a stable Developer ID identity would change this.
-- **Architecture:** host arch only by default; `UNIVERSAL=1` adds x86_64 but needs full Xcode. Shipped releases have been arm64-only.
+- **Architecture:** host arch only by default. `UNIVERSAL=1` adds x86_64 and needs full Xcode. Releases from 7.6.0 onward ship universal; 7.5.0 and earlier were arm64 only. Nothing verifies the uploaded zip, so this rests on passing the flag at release time.
 - **Distribution:** Homebrew Cask (`chessper53/notificationnanny`)
 - **CI:** GitHub Actions (`.github/workflows/ci.yml`, `release.yml`, `auto-release.yml`)
 - **Version source of truth:** `VERSION` file (e.g. `6.4.0`), injected into `Info.plist` at build time
