@@ -61,7 +61,7 @@ code-signing plus Accessibility permission matter.
 ### Workspace Structure
 
 ```
-NotificationNanny (v7.7.0)
+NotificationNanny (v8.0.0)
 ├── Sources/NotificationNanny/     — Thin @main executable entry point
 ├── Sources/NotificationNannyCore/ — All app logic (library target, testable)
 └── Tests/NotificationNannyTests/  — Swift Testing unit tests
