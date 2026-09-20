@@ -5,6 +5,31 @@ All notable changes to NotificationNanny are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [8.0.0] — 2026-09-20
+
+### Fixed
+- **Banners not repositioned at all on macOS 26.6 and later** — since macOS 26 a banner is no longer its own window. It is a SwiftUI view inside a single fullscreen `AXSystemDialog` host that persists between notifications, so `kAXWindowCreatedNotification`, the event the engine had always treated as "a banner arrived", stopped firing entirely. Measured on 27.0: zero window-created events per banner against three layout-changed events. The only thing still repositioning anything was an accident, where an unrelated element's destroy event triggered a sweep that happened to catch a banner, which is why the failure looked intermittent rather than total. The observer now also subscribes to `kAXLayoutChangedNotification` and sweeps on it, coalesced. Reports on other tools concluded Apple had made this impossible; the host window is in fact still position-settable and the write holds, the arrival signal simply moved.
+- **Settings window could not be resized** — `minSize` and `maxSize` were both pinned to 660x640, so every tab was locked to the height of whichever needed the most room. The Position tab uses roughly half of that, and the rest was dead space that could not be reclaimed. Now resizable with a 620x440 floor, a smaller default, and the chosen size is remembered across launches.
+- **Scaling a live banner squished it**, and dragging the position tile did AX work on every frame.
+- **The screen preview counted the menu bar twice**, so the previewed position drifted from where banners actually landed.
+- **The app picker in Exceptions put checkmarks on the wrong rows** after clicking.
+- Info.plist's minimum macOS version no longer disagrees with the Homebrew cask's `depends_on` requirement, now guarded by a CI check.
+
+### Added
+- **Localization** — the interface is available in English, German, Spanish, French, and Italian, switchable from General without relaunching.
+- **Hiding the menu bar icon now asks first** and tells you how to get back in, since it otherwise removes the only visible route to Settings.
+- Screen previews are drawn as true-to-scale representations of your actual displays, so the preview matches where a banner really lands.
+
+### Changed
+- New graphite and amber palette throughout, plus a custom bell glyph in place of the SF Symbol.
+- The position controls sit beside the preview, and the separate offset sliders are gone; drag the banner on the preview instead.
+- Import and Export folded into General, the assigned-apps picker rebuilt, and per-group settings consolidated.
+- Custom banners no longer redraw on every drag frame, and dragging no longer saturates the main thread.
+- The release workflow no longer builds a second copy of the app. It verifies what was actually published: universal binary, valid signature, `Info.plist` matching the tag, and a cask `sha256` matching the zip. Previously it collided with the locally uploaded zip and failed on every release from 7.3.1 onward, which meant a real failure was indistinguishable from the expected one and nothing ever checked the artifact users download.
+- `dev.sh` and `build-app.sh` now share one bundle assembly step. They had drifted, and `dev.sh` was producing bundles with no menu-bar artwork and no localizations.
+- Building now requires full Xcode. The Command Line Tools stopped shipping the SwiftUI macro plugin in their 27.0 release.
+- `CONTRIBUTING.md` is gone; setup, toolchain requirements and coding conventions now live in `ARCHITECTURE.md`, which is the single document for how the project works and builds.
+
 ## [7.7.0] — 2026-08-10
 
 ### Added
