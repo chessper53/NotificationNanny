@@ -2,15 +2,7 @@ name: CI
 
 on:
   push:
-    # TEMPORARY: feat/8.0-ui-and-performance is listed so this branch can be
-    # compiled and bundled on a runner. Local builds are impossible right now,
-    # since CLT 27.0 ships no SwiftUI macro plugin and full Xcode is not
-    # installable until an Apple ID recovery completes. Remove the branch from
-    # this list before merging to main.
-    #
-    # For push events GitHub reads the workflow file from the pushed commit, so
-    # adding it here takes effect on this branch without touching main.
-    branches: [main, feat/8.0-ui-and-performance]
+    branches: [main]
   pull_request:
     branches: [main]
 
