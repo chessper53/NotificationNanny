@@ -200,12 +200,19 @@ final class AppCoordinator: NSObject, ObservableObject, NSApplicationDelegate, N
         let hosting = NSHostingController(rootView: rootView)
         let window = NSWindow(contentViewController: hosting)
         window.title = "NotificationNanny Settings"
-        window.styleMask = [.titled, .closable, .miniaturizable]
-        window.setContentSize(NSSize(width: 660, height: 640))
-        window.minSize = NSSize(width: 660, height: 640)
-        window.maxSize = NSSize(width: 660, height: 640)
+        // Resizable, with only a floor. It was pinned to exactly 660x640 by
+        // setting min and max to the same size, which meant every tab paid for
+        // the tallest one: Position uses about half that height and the rest was
+        // dead space nobody could reclaim. The content pane is already inside a
+        // ScrollView, so shrinking scrolls rather than clips.
+        window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
+        window.setContentSize(NSSize(width: 660, height: 560))
+        window.minSize = NSSize(width: 620, height: 440)
         window.isReleasedWhenClosed = false
         window.center()
+        // Keeps whatever size the user settles on across launches. Set after
+        // center() so a stored frame wins and a first run stays centred.
+        window.setFrameAutosaveName("NotificationNannySettingsWindow")
         settingsWindow = window
         presentWindow(window, on: screen)
     }
