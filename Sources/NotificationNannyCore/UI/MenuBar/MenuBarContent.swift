@@ -2,7 +2,15 @@ import SwiftUI
 import AppKit
 
 extension Color {
-    static let nannyAccent = Color(red: 0x89 / 255, green: 0x5C / 255, blue: 0x9B / 255)
+    /// Amber, adapting per appearance: the bright amber reads well on the dark
+    /// settings window but drops under 3:1 as caption text on a light one, so
+    /// light mode gets a deeper burnt amber.
+    static let nannyAccent = Color(nsColor: NSColor(name: "nannyAccent") { appearance in
+        let isDark = appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+        return isDark
+            ? NSColor(srgbRed: 0xE8 / 255, green: 0x83 / 255, blue: 0x3A / 255, alpha: 1)
+            : NSColor(srgbRed: 0xA8 / 255, green: 0x55 / 255, blue: 0x14 / 255, alpha: 1)
+    })
 }
 
 package struct MenuBarContent: View {
@@ -54,7 +62,7 @@ package struct MenuBarContent: View {
 
     private var header: some View {
         HStack {
-            Image(systemName: "bell.badge.fill")
+            Image.nannyGlyph(.bell, pointSize: 20)
                 .foregroundStyle(.tint)
                 .font(.title3)
             VStack(alignment: .leading, spacing: 1) {

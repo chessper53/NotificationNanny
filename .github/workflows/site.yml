@@ -36,6 +36,13 @@ jobs:
         working-directory: site
         run: npm run build
 
+      # pages.yml uploads site/ as-is, so a reference to a file that was never
+      # committed deploys as a 404: a dead image, or a play button that does
+      # nothing. Commented-out markup is stripped first, so work staged behind
+      # an HTML comment does not trip this.
+      - name: Referenced assets exist
+        run: python3 scripts/check-site-assets.py
+
       # main.js is committed and is what actually gets deployed, so it has to
       # match what src/main.ts compiles to. Skips itself if main.js stops being
       # tracked, i.e. once it is built during deploy instead of committed.

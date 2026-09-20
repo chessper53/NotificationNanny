@@ -3,13 +3,14 @@ import AppKit
 
 struct BackupTabView: View {
     @EnvironmentObject var settings: AppSettings
+    @ObservedObject private var loc = LocalizationManager.shared
 
     @State private var showImportConfirmation = false
     @State private var pendingImportData: Data? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text("Export your settings to a file or import a previously saved backup. Everything is included: positions, scale, per-app rules, presets, and general toggles.")
+            LocalizedText("Export your settings to a file or import a previously saved backup. Everything is included: positions, scale, per-app rules, presets, and general toggles.")
                 .font(.callout)
                 .foregroundStyle(Color(white: 0.55))
                 .fixedSize(horizontal: false, vertical: true)
@@ -19,8 +20,8 @@ struct BackupTabView: View {
                     HStack(spacing: 12) {
                         Image(systemName: "square.and.arrow.up").frame(width: 20).foregroundStyle(Color.nannyAccent)
                         VStack(alignment: .leading, spacing: 1) {
-                            Text("Export Settings…").font(.callout)
-                            Text("Save a backup to a JSON file").font(.caption2).foregroundStyle(.secondary)
+                            LocalizedText("Export Settings…").font(.callout)
+                            LocalizedText("Save a backup to a JSON file").font(.caption2).foregroundStyle(.secondary)
                         }
                         Spacer()
                     }
@@ -34,8 +35,8 @@ struct BackupTabView: View {
                     HStack(spacing: 12) {
                         Image(systemName: "square.and.arrow.down").frame(width: 20).foregroundStyle(Color.nannyAccent)
                         VStack(alignment: .leading, spacing: 1) {
-                            Text("Import Settings…").font(.callout)
-                            Text("Restore from a previously exported file").font(.caption2).foregroundStyle(.secondary)
+                            LocalizedText("Import Settings…").font(.callout)
+                            LocalizedText("Restore from a previously exported file").font(.caption2).foregroundStyle(.secondary)
                         }
                         Spacer()
                     }
@@ -44,16 +45,16 @@ struct BackupTabView: View {
                 .buttonStyle(.plain)
             }
             .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
-            .confirmationDialog("Replace all settings?",
+            .confirmationDialog(loc.string("Replace all settings?"),
                                 isPresented: $showImportConfirmation,
                                 titleVisibility: .visible) {
-                Button("Import", role: .destructive) {
+                Button(loc.string("Import"), role: .destructive) {
                     if let data = pendingImportData { try? settings.importData(data) }
                     pendingImportData = nil
                 }
-                Button("Cancel", role: .cancel) { pendingImportData = nil }
+                Button(loc.string("Cancel"), role: .cancel) { pendingImportData = nil }
             } message: {
-                Text("This will overwrite all current positions, exceptions, presets and general settings. This cannot be undone.")
+                LocalizedText("This will overwrite all current positions, exceptions, presets and general settings. This cannot be undone.")
             }
         }
     }

@@ -12,6 +12,16 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  release-consistency:
+    name: Release consistency checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Cask / Info.plist macOS version match
+        run: ./scripts/test-version-consistency.sh
+      - name: Release workflow ships a universal, verified binary
+        run: ./scripts/test-release-workflow.sh
+
   test:
     name: Build & Test
     runs-on: macos-26
@@ -45,7 +55,12 @@ jobs:
         continue-on-error: true
         run: |
           PROF=$(find .build -name '*.profdata' | head -1)
-          BIN=$(find .build -name 'NotificationNannyPackageTests' -type f | head -1)
+          # Skip the .dSYM bundle: it contains a DWARF file with the same name as
+          # the test binary, and find hits it first. llvm-cov then rejects it with
+          # "unsupported coverage format version", which left a failure annotation
+          # on every run that continue-on-error hid from the job status.
+          BIN=$(find .build -name 'NotificationNannyPackageTests' -type f \
+                  -not -path '*.dSYM*' | head -1)
           if [ -n "$PROF" ] && [ -n "$BIN" ]; then
             xcrun llvm-cov report "$BIN" \
               -instr-profile "$PROF" \
@@ -83,3 +98,21 @@ jobs:
         run: |
           test -d build/NotificationNanny.app
           codesign --verify --verbose build/NotificationNanny.app
+
+      # The bundle was already being built and then discarded. Keeping it lets a
+      # testable .app come off a runner when no local toolchain can produce one.
+      # ditto rather than zip, to preserve the code-signing xattrs the way
+      # release.sh does; a plain zip can strip them and break the signature.
+      - name: Package for download
+        run: |
+          ditto -c -k --sequesterRsrc --keepParent \
+            build/NotificationNanny.app \
+            build/NotificationNanny-ci.zip
+
+      - name: Upload the built app
+        uses: actions/upload-artifact@v4
+        with:
+          name: NotificationNanny-app-${{ github.sha }}
+          path: build/NotificationNanny-ci.zip
+          retention-days: 14
+          if-no-files-found: error

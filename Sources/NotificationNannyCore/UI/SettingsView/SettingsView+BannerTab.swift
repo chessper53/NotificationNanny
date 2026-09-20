@@ -4,6 +4,7 @@ import AppKit
 struct BannerTabView: View {
     @EnvironmentObject var settings: AppSettings
     @EnvironmentObject var repositioner: NotificationRepositioner
+    @ObservedObject private var loc = LocalizationManager.shared
 
     @State private var previewReplay = 0
 
@@ -20,29 +21,11 @@ struct BannerTabView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            HStack(alignment: .top, spacing: 8) {
-                Image(systemName: "flask")
-                    .font(.caption).foregroundStyle(Color(red: 1.0, green: 0.55, blue: 0.0)).padding(.top, 1)
-                Text("Experimental. The custom banner replaces the system one entirely. Some notification actions like inline replies may not work. Behavior can vary between apps and macOS versions.")
-                    .font(.caption).foregroundStyle(Color(white: 0.75)).fixedSize(horizontal: false, vertical: true)
-            }
-            .padding(10)
-            .background(Color.orange.opacity(0.22), in: RoundedRectangle(cornerRadius: 8))
-
-            HStack(alignment: .top, spacing: 8) {
-                Image(systemName: "info.circle")
-                    .font(.caption).foregroundStyle(.secondary).padding(.top, 1)
-                Text("Custom renderer activates automatically when scale ≠ 100%, a tint color is set, or banner mode is forced. It replaces the system banner with a custom one that supports scaling, tinting, and animation.")
-                    .font(.caption).foregroundStyle(Color(white: 0.6)).fixedSize(horizontal: false, vertical: true)
-            }
-            .padding(10)
-            .background(Color.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 8))
-
             VStack(alignment: .leading, spacing: 10) {
                 HStack {
-                    Text("Default Scale").font(.caption.weight(.medium)).foregroundStyle(.secondary)
+                    LocalizedText("Default Scale").font(.caption.weight(.medium)).foregroundStyle(.secondary)
                     Spacer()
-                    Button("Reset") { settings.bannerScale = 1.0 }
+                    Button(loc.string("Reset")) { settings.bannerScale = 1.0 }
                         .buttonStyle(.borderless).font(.caption).foregroundStyle(Color.nannyAccent)
                         .disabled(abs(settings.bannerScale - 1.0) < 0.01)
                 }
@@ -61,9 +44,9 @@ struct BannerTabView: View {
 
             VStack(alignment: .leading, spacing: 10) {
                 HStack {
-                    Text("Background Color").font(.caption.weight(.medium)).foregroundStyle(.secondary)
+                    LocalizedText("Background Color").font(.caption.weight(.medium)).foregroundStyle(.secondary)
                     Spacer()
-                    Button("Clear") { settings.clearBannerColor() }
+                    Button(loc.string("Clear")) { settings.clearBannerColor() }
                         .buttonStyle(.borderless).font(.caption).foregroundStyle(Color.nannyAccent)
                         .disabled(!settings.hasBannerColor)
                 }
@@ -80,15 +63,15 @@ struct BannerTabView: View {
                     }
                     Spacer()
                     HStack(spacing: 4) {
-                        Text("Custom").font(.system(size: 9)).foregroundStyle(.tertiary)
+                        LocalizedText("Custom").font(.system(size: 9)).foregroundStyle(.tertiary)
                         ColorPicker("", selection: Binding(
                             get: { settings.bannerColor },
                             set: { settings.bannerColor = $0 }
                         ), supportsOpacity: false).labelsHidden()
                     }
-                    .help("Pick any custom color")
+                    .help(loc.string("Pick any custom color"))
                 }
-                Text(settings.hasBannerColor ? "Tint active — custom renderer on" : "No tint")
+                LocalizedText(settings.hasBannerColor ? "Tint active. Custom renderer on" : "No tint")
                     .font(.caption2).foregroundStyle(.tertiary)
             }
             .padding(12)
@@ -96,9 +79,9 @@ struct BannerTabView: View {
 
             VStack(alignment: .leading, spacing: 10) {
                 HStack {
-                    Text("Text Color").font(.caption.weight(.medium)).foregroundStyle(.secondary)
+                    LocalizedText("Text Color").font(.caption.weight(.medium)).foregroundStyle(.secondary)
                     Spacer()
-                    Button("Reset") { settings.clearBannerTextColor() }
+                    Button(loc.string("Reset")) { settings.clearBannerTextColor() }
                         .buttonStyle(.borderless).font(.caption).foregroundStyle(Color.nannyAccent)
                         .disabled(!settings.hasBannerTextColor)
                 }
@@ -115,9 +98,9 @@ struct BannerTabView: View {
                     ), supportsOpacity: false)
                     Spacer()
                 }
-                Text(settings.hasBannerTextColor
-                     ? "Custom text color active — custom renderer on"
-                     : "Default — follows system appearance")
+                LocalizedText(settings.hasBannerTextColor
+                     ? "Custom text color active. Custom renderer on"
+                     : "Default. Follows system appearance")
                     .font(.caption2).foregroundStyle(.tertiary)
             }
             .padding(12)
@@ -125,12 +108,17 @@ struct BannerTabView: View {
 
             VStack(alignment: .leading, spacing: 10) {
                 HStack {
-                    Text("Animation").font(.caption.weight(.medium)).foregroundStyle(.secondary)
+                    LocalizedText("Animation").font(.caption.weight(.medium)).foregroundStyle(.secondary)
                     Spacer()
                     Button {
                         previewReplay &+= 1
                     } label: {
-                        Label("Replay", systemImage: "arrow.clockwise").font(.caption2)
+                        Label {
+                            LocalizedText("Replay")
+                        } icon: {
+                            Image(systemName: "arrow.clockwise")
+                        }
+                        .font(.caption2)
                     }
                     .buttonStyle(.borderless).foregroundStyle(Color.nannyAccent)
                 }
@@ -151,137 +139,38 @@ struct BannerTabView: View {
                     }
                 }
 
-                Text(settings.bannerAnimation == .default
+                LocalizedText(settings.bannerAnimation == .default
                      ? "System-style slide-in. Other animations activate the custom renderer."
-                     : "Custom animation active — replaces the system banner.")
+                     : "Custom animation active. Replaces the system banner.")
                     .font(.caption2).foregroundStyle(.tertiary)
             }
             .padding(12)
             .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
 
+            // Per-group overrides used to be listed here, one row per group. They
+            // now live with the rest of that group's settings in the Exceptions
+            // tab, so this tab is purely the defaults those overrides apply on top
+            // of — and it no longer grows with the number of groups.
             if !settings.appGroups.isEmpty {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Per-app overrides").font(.caption.weight(.medium)).foregroundStyle(.secondary)
-                    VStack(spacing: 0) {
-                        ForEach(settings.appGroups) { group in
-                            groupScaleRow(for: group)
-                            if group.id != settings.appGroups.last?.id {
-                                Divider().padding(.leading, 14)
-                            }
-                        }
-                    }
-                    .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
+                HStack(spacing: 6) {
+                    Image(systemName: "app.badge.checkmark")
+                        .font(.caption2).foregroundStyle(.tertiary)
+                    LocalizedText("Individual groups can override these in the Exceptions tab.")
+                        .font(.caption2).foregroundStyle(.tertiary)
+                    Spacer()
                 }
             }
 
             Button { repositioner.sendTestNotification(groupID: nil) } label: {
-                Label("Send Test Notification", systemImage: "paperplane.fill").frame(maxWidth: .infinity)
+                Label {
+                    LocalizedText("Send Test Notification")
+                } icon: {
+                    Image(systemName: "paperplane.fill")
+                }
+                .frame(maxWidth: .infinity)
             }
             .buttonStyle(.borderedProminent).controlSize(.regular)
         }
-    }
-
-    @ViewBuilder
-    private func groupScaleRow(for group: AppGroup) -> some View {
-        let hasCustom = settings.appGroups.first(where: { $0.id == group.id }).map {
-            $0.bannerScale != nil || $0.hasBannerColor || $0.bannerAnimation != nil
-        } ?? false
-        let scaleBinding = Binding<Double>(
-            get: { settings.appGroups.first(where: { $0.id == group.id })?.bannerScale ?? settings.bannerScale },
-            set: { v in
-                guard let i = settings.appGroups.firstIndex(where: { $0.id == group.id }) else { return }
-                settings.appGroups[i].bannerScale = v
-            }
-        )
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Text(group.name).font(.callout)
-                Spacer()
-                if hasCustom {
-                    Button("Reset") {
-                        guard let i = settings.appGroups.firstIndex(where: { $0.id == group.id }) else { return }
-                        settings.appGroups[i].bannerScale = nil
-                        settings.appGroups[i].bannerTint  = nil
-                        settings.appGroups[i].bannerAnimation = nil
-                    }
-                    .buttonStyle(.borderless).font(.caption).foregroundStyle(Color.nannyAccent)
-                } else {
-                    Text("Using default").font(.caption2).foregroundStyle(.tertiary)
-                    Button("Customize") {
-                        guard let i = settings.appGroups.firstIndex(where: { $0.id == group.id }) else { return }
-                        settings.appGroups[i].bannerScale = settings.bannerScale
-                    }
-                    .buttonStyle(.borderless).font(.caption).foregroundStyle(Color.nannyAccent)
-                }
-            }
-            if hasCustom {
-                HStack(spacing: 8) {
-                    Text("A").font(.caption2).foregroundStyle(.secondary)
-                    Slider(value: scaleBinding, in: 0.5...2.5)
-                        .onChange(of: scaleBinding.wrappedValue) { _, v in if abs(v - 1.0) < 0.02 { scaleBinding.wrappedValue = 1.0 } }
-                        .controlSize(.mini)
-                    Text("A").font(.body.weight(.medium)).foregroundStyle(.secondary)
-                    Text("\(Int(scaleBinding.wrappedValue * 100))%")
-                        .font(.caption2.monospacedDigit()).foregroundStyle(.secondary).frame(width: 38, alignment: .trailing)
-                }
-                let colorBinding = Binding<Color>(
-                    get: {
-                        settings.appGroups.first(where: { $0.id == group.id })?.bannerTint?.color ?? .white
-                    },
-                    set: { newColor in
-                        guard let i = settings.appGroups.firstIndex(where: { $0.id == group.id }) else { return }
-                        let c = NSColor(newColor).usingColorSpace(.sRGB) ?? .black
-                        settings.appGroups[i].bannerTint = BannerTint(
-                            r: Double(c.redComponent), g: Double(c.greenComponent), b: Double(c.blueComponent))
-                    }
-                )
-                HStack(spacing: 8) {
-                    Text("Color").font(.caption2).foregroundStyle(.secondary)
-                    ColorPicker("", selection: colorBinding, supportsOpacity: false).labelsHidden()
-                    if settings.appGroups.first(where: { $0.id == group.id })?.hasBannerColor == true {
-                        Button("Clear") {
-                            guard let i = settings.appGroups.firstIndex(where: { $0.id == group.id }) else { return }
-                            settings.appGroups[i].bannerTint = nil
-                        }
-                        .buttonStyle(.borderless).font(.caption2).foregroundStyle(.secondary)
-                    }
-                    Spacer()
-                    groupAnimationMenu(for: group)
-                    Button { repositioner.sendTestNotification(groupID: group.id) } label: {
-                        Label("Test", systemImage: "paperplane.fill").font(.caption2)
-                    }
-                    .buttonStyle(.borderedProminent).controlSize(.mini)
-                }
-            }
-        }
-        .padding(.horizontal, 14).padding(.vertical, 10)
-    }
-
-    @ViewBuilder
-    private func groupAnimationMenu(for group: AppGroup) -> some View {
-        let override = settings.appGroups.first(where: { $0.id == group.id })?.bannerAnimation
-        let effective = override ?? settings.bannerAnimation
-        let setAnimation: (BannerAnimation?) -> Void = { anim in
-            guard let i = settings.appGroups.firstIndex(where: { $0.id == group.id }) else { return }
-            settings.appGroups[i].bannerAnimation = anim
-        }
-        Menu {
-            Button { setAnimation(nil) } label: {
-                Label("Default (\(settings.bannerAnimation.label))", systemImage: "arrow.uturn.backward")
-            }
-            Divider()
-            ForEach(BannerAnimation.allCases, id: \.self) { anim in
-                Button { setAnimation(anim) } label: { Label(anim.label, systemImage: anim.iconName) }
-            }
-        } label: {
-            HStack(spacing: 4) {
-                Image(systemName: effective.iconName).font(.system(size: 9))
-                Text(override == nil ? "Default" : effective.label).font(.caption2)
-            }
-        }
-        .menuStyle(.borderlessButton)
-        .fixedSize()
-        .help("Animation for this group")
     }
 
     @ViewBuilder
