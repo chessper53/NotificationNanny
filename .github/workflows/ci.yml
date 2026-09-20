@@ -63,7 +63,12 @@ jobs:
         continue-on-error: true
         run: |
           PROF=$(find .build -name '*.profdata' | head -1)
-          BIN=$(find .build -name 'NotificationNannyPackageTests' -type f | head -1)
+          # Skip the .dSYM bundle: it contains a DWARF file with the same name as
+          # the test binary, and find hits it first. llvm-cov then rejects it with
+          # "unsupported coverage format version", which left a failure annotation
+          # on every run that continue-on-error hid from the job status.
+          BIN=$(find .build -name 'NotificationNannyPackageTests' -type f \
+                  -not -path '*.dSYM*' | head -1)
           if [ -n "$PROF" ] && [ -n "$BIN" ]; then
             xcrun llvm-cov report "$BIN" \
               -instr-profile "$PROF" \
