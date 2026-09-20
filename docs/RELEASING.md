@@ -12,8 +12,13 @@ echo "7.6.0" > VERSION
 git commit -am "chore: bump version to 7.6.0"
 
 # 2. Cut the release (builds, zips, publishes, bumps cask, pushes)
-./release.sh 7.6.0
+UNIVERSAL=1 ./release.sh 7.6.0
 ```
+
+`UNIVERSAL=1` is not optional for a real release. Without it you ship an
+arm64-only binary that Intel Macs cannot launch at all. It needs full Xcode.
+CI catches the mistake right after publishing, but it catches it, it does not
+prevent it, so the flag belongs in the command you actually run.
 
 Users then upgrade with:
 
@@ -68,9 +73,10 @@ Events," that permission hasn't been granted yet.
 
 ## Build architecture
 
-`build-app.sh` defaults to the **host architecture only** (currently `arm64`) so it
-works with just the Command Line Tools. Historical releases (≤ 7.5.0) shipped
-arm64-only.
+`build-app.sh` defaults to the **host architecture only** (currently `arm64`).
+That default is a leftover from when the build worked with just the Command Line
+Tools, which stopped being true with CLT 27.0 in September 2026. Releases 7.5.0
+and earlier shipped arm64-only; 7.6.0 onward are universal.
 
 To ship a **universal** (arm64 + x86_64) binary for Intel Macs you need **full
 Xcode** installed, then:
@@ -79,14 +85,37 @@ Xcode** installed, then:
 UNIVERSAL=1 ./release.sh 7.6.0
 ```
 
-## A note on the `release.yml` workflow
+## `release.yml` is what actually ships the build
 
 [`.github/workflows/release.yml`](../.github/workflows/release.yml) triggers on
-*release published* and tries to build + upload + bump the cask in CI. Because
-`release.sh` already does all of that locally, that CI run is **redundant** and
-will **fail on the duplicate zip upload** — this is harmless and expected. If you
-prefer a clean Actions tab, you can either delete `release.yml` (rely solely on
-`release.sh`) or make its upload step use `--clobber`.
+*release published* and does the real work:
+
+1. builds with `UNIVERSAL=1` on a runner with full Xcode,
+2. fails the run if the binary is not both arm64 and x86_64,
+3. zips it and attaches it to the release,
+4. rewrites `version` and `sha256` in the cask and pushes that to `main`.
+
+**This means you do not need a local toolchain to cut a release.** Publishing
+the release is the trigger; the runner builds and uploads. That matters when the
+Command Line Tools cannot build the project, which has been the case since CLT
+27.0 dropped the SwiftUI macro plugin.
+
+Every run from 7.3.1 to 7.7.0 failed, always at the final *Commit cask* step:
+the `release` event checks out a detached HEAD, so a bare `git push` had nothing
+to push to and the cask bump never landed. Fixed in `44e3109` by pushing
+explicitly to `main`, which first takes effect in 8.0.0. Earlier releases had
+their cask bumped by hand afterwards, which is why the tap still worked.
+
+The upload uses `--clobber` so the job can be re-run after a later step fails.
+That is safe **only** because this job is the sole builder: the `sha256` written
+into the cask always comes from the same zip the same run attached. If a second
+producer ever uploads a differently-built zip, the cask's hash stops matching
+the asset and `brew install` fails its integrity check for everyone.
+
+> `release.sh` also builds, uploads and bumps the cask locally. Running it
+> *and* letting the workflow run means exactly that two-producer situation.
+> In practice releases have been cut by publishing the release and letting CI
+> do the work, which is the path described above.
 
 > The old `auto-release.yml` (which published a release on every `VERSION` change)
 > was removed deliberately — it fired releases unintentionally on doc commits.

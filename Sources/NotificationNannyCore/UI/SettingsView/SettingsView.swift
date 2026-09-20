@@ -6,8 +6,9 @@ package struct SettingsView: View {
     @EnvironmentObject var settings: AppSettings
     @EnvironmentObject var repositioner: NotificationRepositioner
     @EnvironmentObject var launchAtLogin: LaunchAtLogin
+    @ObservedObject private var loc = LocalizationManager.shared
 
-    enum NavTab: Hashable { case position, exceptions, presets, general, banner, backup, help, debug }
+    enum NavTab: Hashable { case position, exceptions, presets, general, banner, help, debug }
 
     @State private var activeTab: NavTab = .position
     @State private var newerVersion: String? = nil
@@ -42,12 +43,23 @@ package struct SettingsView: View {
 
             HStack(spacing: 0) {
                 VStack(alignment: .leading, spacing: 2) {
-                    sidebarItem("Position",   systemImage: "scope",                   tab: .position)
-                    sidebarItem("Exceptions", systemImage: "app.badge",               tab: .exceptions)
-                    sidebarItem("Banner",     systemImage: "textformat.size",         tab: .banner)
-                    sidebarItem("Presets",    systemImage: "star",                    tab: .presets)
+                    // Each icon depicts what the tab does, rather than gesturing at
+                    // the general area: a banner in a screen corner for Position, a
+                    // configured app for Exceptions, appearance for Banner, a stack
+                    // of saved configurations for Presets, a drive for Backup (which
+                    // imports as well as exports, so a tray-and-up-arrow read wrong).
+                    // All are SF Symbols 4 or earlier, so they resolve on macOS 14.
+                    // Ordered the way the settings build on each other: set where
+                    // banners go, then what they look like, then per-app overrides
+                    // of those two, then presets that save the combination. App
+                    // preferences come last, with import/export inside General.
+                    // Exceptions used to sit above Banner, ahead of the
+                    // appearance it overrides.
+                    sidebarItem("Position",   systemImage: "rectangle.inset.topright.filled", tab: .position)
+                    sidebarItem("Banner",     systemImage: "paintpalette",            tab: .banner)
+                    sidebarItem("Exceptions", systemImage: "app.badge.checkmark",     tab: .exceptions)
+                    sidebarItem("Presets",    systemImage: "rectangle.stack",         tab: .presets)
                     sidebarItem("General",    systemImage: "gearshape",               tab: .general)
-                    sidebarItem("Backup",     systemImage: "tray.and.arrow.up",       tab: .backup)
                     Spacer()
                     sidebarItem("Diagnostics", systemImage: "stethoscope",            tab: .debug)
                     sidebarItem("Help",       systemImage: "questionmark.circle",     tab: .help)
@@ -58,7 +70,7 @@ package struct SettingsView: View {
                         HStack(spacing: 8) {
                             Image(systemName: settings.isEnabled ? "pause.circle" : "play.circle")
                                 .frame(width: 16, alignment: .center)
-                            Text(settings.isEnabled ? "Disable" : "Enable")
+                            LocalizedText(settings.isEnabled ? "Disable" : "Enable")
                             Spacer()
                         }
                         .font(.callout)
@@ -73,7 +85,7 @@ package struct SettingsView: View {
                     } label: {
                         HStack(spacing: 8) {
                             Image(systemName: "power").frame(width: 16, alignment: .center)
-                            Text("Quit")
+                            LocalizedText("Quit")
                             Spacer()
                         }
                         .font(.callout)
@@ -124,7 +136,6 @@ package struct SettingsView: View {
                         case .exceptions: ExceptionsTabView()
                         case .presets:    PresetsTabView()
                         case .general:    GeneralTabView()
-                        case .backup:     BackupTabView()
                         case .help:       HelpTabView()
                         case .debug:      DebugTabView()
                         }
@@ -153,11 +164,11 @@ package struct SettingsView: View {
         Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "—"
     }
 
-    private func sidebarItem(_ label: String, systemImage: String, tab: NavTab) -> some View {
+    private func sidebarItem(_ labelKey: String, systemImage: String, tab: NavTab) -> some View {
         Button { activeTab = tab } label: {
             HStack(spacing: 8) {
                 Image(systemName: systemImage).frame(width: 16, alignment: .center)
-                Text(label)
+                LocalizedText(labelKey)
                 Spacer()
             }
             .font(.callout)
@@ -180,11 +191,11 @@ package struct SettingsView: View {
                 .foregroundStyle(granted ? .green : .orange)
                 .animation(.easeInOut(duration: 0.2), value: granted)
             VStack(alignment: .leading, spacing: 1) {
-                Text(granted ? "Accessibility access granted" : "Accessibility access required")
+                LocalizedText(granted ? "Accessibility access granted" : "Accessibility access required")
                     .font(.callout.weight(.semibold))
                     .animation(.easeInOut(duration: 0.2), value: granted)
                 if !granted {
-                    Text("NotificationNanny needs this to reposition and intercept notification banners.")
+                    LocalizedText("NotificationNanny needs this to reposition and intercept notification banners.")
                         .font(.caption2)
                         .foregroundStyle(Color(white: 0.65))
                         .fixedSize(horizontal: false, vertical: true)
@@ -192,7 +203,7 @@ package struct SettingsView: View {
             }
             Spacer()
             if !granted {
-                Button("Grant Access") { repositioner.requestAccessibilityPermission() }
+                Button(loc.string("Grant Access")) { repositioner.requestAccessibilityPermission() }
                     .buttonStyle(.borderedProminent)
                     .controlSize(.small)
             }
@@ -230,7 +241,7 @@ package struct SettingsView: View {
                     Text("v\(version) is available")
                         .font(.callout.weight(.semibold))
                 case .running:
-                    Text("Updating via Homebrew\u{2026}")
+                    LocalizedText("Updating via Homebrew…")
                         .font(.callout.weight(.semibold))
                     if let last = brewUpdater.outputLines.last {
                         Text(last)
@@ -241,10 +252,10 @@ package struct SettingsView: View {
                 case .succeeded:
                     Text("Updated to v\(version)")
                         .font(.callout.weight(.semibold))
-                    Text("Relaunch to apply changes")
+                    LocalizedText("Relaunch to apply changes")
                         .font(.caption2).foregroundStyle(.secondary)
                 case .failed(let msg):
-                    Text("Update failed")
+                    LocalizedText("Update failed")
                         .font(.callout.weight(.semibold))
                     Text(msg)
                         .font(.caption2).foregroundStyle(.secondary)
@@ -258,10 +269,10 @@ package struct SettingsView: View {
             switch brewUpdater.state {
             case .idle:
                 if InstallSource.current == .homebrew {
-                    Button("Update Now") { brewUpdater.start() }
+                    Button(loc.string("Update Now")) { brewUpdater.start() }
                         .buttonStyle(.borderedProminent).controlSize(.small)
                 } else {
-                    Button("View Release") {
+                    Button(loc.string("View Release")) {
                         NSWorkspace.shared.open(URL(string: "https://github.com/chessper53/NotificationNanny/releases/latest")!)
                     }
                     .buttonStyle(.borderedProminent).controlSize(.small)
@@ -269,10 +280,10 @@ package struct SettingsView: View {
             case .running:
                 EmptyView()
             case .succeeded:
-                Button("Relaunch") { brewUpdater.relaunch() }
+                Button(loc.string("Relaunch")) { brewUpdater.relaunch() }
                     .buttonStyle(.borderedProminent).controlSize(.small)
             case .failed:
-                Button("View Release") {
+                Button(loc.string("View Release")) {
                     NSWorkspace.shared.open(URL(string: "https://github.com/chessper53/NotificationNanny/releases/latest")!)
                 }
                 .buttonStyle(.borderedProminent).controlSize(.small)
@@ -318,25 +329,3 @@ private struct WindowSizeLock: NSViewRepresentable {
     func updateNSView(_ nsView: NSView, context: Context) {}
 }
 
-// Shared helper: labelled slider + numeric field pair. Used by Position and Exceptions tabs.
-struct SettingsSliderRow: View {
-    let title: String
-    @Binding var value: Double
-    let range: ClosedRange<Double>
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(title).font(.caption2).foregroundStyle(.secondary)
-            HStack(spacing: 8) {
-                Slider(value: $value, in: range).controlSize(.mini)
-                TextField("0", value: $value, format: .number.precision(.fractionLength(0)))
-                    .textFieldStyle(.roundedBorder)
-                    .controlSize(.mini)
-                    .multilineTextAlignment(.trailing)
-                    .frame(width: 56)
-                    .font(.caption2.monospacedDigit())
-                Text("px").font(.caption2).foregroundStyle(.secondary)
-            }
-        }
-    }
-}

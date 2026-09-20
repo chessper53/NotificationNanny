@@ -1,0 +1,169 @@
+/* Sidebar tabs */
+"Position" = "Posizione";
+"Exceptions" = "Eccezioni";
+"Banner" = "Banner";
+"Presets" = "Preimpostazioni";
+"General" = "Generale";
+"Import & Export" = "Importa ed esporta";
+"Diagnostics" = "Diagnostica";
+"Help" = "Aiuto";
+"Disable" = "Disattiva";
+"Enable" = "Attiva";
+"Quit" = "Esci";
+
+/* Permission / update banners */
+"Accessibility access granted" = "Accesso Accessibilità concesso";
+"Accessibility access required" = "Accesso Accessibilità richiesto";
+"NotificationNanny needs this to reposition and intercept notification banners." = "NotificationNanny ne ha bisogno per riposizionare e intercettare i banner di notifica.";
+"Grant Access" = "Concedi accesso";
+"Update Now" = "Aggiorna ora";
+"View Release" = "Visualizza versione";
+"Relaunch" = "Riavvia";
+"Updating via Homebrew…" = "Aggiornamento tramite Homebrew…";
+"Relaunch to apply changes" = "Riavvia per applicare le modifiche";
+"Update failed" = "Aggiornamento non riuscito";
+
+/* Shared controls */
+"Horizontal" = "Orizzontale";
+"Vertical" = "Verticale";
+"Fine-tune" = "Regolazione fine";
+"Reset" = "Reimposta";
+"Cancel" = "Annulla";
+"Clear" = "Rimuovi";
+"Save" = "Salva";
+"Send" = "Invia";
+"Send Test Notification" = "Invia notifica di prova";
+
+/* Position tab */
+"Choose where banners appear. Drag the banner on the preview. It matches your real screen exactly." = "Scegli dove appaiono i banner. Trascina il banner nell'anteprima. Corrisponde esattamente al tuo schermo.";
+"Default Position" = "Posizione predefinita";
+"Auto" = "Auto";
+
+/* Banner tab */
+"Default Scale" = "Scala predefinita";
+"Background Color" = "Colore di sfondo";
+"Custom" = "Personalizzato";
+"Pick any custom color" = "Scegli un colore personalizzato";
+"Tint active. Custom renderer on" = "Tinta attiva, rendering personalizzato attivo";
+"No tint" = "Nessuna tinta";
+"Text Color" = "Colore del testo";
+"Custom text color active. Custom renderer on" = "Colore del testo personalizzato attivo, rendering personalizzato attivo";
+"Default. Follows system appearance" = "Predefinito, segue l'aspetto di sistema";
+"Animation" = "Animazione";
+"Replay" = "Ripeti";
+"System-style slide-in. Other animations activate the custom renderer." = "Scorrimento in stile sistema. Le altre animazioni attivano il rendering personalizzato.";
+"Custom animation active. Replaces the system banner." = "Animazione personalizzata attiva, sostituisce il banner di sistema.";
+"Per-app overrides" = "Impostazioni per app";
+"Using default" = "Predefinite in uso";
+"Customize" = "Personalizza";
+"Animation for this group" = "Animazione per questo gruppo";
+"Color" = "Colore";
+"Test" = "Prova";
+"px" = "px";
+
+/* Custom banner overlay chrome */
+"now" = "ora";
+
+/* Exceptions tab */
+"Create groups of apps and give each group its own rules: position, screen, banner type, and scale. Apps not in any group use the defaults." = "Crea gruppi di app e assegna a ciascuno le proprie regole: posizione, schermo, tipo di banner e scala. Le app senza gruppo usano le impostazioni predefinite.";
+"No exceptions yet." = "Ancora nessuna eccezione.";
+"Name" = "Nome";
+"Create" = "Crea";
+"Screen:" = "Schermo:";
+"Default" = "Predefinito";
+"Assigned Apps" = "App assegnate";
+"No apps seen yet. Receive a notification from any app and it will appear here." = "Ancora nessuna app rilevata. Ricevi una notifica da qualsiasi app e comparirà qui.";
+
+/* Presets tab */
+"Save and switch between named configurations. Presets capture your full setup including per-app rules." = "Salva e passa tra configurazioni con nome. Le preimpostazioni memorizzano l'intera configurazione, incluse le regole per app.";
+"No presets yet." = "Ancora nessuna preimpostazione.";
+"5 preset limit reached" = "Limite di 5 preimpostazioni raggiunto";
+"Done" = "Fine";
+"Replace your current exception groups?" = "Sostituire i gruppi di eccezioni attuali?";
+"Apply Preset" = "Applica preimpostazione";
+
+/* General tab */
+"App-wide settings for startup, timing, and notification behaviour. These apply globally and are not affected by presets or per-app rules." = "Impostazioni generali per avvio, tempistiche e comportamento delle notifiche. Si applicano globalmente e non sono influenzate da preimpostazioni o regole per app.";
+"Language" = "Lingua";
+"App Language" = "Lingua dell'app";
+"System Default" = "Predefinita di sistema";
+"Restart NotificationNanny to apply the new language." = "Riavvia NotificationNanny per applicare la nuova lingua.";
+"Startup" = "Avvio";
+"Launch at login" = "Apri all'accesso";
+"Hide menu bar icon" = "Nascondi icona nella barra dei menu";
+"Hide the menu bar icon?" = "Nascondere l'icona nella barra dei menu?";
+"Hide" = "Nascondi";
+"NotificationNanny keeps running and keeps moving your banners. To open Settings again, launch NotificationNanny from your Applications folder." = "NotificationNanny continua a funzionare e a spostare i banner. Per riaprire le Impostazioni, avvia NotificationNanny dalla cartella Applicazioni.";
+"Timing" = "Tempistiche";
+"Auto-dismiss" = "Chiusura automatica";
+"s" = "s";
+"Pausing" = "Pausa";
+"Pause while screen sharing" = "Sospendi durante la condivisione schermo";
+"Pause during Focus / Do Not Disturb" = "Sospendi durante Focus / Non disturbare";
+"Blur banner text (privacy)" = "Sfoca il testo dei banner (privacy)";
+"Placement & safety" = "Posizionamento e sicurezza";
+"Send to the screen with the cursor" = "Invia allo schermo con il cursore";
+"Don't move Notification Center" = "Non spostare il Centro Notifiche";
+"Don't move desktop widgets" = "Non spostare i widget della scrivania";
+"Hold banners while display is asleep" = "Trattieni i banner mentre lo schermo è in stop";
+"Reset All Settings" = "Reimposta tutte le impostazioni";
+"Reset all settings?" = "Reimpostare tutte le impostazioni?";
+"This will clear all positions, exceptions, presets and restore defaults. This cannot be undone." = "Questo cancellerà tutte le posizioni, eccezioni e preimpostazioni, ripristinando i valori predefiniti. L'operazione non può essere annullata.";
+
+/* Backup tab */
+"Export your settings to a file or import a previously saved backup. Everything is included: positions, scale, per-app rules, presets, and general toggles." = "Esporta le tue impostazioni in un file o importa un backup salvato in precedenza. È incluso tutto: posizioni, scala, regole per app, preimpostazioni e opzioni generali.";
+"Export Settings…" = "Esporta impostazioni…";
+"Save a backup to a JSON file" = "Salva un backup in un file JSON";
+"Import Settings…" = "Importa impostazioni…";
+"Restore from a previously exported file" = "Ripristina da un file esportato in precedenza";
+"Replace all settings?" = "Sostituire tutte le impostazioni?";
+"Import" = "Importa";
+"This will overwrite all current positions, exceptions, presets and general settings. This cannot be undone." = "Questo sovrascriverà tutte le posizioni, eccezioni, preimpostazioni e impostazioni generali attuali. L'operazione non può essere annullata.";
+
+/* Help tab */
+"Need help or have an idea?" = "Hai bisogno di aiuto o hai un'idea?";
+"Report a bug" = "Segnala un bug";
+"Diagnostics attached · full log copied to clipboard" = "Diagnostica allegata · registro completo copiato negli appunti";
+"Auto-attaches diagnostics & logs" = "Allega automaticamente diagnostica e registri";
+"Request a feature" = "Richiedi una funzione";
+"Got an idea for an improvement" = "Hai un'idea per un miglioramento";
+"View all issues" = "Visualizza tutti i ticket";
+"Browse open and completed issues" = "Sfoglia i ticket aperti e completati";
+"Source code" = "Codice sorgente";
+"NotificationNanny is open source" = "NotificationNanny è open source";
+"Diagnostics and activity logs now live in the **Diagnostics** tab. Handy if you want to inspect them before filing a report." = "Diagnostica e registri attività ora si trovano nella scheda **Diagnostica**. Utile per controllarli prima di inviare una segnalazione.";
+"I work full time, nevertheless I read every issue and try to respond to everyone." = "Lavoro a tempo pieno, ma leggo comunque ogni ticket e cerco di rispondere a tutti.";
+"Diagnostics are only attached when you file a report. Nothing is collected or transmitted otherwise." = "La diagnostica viene allegata solo quando invii una segnalazione. In nessun altro caso viene raccolto o trasmesso alcunché.";
+
+/* Diagnostics tab */
+"Copies your settings, system info, and recent activity. Paste it into your bug report." = "Copia le tue impostazioni, le informazioni di sistema e l'attività recente. Incollale nella segnalazione del bug.";
+"Copied to clipboard" = "Copiato negli appunti";
+"Copy Diagnostics" = "Copia diagnostica";
+"Developer" = "Sviluppatore";
+"Apply a report" = "Applica una segnalazione";
+"Paste a diagnostics report to take over its settings (position, behavior toggles, auto-dismiss, scale) for local reproduction." = "Incolla una segnalazione diagnostica per adottarne le impostazioni (posizione, opzioni di comportamento, chiusura automatica, scala) e riprodurla localmente.";
+"Paste" = "Incolla";
+"Apply Settings" = "Applica impostazioni";
+"Activity log" = "Registro attività";
+"Save…" = "Salva…";
+"Filter messages…" = "Filtra messaggi…";
+"All tags" = "Tutte le etichette";
+"No entries yet. Trigger a notification to start logging." = "Ancora nessuna voce. Genera una notifica per iniziare la registrazione.";
+"No entries match the current filter." = "Nessuna voce corrisponde al filtro attuale.";
+"Edge-case tools" = "Strumenti per casi limite";
+"Dump AX tree" = "Esporta albero AX";
+"Logs the live Notification Center window tree for any banners on screen." = "Registra l'albero delle finestre del Centro Notifiche per i banner a schermo.";
+"Dump" = "Esporta";
+"Back-to-back burst" = "Raffica consecutiva";
+"Fires several notifications in rapid succession to reproduce the rapid-message race." = "Invia più notifiche in rapida successione per riprodurre la race condition dei messaggi ravvicinati.";
+"Edge-case notifications" = "Notifiche per casi limite";
+"Send a tricky notification through the real path to test extraction, wrapping, and unicode. Renders custom only when custom mode is active for the sender." = "Invia una notifica complessa attraverso il percorso reale per testare estrazione, a capo automatico e unicode. Usa il rendering personalizzato solo se la modalità personalizzata è attiva per il mittente.";
+
+/* Menu bar right-click quick actions (AppKit, NSLocalizedString) */
+"Resume (paused until %@)" = "Riprendi (in pausa fino alle %@)";
+"15 minutes" = "15 minuti";
+"30 minutes" = "30 minuti";
+"1 hour" = "1 ora";
+"Pause for…" = "Sospendi per…";
+"Settings…" = "Impostazioni…";
+"Quit NotificationNanny" = "Esci da NotificationNanny";
