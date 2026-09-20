@@ -34,6 +34,7 @@ package final class AppSettings: ObservableObject {
         static let bannerAnimation      = "bannerAnimation"
         static let hideMenuBarIcon      = "hideMenuBarIcon"
         static let snoozedUntil         = "snoozedUntil"
+        static let redactBannerContent  = "redactBannerContent"
     }
 
     private static let defaultKnownAppsFileURL: URL = {
@@ -107,6 +108,13 @@ package final class AppSettings: ObservableObject {
 
     @Published package var holdWhileAsleep: Bool {
         didSet { defaults.set(holdWhileAsleep, forKey: Key.holdWhileAsleep) }
+    }
+
+    /// Blurs the title/body text on the custom banner overlay instead of hiding the
+    /// notification outright — for shoulder-surfing privacy without losing the "something
+    /// arrived" signal. Forces the custom-banner path (native banners can't be redacted).
+    @Published package var redactBannerContent: Bool {
+        didSet { defaults.set(redactBannerContent, forKey: Key.redactBannerContent) }
     }
 
     @Published package var autoDismissSeconds: Double {
@@ -244,8 +252,14 @@ package final class AppSettings: ObservableObject {
         appGroups[i] = group
     }
 
+    // placements and appGroups are both edited at high frequency: dragging the
+    // position tile or a per-group scale slider fires on every frame. SwiftUI's
+    // diffing of the @Published value is cheap; re-encoding the whole collection
+    // to JSON and writing UserDefaults 60 times a second is not. Debounce the
+    // disk write — `flushPendingSaves()` guarantees nothing is lost if the app
+    // quits mid-debounce.
     @Published private var placements: [String: ScreenPlacement] {
-        didSet { savePlacements() }
+        didSet { placementsSaver.schedule { [weak self] in self?.savePlacements() } }
     }
 
     @Published var presets: [Preset] {
@@ -253,7 +267,52 @@ package final class AppSettings: ObservableObject {
     }
 
     @Published var appGroups: [AppGroup] {
-        didSet { saveAppGroups() }
+        didSet { appGroupsSaver.schedule { [weak self] in self?.saveAppGroups() } }
+    }
+
+    private let placementsSaver = SaveCoalescer()
+    private let appGroupsSaver  = SaveCoalescer()
+
+    /// Collapses a burst of writes into one, `delay` after the last of them.
+    @MainActor
+    fileprivate final class SaveCoalescer {
+        private var pending: (() -> Void)?
+        private var workItem: DispatchWorkItem?
+        private let delay: TimeInterval
+
+        init(delay: TimeInterval = 0.25) { self.delay = delay }
+
+        func schedule(_ save: @escaping () -> Void) {
+            pending = save
+            workItem?.cancel()
+            let item = DispatchWorkItem { [weak self] in self?.fire() }
+            workItem = item
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: item)
+        }
+
+        /// Runs the pending save now. Note this can't just `perform()` the work
+        /// item — a cancelled DispatchWorkItem silently does nothing — so the
+        /// closure is held separately.
+        func flush() {
+            workItem?.cancel()
+            fire()
+        }
+
+        private func fire() {
+            let save = pending
+            pending = nil
+            workItem = nil
+            save?()
+        }
+    }
+
+    /// Forces debounced writes to disk immediately. Call before the app could
+    /// quit — e.g. `applicationWillTerminate` — or after a deliberate one-shot
+    /// mutation (preset apply, import, reset) rather than waiting on the debounce
+    /// for changes that aren't part of a rapid-fire edit.
+    package func flushPendingSaves() {
+        placementsSaver.flush()
+        appGroupsSaver.flush()
     }
 
     @Published private(set) var knownAppNames: [String] {
@@ -275,6 +334,7 @@ package final class AppSettings: ObservableObject {
         self.followActiveScreen    = (defaults.object(forKey: Key.followActiveScreen) as? Bool) ?? false
         self.pauseDuringFocus      = (defaults.object(forKey: Key.pauseDuringFocus) as? Bool) ?? false
         self.holdWhileAsleep       = (defaults.object(forKey: Key.holdWhileAsleep) as? Bool) ?? false
+        self.redactBannerContent  = (defaults.object(forKey: Key.redactBannerContent) as? Bool) ?? false
         self.autoDismissSeconds    = defaults.double(forKey: Key.autoDismiss)
         let storedScale = defaults.double(forKey: Key.bannerScale)
         self.bannerScale = storedScale == 0 ? 1.0 : storedScale
@@ -340,6 +400,10 @@ package final class AppSettings: ObservableObject {
         var updated = placements
         updated[screen.stableDisplayKey] = placement
         updated.removeValue(forKey: String(screen.displayID))
+        // A drag re-sends the same placement whenever the pointer moves within a
+        // pixel; publishing it anyway would invalidate the view and re-run the
+        // repositioner for no change.
+        guard updated != placements else { return }
         placements = updated
     }
 
@@ -404,16 +468,29 @@ package final class AppSettings: ObservableObject {
         appGroups[i].name = name
     }
 
+    /// Assigning moves the app: a notification only ever matches the first group
+    /// containing it, so membership is exclusive.
+    ///
+    /// Built as one value and assigned once. Mutating `appGroups` in place published
+    /// an objectWillChange per step, so observers briefly saw the app belonging to no
+    /// group at all — a torn intermediate state the picker could render.
     func addApp(_ appName: String, toGroup groupID: UUID) {
-        for i in appGroups.indices { appGroups[i].appNames.removeAll { $0 == appName } }
-        guard let i = appGroups.firstIndex(where: { $0.id == groupID }) else { return }
-        appGroups[i].appNames.append(appName)
-        appGroups[i].appNames.sort()
+        guard appGroups.contains(where: { $0.id == groupID }) else { return }
+        var updated = appGroups
+        for i in updated.indices { updated[i].appNames.removeAll { $0 == appName } }
+        if let i = updated.firstIndex(where: { $0.id == groupID }) {
+            updated[i].appNames.append(appName)
+            updated[i].appNames.sort { $0.localizedStandardCompare($1) == .orderedAscending }
+        }
+        appGroups = updated
     }
 
     func removeApp(_ appName: String, fromGroup groupID: UUID) {
-        guard let i = appGroups.firstIndex(where: { $0.id == groupID }) else { return }
-        appGroups[i].appNames.removeAll { $0 == appName }
+        guard let i = appGroups.firstIndex(where: { $0.id == groupID }),
+              appGroups[i].appNames.contains(appName) else { return }
+        var updated = appGroups
+        updated[i].appNames.removeAll { $0 == appName }
+        appGroups = updated
     }
 
     package func effectiveBannerScale(for appName: String?) -> Double {
@@ -464,6 +541,7 @@ package final class AppSettings: ObservableObject {
         case .native: return false
         case .custom: return true
         case nil:
+            if redactBannerContent { return true }
             if abs(scale - 1.0) > 0.001 { return true }
             if animation != .default { return true }
             if hasBannerTextColor { return true }
@@ -490,6 +568,7 @@ package final class AppSettings: ObservableObject {
         var protectDesktopWidgets: Bool?
         var followActiveScreen: Bool?
         var pauseDuringFocus: Bool?
+        var redactBannerContent: Bool?
         var appGroups: [AppGroup]
         var presets: [Preset]
     }
@@ -506,6 +585,7 @@ package final class AppSettings: ObservableObject {
             protectDesktopWidgets: protectDesktopWidgets,
             followActiveScreen: followActiveScreen,
             pauseDuringFocus: pauseDuringFocus,
+            redactBannerContent: redactBannerContent,
             appGroups: appGroups,
             presets: presets
         )
@@ -531,8 +611,10 @@ package final class AppSettings: ObservableObject {
         protectDesktopWidgets = imported.protectDesktopWidgets ?? true
         followActiveScreen  = imported.followActiveScreen ?? false
         pauseDuringFocus    = imported.pauseDuringFocus ?? false
+        redactBannerContent = imported.redactBannerContent ?? false
         appGroups           = imported.appGroups
         presets             = imported.presets
+        flushPendingSaves()
     }
 
     func saveCurrentAsPreset(name: String) {
@@ -561,6 +643,7 @@ package final class AppSettings: ObservableObject {
         pauseWhileStreaming = preset.pauseWhileStreaming
         appGroups          = preset.appGroups
         bannerAnimation    = preset.bannerAnimation
+        flushPendingSaves()
     }
 
     func deletePreset(_ preset: Preset) {
@@ -580,6 +663,8 @@ package final class AppSettings: ObservableObject {
         bannerTextTint     = nil
         bannerAnimation    = .default
         hideMenuBarIcon    = false
+        redactBannerContent = false
+        flushPendingSaves()
     }
 
     private func savePlacements() {

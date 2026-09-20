@@ -29,9 +29,9 @@ package final class NotificationRepositioner: ObservableObject {
     private var cancellables = Set<AnyCancellable>()
     private let logger: NannyLogger
 
-    nonisolated(unsafe) private var observer: AXObserver?
-    private var ncApp: AXUIElement?
-    private var ncPid: pid_t = 0
+    private let axController = AXObserverController()
+    private var ncApp: AXUIElement? { axController.ncApp }
+    private var ncPid: pid_t { axController.ncPid }
 
     package init(logger: NannyLogger? = nil) {
         self.logger = logger ?? .shared
@@ -52,21 +52,15 @@ package final class NotificationRepositioner: ObservableObject {
         }
     }
 
-    deinit {
-        if let observer {
-            CFRunLoopRemoveSource(CFRunLoopGetMain(), AXObserverGetRunLoopSource(observer), .defaultMode)
-        }
-    }
-
     package func bind(to settings: any NotificationSettingsProviding) {
         guard self.settings == nil else { return }
         self.settings = settings
         settings.settingsDidChange
             .throttle(for: .milliseconds(16), scheduler: DispatchQueue.main, latest: true)
-            .sink { [weak self] in self?.burstReposition() }
+            .sink { [weak self] in self?.applySettingsChange() }
             .store(in: &cancellables)
         settings.settingsDidChange
-            .throttle(for: .milliseconds(8), scheduler: DispatchQueue.main, latest: true)
+            .throttle(for: .milliseconds(16), scheduler: DispatchQueue.main, latest: true)
             .sink { [weak self] in
                 guard let self, self.testGroupID != nil, let win = self.testBannerWindow else { return }
                 self.snapWindow(win, stackIndex: 0)
@@ -99,58 +93,19 @@ package final class NotificationRepositioner: ObservableObject {
         }
         teardownObserver()
 
-        let pid = findNotificationProcessPid()
-        guard pid > 0 else {
+        guard axController.start(onEvent: { [weak self] element, notification in
+            self?.handleAXEvent(element: element, notification: notification)
+        }) else {
             logger.log("NC process not found — will retry when it launches", level: .warn, tag: "AX")
             return
         }
-        let app = AXUIElementCreateApplication(pid)
-
-        var newObserver: AXObserver?
-        guard AXObserverCreate(pid, axNotificationCallback, &newObserver) == .success,
-              let newObserver else { return }
-
-        let selfPtr = Unmanaged.passUnretained(self).toOpaque()
-        for name in [kAXWindowCreatedNotification, kAXFocusedWindowChangedNotification,
-                     kAXWindowMovedNotification, kAXMainWindowChangedNotification,
-                     kAXUIElementDestroyedNotification] as [String] {
-            AXObserverAddNotification(newObserver, app, name as CFString, selfPtr)
-        }
-        CFRunLoopAddSource(CFRunLoopGetMain(), AXObserverGetRunLoopSource(newObserver), .defaultMode)
-
-        self.observer = newObserver
-        self.ncApp = app
-        self.ncPid = pid
-        self.isObserving = true
-        logger.log("Observer started — NC PID \(pid)", tag: "AX")
+        isObserving = true
+        logger.log("Observer started — NC PID \(axController.ncPid)", tag: "AX")
         repositionVisibleWindows()
     }
 
-    private func findNotificationProcessPid() -> pid_t {
-        if let app = NSRunningApplication
-            .runningApplications(withBundleIdentifier: "com.apple.notificationcenterui").first {
-            return app.processIdentifier
-        }
-        for app in NSWorkspace.shared.runningApplications {
-            if app.bundleIdentifier?.localizedCaseInsensitiveContains("notification") == true {
-                return app.processIdentifier
-            }
-        }
-        let windows = CGWindowListCopyWindowInfo([.optionAll], kCGNullWindowID) as? [[String: Any]] ?? []
-        for info in windows {
-            guard let ownerName = info[kCGWindowOwnerName as String] as? String,
-                  ownerName.localizedCaseInsensitiveContains("notification"),
-                  let pid = info[kCGWindowOwnerPID as String] as? Int32 else { continue }
-            return pid
-        }
-        return 0
-    }
-
     private func teardownObserver() {
-        if let observer {
-            CFRunLoopRemoveSource(CFRunLoopGetMain(), AXObserverGetRunLoopSource(observer), .defaultMode)
-        }
-        observer = nil; ncApp = nil; ncPid = 0
+        axController.stop()
         isObserving = false
         lastSelfSetPositions.removeAll()
         lastRepositionAt.removeAll()
@@ -159,6 +114,7 @@ package final class NotificationRepositioner: ObservableObject {
         dismissedKeys.removeAll()
         loggedSkippedKeys.removeAll()
         resolver.invalidateAll()
+        iconCache.invalidateAll()
         customBannerManager.dismissAll()
         logger.log("Observer stopped", tag: "AX")
     }
@@ -171,7 +127,7 @@ package final class NotificationRepositioner: ObservableObject {
         resolver.appName(for: window)
     }
 
-    fileprivate func handleAXEvent(element: AXUIElement, notification: String) {
+    private func handleAXEvent(element: AXUIElement, notification: String) {
         axLog.debug("── AX event: \(notification, privacy: .public)")
 
         if notification == kAXUIElementDestroyedNotification as String {
@@ -194,6 +150,17 @@ package final class NotificationRepositioner: ObservableObject {
             stopScaleHammer()
             customBannerManager.dismiss(key: key)
             scheduleDestroySweep()
+            return
+        }
+
+        if notification == kAXLayoutChangedNotification as String {
+            // Measured on 26.5.2 and again on 27.0: one banner produces three of these. They
+            // can also arrive for the application element rather than a window, so don't trust
+            // `element` — sweep whatever windows are currently up, coalesced.
+            axLog.debug("handleAXEvent: layoutChanged — scheduling sweep")
+            layoutChangeDebouncer.schedule(delay: 0.05) { [weak self] in
+                self?.repositionVisibleWindows()
+            }
             return
         }
 
@@ -238,21 +205,56 @@ package final class NotificationRepositioner: ObservableObject {
     }
 
     private let destroySweepDebouncer = Debouncer()
+    private let layoutChangeDebouncer = Debouncer()
+    private let settingsSettleDebouncer = Debouncer()
+    private var burstWorkItems: [DispatchWorkItem] = []
 
     private func scheduleDestroySweep() {
         destroySweepDebouncer.schedule(delay: 0.12) { [weak self] in self?.repositionVisibleWindows() }
     }
 
-    private func burstReposition() {
+    /// Settings edits: move what's on screen now, once.
+    ///
+    /// Deliberately *not* a burst. This fires at up to 60 Hz while the position
+    /// tile or a slider is being dragged, and each pass is synchronous
+    /// cross-process AX IPC. Bursting per frame queued ~9 sweeps × 60 fps with a
+    /// 2.5 s tail, which pinned the main thread and made dragging crawl — worse
+    /// with a banner on screen, since every visible window multiplies the work.
+    ///
+    /// The single debounced settle pass catches changes that land mid-drag while
+    /// macOS happens to be re-laying out; one drag produces one tail pass, not
+    /// hundreds.
+    private func applySettingsChange() {
         if let settings, !settings.isActive {
             customBannerManager.dismissAll()
             overlayContent.removeAll()
         }
         repositionVisibleWindows()
-        for delay in [0.03, 0.06, 0.1, 0.2, 0.4, 0.8, 1.5, 2.5] as [Double] {
-            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
-                self?.repositionVisibleWindows()
-            }
+        settingsSettleDebouncer.schedule(delay: 0.25) { [weak self] in
+            self?.repositionVisibleWindows()
+        }
+    }
+
+    private static let burstDelays: [Double] = [0.03, 0.06, 0.1, 0.2, 0.4, 0.8, 1.5, 2.5]
+
+    /// Re-asserts position on a decaying schedule, for events where macOS does its
+    /// own asynchronous re-layout after the fact — a banner appearing, a display
+    /// reconfiguration, waking from sleep. One pass loses that race.
+    ///
+    /// Overlapping bursts cancel their predecessor: without that, back-to-back
+    /// notifications stack their tails on top of each other.
+    private func burstReposition() {
+        if let settings, !settings.isActive {
+            customBannerManager.dismissAll()
+            overlayContent.removeAll()
+        }
+        burstWorkItems.forEach { $0.cancel() }
+        burstWorkItems.removeAll(keepingCapacity: true)
+        repositionVisibleWindows()
+        for delay in Self.burstDelays {
+            let item = DispatchWorkItem { [weak self] in self?.repositionVisibleWindows() }
+            burstWorkItems.append(item)
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: item)
         }
     }
 
@@ -276,7 +278,11 @@ package final class NotificationRepositioner: ObservableObject {
         for (i, (window, base)) in baseTargets.enumerated() {
             let idx = baseTargets[..<i].filter { sameAnchor($0.1, base) }.count
             log.debug("repositionVisibleWindows: window[\(i)] stackIndex=\(idx) anchor=\(base.placement.position.rawValue, privacy: .public)")
-            snapWindow(window, stackIndex: idx)
+            // `base` was computed above with stackIndex 0, and snapWindow would
+            // otherwise recompute the identical thing — doubling the AX traffic
+            // of every sweep. It only carries over when this window is first at
+            // its anchor, since the stack offset is baked into the target.
+            snapWindow(window, stackIndex: idx, precomputed: idx == 0 ? base : nil)
         }
     }
 
@@ -326,6 +332,19 @@ package final class NotificationRepositioner: ObservableObject {
         guard AXUIElementCopyAttributeValue(el, "AXAttributedDescription" as CFString, &ref) == .success,
               let val = ref, CFGetTypeID(val) == CFAttributedStringGetTypeID() else { return nil }
         return CFAttributedStringGetString((val as! CFAttributedString)) as String
+    }
+
+    /// Screen-sharing state doesn't change at 60 Hz, but `isCapturing()` walks the
+    /// whole system window list — and it was running once per window per frame
+    /// while the position tile was being dragged. Half a second of staleness is
+    /// imperceptible for "pause while streaming".
+    private var capturingCache: (checkedAt: Date, value: Bool)?
+
+    private func isCapturingThrottled() -> Bool {
+        if let c = capturingCache, Date().timeIntervalSince(c.checkedAt) < 0.5 { return c.value }
+        let value = Self.isCapturing()
+        capturingCache = (Date(), value)
+        return value
     }
 
     private static func isCapturing() -> Bool {
@@ -531,7 +550,7 @@ package final class NotificationRepositioner: ObservableObject {
             return nil
         }
         let testGroupID = effectiveTestGroup(for: window)
-        if settings.pauseWhileStreaming, Self.isCapturing() {
+        if settings.pauseWhileStreaming, isCapturingThrottled() {
             log.debug("targetOrigin: skipped — capturing")
             return nil
         }
@@ -621,9 +640,10 @@ package final class NotificationRepositioner: ObservableObject {
                                 bannerOffsetInWindow: bannerOffset, bannerSize: bannerSz)
     }
 
-    private func snapWindow(_ window: AXUIElement, stackIndex: Int = 0) {
+    private func snapWindow(_ window: AXUIElement, stackIndex: Int = 0,
+                            precomputed: RepositionTarget? = nil) {
         log.debug("snapWindow: called stackIndex=\(stackIndex)")
-        guard let t = targetOrigin(for: window, stackIndex: stackIndex) else {
+        guard let t = precomputed ?? targetOrigin(for: window, stackIndex: stackIndex) else {
             log.debug("snapWindow: no target origin, bailing")
             return
         }
@@ -668,7 +688,8 @@ package final class NotificationRepositioner: ObservableObject {
                 }
                 customBannerManager.move(key: CFHash(window),
                                          axTopLeft: CGPoint(x: anchoredX, y: bannerAXOrigin.y),
-                                         width: scaledWidth)
+                                         width: scaledWidth,
+                                         scale: CGFloat(scale))
                 return
             }
         }
@@ -854,6 +875,7 @@ package final class NotificationRepositioner: ObservableObject {
                     scale: scale,
                     backgroundColor: bannerBackground,
                     textColor: settings.effectiveBannerTextColor,
+                    redactContent: settings.redactBannerContent,
                     autoDismissSeconds: settings.autoDismissSeconds,
                     animation: animation,
                     onOpen: { [weak self] in self?.handleBannerTap(appName: capturedName, bannerElement: capturedEl) },
@@ -947,7 +969,13 @@ package final class NotificationRepositioner: ObservableObject {
         return (singleLine, "")
     }
 
+    private let iconCache = AppIconCache.shared
+
     private func lookupIcon(for appName: String) -> NSImage? {
+        iconCache.icon(for: appName, resolve: resolveIcon(for:))
+    }
+
+    private func resolveIcon(for appName: String) -> NSImage? {
         let ws = NSWorkspace.shared
         if let icon = ws.runningApplications.first(where: { $0.localizedName == appName })?.icon {
             return icon
@@ -1061,12 +1089,4 @@ package final class NotificationRepositioner: ObservableObject {
         let subrole = window.stringAttribute(kAXSubroleAttribute as String) ?? "none"
         logger.log("\(reason) — \(Int(size.width))×\(Int(size.height)) at (\(Int(pos.x)),\(Int(pos.y))), subrole=\(subrole)", tag: tag)
     }
-}
-
-private func axNotificationCallback(observer: AXObserver, element: AXUIElement,
-                                    notification: CFString, refcon: UnsafeMutableRawPointer?) {
-    guard let refcon else { return }
-    let nanny = Unmanaged<NotificationRepositioner>.fromOpaque(refcon).takeUnretainedValue()
-    let name = notification as String
-    Task { @MainActor in nanny.handleAXEvent(element: element, notification: name) }
 }

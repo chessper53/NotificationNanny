@@ -39,41 +39,65 @@ package enum BannerAnimation: String, Codable, CaseIterable {
         var rotation: Double = 0
     }
 
-    var hidden: Transform {
+    /// Everything one animation case needs to drive its intro/outro — bundled so
+    /// adding a new `BannerAnimation` case means writing one `Spec`, not editing
+    /// four separate switches that have to be kept in sync by hand.
+    struct Spec {
+        let hidden: Transform
+        let intro: Animation
+        let outro: Animation
+        let outroDuration: Double
+    }
+
+    var spec: Spec {
         switch self {
-        case .default:   return Transform(x: 150)
-        case .fade:      return Transform(opacity: 0)
-        case .scale:     return Transform(opacity: 0, scale: 0.8)
-        case .bounce:    return Transform(opacity: 0, scale: 0.5)
-        case .drop:      return Transform(y: -120)
-        case .slideLeft: return Transform(x: -150)
-        case .rise:      return Transform(y: 120, opacity: 0)
-        case .swing:     return Transform(opacity: 0, scale: 0.9, rotation: -8)
+        case .default:
+            return Spec(hidden: Transform(x: 150),
+                        intro: .spring(response: 0.45, dampingFraction: 0.78),
+                        outro: .spring(response: 0.35, dampingFraction: 0.85),
+                        outroDuration: 0.38)
+        case .fade:
+            return Spec(hidden: Transform(opacity: 0),
+                        intro: .easeOut(duration: 0.35),
+                        outro: .easeIn(duration: 0.22),
+                        outroDuration: 0.24)
+        case .scale:
+            return Spec(hidden: Transform(opacity: 0, scale: 0.8),
+                        intro: .spring(response: 0.40, dampingFraction: 0.72),
+                        outro: .easeIn(duration: 0.20),
+                        outroDuration: 0.24)
+        case .bounce:
+            return Spec(hidden: Transform(opacity: 0, scale: 0.5),
+                        intro: .spring(response: 0.50, dampingFraction: 0.55),
+                        outro: .easeIn(duration: 0.20),
+                        outroDuration: 0.24)
+        case .drop:
+            return Spec(hidden: Transform(y: -120),
+                        intro: .spring(response: 0.50, dampingFraction: 0.70),
+                        outro: .easeIn(duration: 0.22),
+                        outroDuration: 0.24)
+        case .slideLeft:
+            return Spec(hidden: Transform(x: -150),
+                        intro: .spring(response: 0.45, dampingFraction: 0.80),
+                        outro: .easeIn(duration: 0.22),
+                        outroDuration: 0.24)
+        case .rise:
+            return Spec(hidden: Transform(y: 120, opacity: 0),
+                        intro: .spring(response: 0.48, dampingFraction: 0.78),
+                        outro: .easeIn(duration: 0.22),
+                        outroDuration: 0.24)
+        case .swing:
+            return Spec(hidden: Transform(opacity: 0, scale: 0.9, rotation: -8),
+                        intro: .spring(response: 0.50, dampingFraction: 0.52),
+                        outro: .easeIn(duration: 0.22),
+                        outroDuration: 0.24)
         }
     }
 
-    var intro: Animation {
-        switch self {
-        case .default:   return .spring(response: 0.45, dampingFraction: 0.78)
-        case .fade:      return .easeOut(duration: 0.35)
-        case .scale:     return .spring(response: 0.40, dampingFraction: 0.72)
-        case .bounce:    return .spring(response: 0.50, dampingFraction: 0.55)
-        case .drop:      return .spring(response: 0.50, dampingFraction: 0.70)
-        case .slideLeft: return .spring(response: 0.45, dampingFraction: 0.80)
-        case .rise:      return .spring(response: 0.48, dampingFraction: 0.78)
-        case .swing:     return .spring(response: 0.50, dampingFraction: 0.52)
-        }
-    }
-
-    var outro: Animation {
-        switch self {
-        case .default:        return .spring(response: 0.35, dampingFraction: 0.85)
-        case .scale, .bounce: return .easeIn(duration: 0.20)
-        default:              return .easeIn(duration: 0.22)
-        }
-    }
-
-    var outroDuration: Double { self == .default ? 0.38 : 0.24 }
+    var hidden: Transform { spec.hidden }
+    var intro: Animation { spec.intro }
+    var outro: Animation { spec.outro }
+    var outroDuration: Double { spec.outroDuration }
 }
 
 struct BannerContent: Equatable {
@@ -95,10 +119,13 @@ final class BannerAnimationController {
 
 struct CustomBannerView: View {
     let content: BannerContent
-    let scale: CGFloat
+    /// Mutable so a scale change while the banner is on screen re-renders it at
+    /// the new size rather than stretching what is already drawn.
+    var scale: CGFloat
     let animation: BannerAnimation
     let tint: Color
     let textColor: Color?
+    let redactContent: Bool
     let controller: BannerAnimationController
     let onDismiss: () -> Void
     let onOpen: () -> Void
@@ -113,13 +140,14 @@ struct CustomBannerView: View {
     @State private var cursorPushed = false
 
     init(content: BannerContent, scale: CGFloat, animation: BannerAnimation, tint: Color,
-         textColor: Color?, controller: BannerAnimationController,
+         textColor: Color?, redactContent: Bool = false, controller: BannerAnimationController,
          onDismiss: @escaping () -> Void, onOpen: @escaping () -> Void) {
         self.content = content
         self.scale = scale
         self.animation = animation
         self.tint = tint
         self.textColor = textColor
+        self.redactContent = redactContent
         self.controller = controller
         self.onDismiss = onDismiss
         self.onOpen = onOpen
@@ -142,7 +170,7 @@ struct CustomBannerView: View {
                         .kerning(0.4)
                         .lineLimit(1)
                     Spacer()
-                    Text("now")
+                    LocalizedText("now")
                         .font(.system(size: 11 * scale))
                         .foregroundStyle(timestampStyle)
                 }
@@ -151,6 +179,7 @@ struct CustomBannerView: View {
                         .font(.system(size: 13 * scale, weight: .semibold))
                         .foregroundStyle(titleStyle)
                         .lineLimit(1)
+                        .blur(radius: redactContent ? 6 * scale : 0)
                 }
                 if !content.body.isEmpty {
                     Text(content.body)
@@ -158,6 +187,7 @@ struct CustomBannerView: View {
                         .foregroundStyle(bodyStyle)
                         .lineLimit(2)
                         .fixedSize(horizontal: false, vertical: true)
+                        .blur(radius: redactContent ? 6 * scale : 0)
                 }
             }
         }
@@ -313,6 +343,10 @@ final class CustomBannerManager {
         let controller: BannerAnimationController
         var dismissTimer: DispatchSourceTimer?
         let onUnderlyingDismiss: (() -> Void)?
+        /// Kept so a live scale change can re-render the SwiftUI content instead
+        /// of stretching the already-rendered view.
+        let hosting: NSHostingView<CustomBannerView>
+        var scale: CGFloat
     }
 
     private var active: [CFHashCode: Entry] = [:]
@@ -324,6 +358,7 @@ final class CustomBannerManager {
         scale: Double,
         backgroundColor: Color,
         textColor: Color? = nil,
+        redactContent: Bool = false,
         autoDismissSeconds: Double,
         animation: BannerAnimation = .default,
         onOpen: @escaping () -> Void,
@@ -337,13 +372,13 @@ final class CustomBannerManager {
         let onOpenAction:   () -> Void = { [weak self] in onOpen(); self?.dismissFromUser(key: key) }
 
         let s = CGFloat(scale)
-        let bannerHeight: CGFloat = 62 * s
+        let bannerHeight = Self.bannerHeight(forScale: s)
         let frame  = Self.axRect(axOrigin: axTopLeft, size: CGSize(width: width, height: bannerHeight))
         let bounds = CGRect(origin: .zero, size: frame.size)
 
         let bannerView = CustomBannerView(
             content: content, scale: s, animation: animation, tint: backgroundColor,
-            textColor: textColor,
+            textColor: textColor, redactContent: redactContent,
             controller: controller, onDismiss: onDismissAction, onOpen: onOpenAction)
         let hosting = NSHostingView(rootView: bannerView)
         hosting.frame = bounds
@@ -356,7 +391,9 @@ final class CustomBannerManager {
         panel.alphaValue = 1
         panel.orderFront(nil)
 
-        var entry = Entry(panel: panel, controller: controller, onUnderlyingDismiss: onUnderlyingDismiss)
+        var entry = Entry(panel: panel, controller: controller,
+                          onUnderlyingDismiss: onUnderlyingDismiss,
+                          hosting: hosting, scale: s)
         if autoDismissSeconds > 0 {
             let timer = DispatchSource.makeTimerSource(queue: .main)
             timer.schedule(deadline: .now() + autoDismissSeconds)
@@ -409,12 +446,38 @@ final class CustomBannerManager {
         }
     }
 
-    func move(key: CFHashCode, axTopLeft: CGPoint, width: CGFloat) {
-        guard let entry = active[key] else { return }
-        let h = entry.panel.frame.size.height
-        entry.panel.setFrame(Self.axRect(axOrigin: axTopLeft, size: CGSize(width: width, height: h)),
-                             display: true, animate: false)
+    func move(key: CFHashCode, axTopLeft: CGPoint, width: CGFloat, scale: CGFloat? = nil) {
+        guard var entry = active[key] else { return }
+
+        // A live scale change has to re-render the SwiftUI content at the new
+        // scale. Previously only the panel's width was touched while its height
+        // stayed at whatever it was when the banner appeared, and the hosting
+        // view autoresized — so the already-rendered banner was stretched into
+        // the new frame instead of laid out again, which is the "squish".
+        if let scale, abs(scale - entry.scale) > 0.001 {
+            entry.hosting.rootView.scale = scale
+            entry.scale = scale
+            active[key] = entry
+        }
+
+        let height = Self.bannerHeight(forScale: entry.scale)
+        let target = Self.axRect(axOrigin: axTopLeft, size: CGSize(width: width, height: height))
+        let current = entry.panel.frame
+        guard current != target else { return }
+
+        // Dragging the position tile drives this at screen refresh rate. When only
+        // the origin moves, which is the common case, setFrameOrigin skips the
+        // resize and redraw path; setFrame(display: true) was forcing a
+        // synchronous re-render of the blurred, SwiftUI-hosted content every frame.
+        if current.size == target.size {
+            entry.panel.setFrameOrigin(target.origin)
+        } else {
+            entry.panel.setFrame(target, display: true, animate: false)
+            entry.hosting.frame = CGRect(origin: .zero, size: target.size)
+        }
     }
+
+    static func bannerHeight(forScale scale: CGFloat) -> CGFloat { 62 * scale }
 
     private func makePanel(frame: NSRect, contentView: NSView) -> NSPanel {
         let panel = NSPanel(contentRect: frame,

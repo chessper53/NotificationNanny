@@ -38,8 +38,14 @@ jobs:
         id: sha
         run: echo "sha256=$(shasum -a 256 "NotificationNanny-${{ steps.version.outputs.version }}.zip" | awk '{print $1}')" >> $GITHUB_OUTPUT
 
+      # --clobber so the job can be re-run. Every release from 7.3.1 to 7.7.0
+      # failed at "Commit cask" below, and re-running the job would have
+      # collided with the zip this same job had already attached. Safe here
+      # because this job is the only thing that builds, hashes and uploads: the
+      # sha256 written into the cask always comes from the very zip being
+      # attached, in the same run.
       - name: Attach zip to release
-        run: gh release upload "$GITHUB_REF_NAME" "NotificationNanny-${{ steps.version.outputs.version }}.zip"
+        run: gh release upload "$GITHUB_REF_NAME" "NotificationNanny-${{ steps.version.outputs.version }}.zip" --clobber
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
