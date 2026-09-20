@@ -11,8 +11,9 @@ Position, scale, tint, and animate your notification banners globally or per app
   own line here. GitHub renders that URL as an inline player. Keep the <img>
   as-is underneath, so the page still reads where video will not load.
 -->
+
 <p align="center">
-  <img src="docs/screenshots/position.png" width="640" alt="NotificationNanny position settings, showing a banner placed in the lower left of a screen preview"/>
+  <img width="852" height="1107" alt="image" src="https://github.com/user-attachments/assets/1a2b43ad-c62c-4698-a706-ae26c141e24e" />
 </p>
 
 ## Installation
