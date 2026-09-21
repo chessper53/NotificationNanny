@@ -16,7 +16,7 @@ jobs:
     name: Release consistency checks
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Cask / Info.plist macOS version match
         run: ./scripts/test-version-consistency.sh
       - name: Release workflow ships a universal, verified binary
