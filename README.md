@@ -1,4 +1,4 @@
-# NotificationNanny
+# NotificationNanny - Now on MacOS 27!
 
 Position, scale, tint, and animate your notification banners globally or per app, on whichever display you want.
 
