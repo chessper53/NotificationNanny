@@ -103,11 +103,12 @@ package enum BannerAnimation: String, Codable, CaseIterable {
 struct BannerContent: Equatable {
     let appName: String
     let title: String
+    var subtitle: String = ""
     let body: String
     let appIcon: NSImage?
 
     static func == (l: BannerContent, r: BannerContent) -> Bool {
-        l.appName == r.appName && l.title == r.title && l.body == r.body
+        l.appName == r.appName && l.title == r.title && l.subtitle == r.subtitle && l.body == r.body
     }
 }
 
@@ -159,104 +160,146 @@ struct CustomBannerView: View {
         _animRotation = State(initialValue: h.rotation)
     }
 
+    /// Geometry of the system banner, measured in points from a real macOS 27
+    /// banner with scripts/banner-lab rather than eyeballed. Everything is
+    /// multiplied by `scale` at the point of use.
+    enum Metrics {
+        static let cornerRadius: CGFloat = 20
+        /// Frame the app icon is drawn into. App icons carry the standard grid
+        /// padding, so the visible squircle is about 31pt, which is what the
+        /// system banner shows.
+        static let iconFrame: CGFloat = 38
+        static let iconLeading: CGFloat = 10
+        /// Text starts 58pt from the leading edge: 10 + 38 + 10.
+        static let iconTextSpacing: CGFloat = 10
+        static let textTop: CGFloat = 12
+        static let textBottom: CGFloat = 13
+        static let textTrailing: CGFloat = 14
+        static let lineSpacing: CGFloat = 1
+        static let fontSize: CGFloat = 13
+        /// A faint white wash over the glass. Without it the replica sits a few
+        /// levels darker than the system banner on every backdrop measured, in
+        /// both Light and Dark Mode.
+        static let wash: Double = 0.05
+        /// The close button is centred just inside the corner and overhangs it,
+        /// so the panel is grown by this much on every side to leave it room.
+        static let closeDiameter: CGFloat = 20
+        static let closeCentre: CGFloat = 5
+        static let chromeInset: CGFloat = 8
+    }
+
     var body: some View {
-        HStack(spacing: 10 * scale) {
-            iconView
-            VStack(alignment: .leading, spacing: 2 * scale) {
-                HStack(alignment: .firstTextBaseline) {
-                    Text(content.appName.uppercased())
-                        .font(.system(size: 11 * scale, weight: .semibold))
-                        .foregroundStyle(appNameStyle)
-                        .kerning(0.4)
-                        .lineLimit(1)
-                    Spacer()
-                    LocalizedText("now")
-                        .font(.system(size: 11 * scale))
-                        .foregroundStyle(timestampStyle)
+        let inset = Metrics.chromeInset * scale
+        banner
+            .overlay(alignment: .topLeading) {
+                if isHovered {
+                    closeButton
+                        .offset(x: (Metrics.closeCentre - Metrics.closeDiameter / 2) * scale,
+                                y: (Metrics.closeCentre - Metrics.closeDiameter / 2) * scale)
+                        .transition(.opacity.combined(with: .scale(scale: 0.8)))
                 }
-                if !content.title.isEmpty {
-                    Text(content.title)
-                        .font(.system(size: 13 * scale, weight: .semibold))
+            }
+            .padding(inset)
+            .onHover { hovering in
+                withAnimation(.easeInOut(duration: 0.15)) { isHovered = hovering }
+                setCursorPushed(hovering)
+            }
+            .onDisappear { setCursorPushed(false) }
+            .opacity(animOpacity)
+            .scaleEffect(animScale)
+            .rotationEffect(.degrees(animRotation))
+            .offset(x: animX, y: animY)
+            .onAppear {
+                guard !animationsSetup else { return }
+                animationsSetup = true
+                setupAnimations()
+            }
+    }
+
+    private var banner: some View {
+        let shape = RoundedRectangle(cornerRadius: Metrics.cornerRadius * scale, style: .continuous)
+        return HStack(alignment: .center, spacing: Metrics.iconTextSpacing * scale) {
+            iconView
+            VStack(alignment: .leading, spacing: Metrics.lineSpacing * scale) {
+                // The system banner shows the app name in the title slot when a
+                // notification has no title, and never shows it anywhere else.
+                Text(content.title.isEmpty ? content.appName : content.title)
+                    .font(.system(size: Metrics.fontSize * scale, weight: .semibold))
+                    .foregroundStyle(titleStyle)
+                    .lineLimit(2)
+                    .blur(radius: redactContent ? 6 * scale : 0)
+                if !content.subtitle.isEmpty {
+                    Text(content.subtitle)
+                        .font(.system(size: Metrics.fontSize * scale, weight: .semibold))
                         .foregroundStyle(titleStyle)
                         .lineLimit(1)
                         .blur(radius: redactContent ? 6 * scale : 0)
                 }
                 if !content.body.isEmpty {
                     Text(content.body)
-                        .font(.system(size: 13 * scale))
+                        .font(.system(size: Metrics.fontSize * scale))
                         .foregroundStyle(bodyStyle)
-                        .lineLimit(2)
-                        .fixedSize(horizontal: false, vertical: true)
+                        .lineLimit(3)
                         .blur(radius: redactContent ? 6 * scale : 0)
                 }
             }
+            .fixedSize(horizontal: false, vertical: true)
+            // Vertical padding belongs to the text alone. The icon frame is taller
+            // than a one line banner leaves room for between the paddings, and it
+            // is centred in the full height on the system banner anyway.
+            .padding(.top, Metrics.textTop * scale)
+            .padding(.bottom, Metrics.textBottom * scale)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .padding(EdgeInsets(top: 4 * scale, leading: 8 * scale,
-                            bottom: 4 * scale, trailing: 8 * scale))
+        .padding(.leading, Metrics.iconLeading * scale)
+        .padding(.trailing, Metrics.textTrailing * scale)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background {
             ZStack {
-                VisualEffectBackground(cornerRadius: 14 * scale)
-                // Untinted means "look like the system banner", so nothing is
-                // painted over the material at all. A flat black wash used to sit
-                // here, which is why an untinted custom banner could never be made
-                // to match Notification Center: no tint setting could cancel it.
+                BannerBackground(cornerRadius: Metrics.cornerRadius * scale)
+                // Untinted means "look like the system banner". The glass alone
+                // comes out slightly dark, so it gets the measured wash; a user
+                // tint replaces the wash rather than stacking on top of it.
                 if tint != .clear {
                     tint.opacity(0.45)
+                } else if BannerBackground.isGlass {
+                    Color.white.opacity(Metrics.wash)
                 }
             }
+            .clipShape(shape)
         }
-        .clipShape(RoundedRectangle(cornerRadius: 14 * scale, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 14 * scale, style: .continuous)
-                .strokeBorder(Color.primary.opacity(0.08), lineWidth: 0.5)
-        )
-        .overlay(alignment: .topTrailing) {
-            if isHovered {
-                Button(action: onDismiss) {
-                    ZStack {
-                        Circle()
-                            .fill(Color.primary.opacity(0.15))
-                            .frame(width: 20 * scale, height: 20 * scale)
-                        Image(systemName: "xmark")
-                            .font(.system(size: 9 * scale, weight: .bold))
-                            .foregroundStyle(.primary.opacity(0.7))
-                    }
-                }
-                .buttonStyle(.plain)
-                .padding(8 * scale)
-                .transition(.opacity.combined(with: .scale(scale: 0.8)))
+        .overlay {
+            // Glass draws its own edge. The pre-26 material needs the hairline.
+            if !BannerBackground.isGlass {
+                shape.strokeBorder(Color.primary.opacity(0.08), lineWidth: 0.5)
             }
         }
-        .contentShape(Rectangle())
+        .contentShape(shape)
         .onTapGesture { onOpen() }
-        .onHover { hovering in
-            withAnimation(.easeInOut(duration: 0.15)) { isHovered = hovering }
-            setCursorPushed(hovering)
-        }
-        .onDisappear { setCursorPushed(false) }
-        .opacity(animOpacity)
-        .scaleEffect(animScale)
-        .rotationEffect(.degrees(animRotation))
-        .offset(x: animX, y: animY)
-        .onAppear {
-            guard !animationsSetup else { return }
-            animationsSetup = true
-            setupAnimations()
-        }
     }
 
-    private var appNameStyle: AnyShapeStyle {
-        textColor.map { AnyShapeStyle($0.opacity(0.65)) } ?? AnyShapeStyle(.secondary)
+    private var closeButton: some View {
+        Button(action: onDismiss) {
+            ZStack {
+                BannerBackground(cornerRadius: Metrics.closeDiameter / 2 * scale)
+                Image(systemName: "xmark")
+                    .font(.system(size: 8 * scale, weight: .bold))
+                    .foregroundStyle(.secondary)
+            }
+            .frame(width: Metrics.closeDiameter * scale, height: Metrics.closeDiameter * scale)
+            .clipShape(Circle())
+            .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
     }
-    private var timestampStyle: AnyShapeStyle {
-        textColor.map { AnyShapeStyle($0.opacity(0.55)) } ?? AnyShapeStyle(.tertiary)
-    }
+
+    // The system banner draws title, subtitle and body all in the label colour,
+    // which is 85% white in Dark Mode and 85% black in Light Mode.
     private var titleStyle: AnyShapeStyle {
         textColor.map { AnyShapeStyle($0) } ?? AnyShapeStyle(.primary)
     }
     private var bodyStyle: AnyShapeStyle {
-        textColor.map { AnyShapeStyle($0.opacity(0.85)) } ?? AnyShapeStyle(Color.primary.opacity(0.85))
+        textColor.map { AnyShapeStyle($0.opacity(0.85)) } ?? AnyShapeStyle(.primary)
     }
 
     private func setupAnimations() {
@@ -286,46 +329,69 @@ struct CustomBannerView: View {
 
     @ViewBuilder
     private var iconView: some View {
-        Group {
-            if let icon = content.appIcon {
-                Image(nsImage: icon)
-                    .resizable()
-                    .interpolation(.high)
-                    .antialiased(true)
-            } else {
-                ZStack {
-                    Color.primary.opacity(0.12)
-                    Image(systemName: "bell.fill")
-                        .foregroundStyle(.primary.opacity(0.7))
-                        .font(.system(size: 17 * scale, weight: .medium))
-                }
+        if let icon = content.appIcon {
+            Image(nsImage: icon)
+                .resizable()
+                .interpolation(.high)
+                .antialiased(true)
+                .frame(width: Metrics.iconFrame * scale, height: Metrics.iconFrame * scale)
+        } else {
+            // Sized to the visible squircle of a real app icon, not to its frame.
+            ZStack {
+                Color.primary.opacity(0.12)
+                Image(systemName: "bell.fill")
+                    .foregroundStyle(.primary.opacity(0.7))
+                    .font(.system(size: 15 * scale, weight: .medium))
             }
+            .frame(width: 31 * scale, height: 31 * scale)
+            .clipShape(RoundedRectangle(cornerRadius: 7 * scale, style: .continuous))
+            .frame(width: Metrics.iconFrame * scale, height: Metrics.iconFrame * scale)
         }
-        .frame(width: 36 * scale, height: 36 * scale)
-        .clipShape(RoundedRectangle(cornerRadius: 8 * scale, style: .continuous))
     }
 }
 
-private struct VisualEffectBackground: NSViewRepresentable {
+/// Liquid Glass on macOS 26 and later, which is what the system banner is made
+/// of; the old HUD material before that. Glass goes in a sibling view underneath
+/// the SwiftUI content, never as its container, because content inside a glass
+/// view gets vibrant blending and the system banner's text does not.
+private struct BannerBackground: NSViewRepresentable {
     let cornerRadius: CGFloat
 
-    func makeNSView(context: Context) -> NSVisualEffectView {
+    static var isGlass: Bool {
+        #if compiler(>=6.2)
+        if #available(macOS 26, *) { return true }
+        #endif
+        return false
+    }
+
+    func makeNSView(context: Context) -> NSView {
+        #if compiler(>=6.2)
+        if #available(macOS 26, *) {
+            let glass = NSGlassEffectView()
+            glass.style = .regular
+            glass.cornerRadius = cornerRadius
+            return glass
+        }
+        #endif
         let v = NSVisualEffectView()
         v.material = .hudWindow
         v.blendingMode = .behindWindow
         v.state = .active
-        // Deliberately no forced appearance. Leaving this nil lets the material
-        // follow the system's light/dark setting, which is what the real banner
-        // does. Forcing .darkAqua was reintroduced in 14c4c49 to make untinted
-        // banners "match native", but it only matches in Dark Mode: in Light Mode
-        // it swapped a light system banner for a dark custom one. 1c79558 had
-        // already removed it once for the same reason.
+        // No forced appearance: the material follows the system's light/dark
+        // setting, as the real banner does. 1c79558 and bfbd39e both removed a
+        // forced .darkAqua that only matched in Dark Mode.
         v.maskImage = Self.maskImage(cornerRadius: cornerRadius)
         return v
     }
 
-    func updateNSView(_ v: NSVisualEffectView, context: Context) {
-        v.maskImage = Self.maskImage(cornerRadius: cornerRadius)
+    func updateNSView(_ v: NSView, context: Context) {
+        #if compiler(>=6.2)
+        if #available(macOS 26, *), let glass = v as? NSGlassEffectView {
+            glass.cornerRadius = cornerRadius
+            return
+        }
+        #endif
+        (v as? NSVisualEffectView)?.maskImage = Self.maskImage(cornerRadius: cornerRadius)
     }
 
     private static func maskImage(cornerRadius: CGFloat) -> NSImage {
@@ -362,6 +428,7 @@ final class CustomBannerManager {
         content: BannerContent,
         axTopLeft: CGPoint,
         width: CGFloat,
+        height: CGFloat,
         scale: Double,
         backgroundColor: Color,
         textColor: Color? = nil,
@@ -379,8 +446,7 @@ final class CustomBannerManager {
         let onOpenAction:   () -> Void = { [weak self] in onOpen(); self?.dismissFromUser(key: key) }
 
         let s = CGFloat(scale)
-        let bannerHeight = Self.bannerHeight(forScale: s)
-        let frame  = Self.axRect(axOrigin: axTopLeft, size: CGSize(width: width, height: bannerHeight))
+        let frame  = Self.panelFrame(axOrigin: axTopLeft, size: CGSize(width: width, height: height), scale: s)
         let bounds = CGRect(origin: .zero, size: frame.size)
 
         let bannerView = CustomBannerView(
@@ -388,6 +454,10 @@ final class CustomBannerManager {
             textColor: textColor, redactContent: redactContent,
             controller: controller, onDismiss: onDismissAction, onOpen: onOpenAction)
         let hosting = NSHostingView(rootView: bannerView)
+        // The panel's size comes from the real banner, never from SwiftUI. Left
+        // to its default, the hosting view grows the panel to its own minimum
+        // size, which pushes the banner off the spot it is meant to cover.
+        hosting.sizingOptions = []
         hosting.frame = bounds
         hosting.autoresizingMask = [.width, .height]
         hosting.wantsLayer = true
@@ -453,7 +523,7 @@ final class CustomBannerManager {
         }
     }
 
-    func move(key: CFHashCode, axTopLeft: CGPoint, width: CGFloat, scale: CGFloat? = nil) {
+    func move(key: CFHashCode, axTopLeft: CGPoint, width: CGFloat, height: CGFloat, scale: CGFloat? = nil) {
         guard var entry = active[key] else { return }
 
         // A live scale change has to re-render the SwiftUI content at the new
@@ -467,8 +537,8 @@ final class CustomBannerManager {
             active[key] = entry
         }
 
-        let height = Self.bannerHeight(forScale: entry.scale)
-        let target = Self.axRect(axOrigin: axTopLeft, size: CGSize(width: width, height: height))
+        let target = Self.panelFrame(axOrigin: axTopLeft, size: CGSize(width: width, height: height),
+                                     scale: entry.scale)
         let current = entry.panel.frame
         guard current != target else { return }
 
@@ -484,8 +554,6 @@ final class CustomBannerManager {
         }
     }
 
-    static func bannerHeight(forScale scale: CGFloat) -> CGFloat { 62 * scale }
-
     private func makePanel(frame: NSRect, contentView: NSView) -> NSPanel {
         let panel = NSPanel(contentRect: frame,
                             styleMask: [.borderless, .nonactivatingPanel],
@@ -493,12 +561,22 @@ final class CustomBannerManager {
         panel.level = .statusBar
         panel.isOpaque = false
         panel.backgroundColor = .clear
-        panel.hasShadow = true
+        // The system banner casts next to no shadow. A window shadow here is
+        // traced from the glass's alpha and comes out as a hard dark ring.
+        panel.hasShadow = !BannerBackground.isGlass
         panel.collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle]
         panel.isReleasedWhenClosed = false
         panel.becomesKeyOnlyIfNeeded = true
         panel.contentView = contentView
         return panel
+    }
+
+    /// The panel covers the banner plus `chromeInset` on every side, so the
+    /// close button can overhang the corner the way the system one does. The
+    /// margin is transparent, and transparent parts of a window let clicks through.
+    static func panelFrame(axOrigin: CGPoint, size: CGSize, scale: CGFloat) -> NSRect {
+        let inset = CustomBannerView.Metrics.chromeInset * scale
+        return axRect(axOrigin: axOrigin, size: size).insetBy(dx: -inset, dy: -inset)
     }
 
     static func axRect(axOrigin: CGPoint, size: CGSize) -> NSRect {
