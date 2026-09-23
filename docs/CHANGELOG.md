@@ -5,6 +5,21 @@ All notable changes to NotificationNanny are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [8.0.1] — 2026-09-23
+
+### Fixed
+- **The custom banner now looks like the real one.** Picking any banner animation other than Default replaces the system banner with NotificationNanny's own, and that banner never matched. It was darker, it showed an app name row and a timestamp that macOS does not have, in Light Mode it stayed dark, and no colour setting could make it look like Notification Center (#27). It is now a replica of the macOS 26 banner, measured against the real one over eight backdrops in both Light and Dark Mode: the same Liquid Glass background, corner radius, icon size, text layout and text colour. Tinted banners work as before.
+- **Long notifications are no longer cut off in the custom banner.** It was always 62pt tall. It now takes the height of the banner it replaces, so titles wrap to two lines and bodies to three, as they do in Notification Center.
+- **Subtitles get their own line** instead of being run into the body.
+- The close button appears over the top left corner on hover, where macOS puts it, and the custom banner no longer casts a dark outline.
+- **Send Test Notification** with a custom banner showed placeholder text and a bell instead of the test notification's real title and app icon.
+
+### Added
+- `scripts/banner-lab` captures the real banner and the custom one in the same spot and scores the difference pixel by pixel, so the replica can be checked again after a macOS update.
+
+### Changed
+- Before macOS 26 the custom banner uses the new layout on the previous background material, since Liquid Glass does not exist there.
+
 ## [8.0.0] — 2026-09-20
 
 ### Fixed

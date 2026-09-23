@@ -689,6 +689,7 @@ package final class NotificationRepositioner: ObservableObject {
                 customBannerManager.move(key: CFHash(window),
                                          axTopLeft: CGPoint(x: anchoredX, y: bannerAXOrigin.y),
                                          width: scaledWidth,
+                                         height: t.bannerSize.height * scale,
                                          scale: CGFloat(scale))
                 return
             }
@@ -819,22 +820,24 @@ package final class NotificationRepositioner: ObservableObject {
                 default:                                        anchoredX = bannerAXOrigin.x
                 }
                 customBannerManager.move(key: key, axTopLeft: CGPoint(x: anchoredX, y: bannerAXOrigin.y),
-                                         width: scaledWidth)
+                                         width: scaledWidth, height: info.bannerSize.height * scale)
                 scheduleHolds(window: window, stackIndex: stackIndex, generation: gen)
                 return
             }
 
             let bannerEl = findBannerElement(in: window) ?? window
-            let content: BannerContent?
-            if testGroupID != nil {
+            // A test reads the real banner like any other notification, so the
+            // overlay shows the same title and icon the system banner would and
+            // the two can be compared side by side. The fixed text is only a
+            // fallback for when extraction fails.
+            var content = extractBannerContent(from: bannerEl, knownAppName: appName(for: window))
+            if content == nil, testGroupID != nil {
                 content = BannerContent(
                     appName: "NotificationNanny",
                     title: "Test Notification",
                     body: "Thank you for using NotificationNanny!",
-                    appIcon: nil
+                    appIcon: NSApp.applicationIconImage
                 )
-            } else {
-                content = extractBannerContent(from: bannerEl, knownAppName: appName(for: window))
             }
             if let content {
                 let preview = content.title.isEmpty ? content.body.prefix(50) : content.title.prefix(50)
@@ -872,6 +875,7 @@ package final class NotificationRepositioner: ObservableObject {
                     content: content,
                     axTopLeft: finalAXOrigin,
                     width: scaledWidth,
+                    height: info.bannerSize.height * scale,
                     scale: scale,
                     backgroundColor: bannerBackground,
                     textColor: settings.effectiveBannerTextColor,
@@ -940,6 +944,15 @@ package final class NotificationRepositioner: ObservableObject {
             textPart = str
         }
         let appName = knownAppName ?? parsedAppName
+
+        // Labelled lines are exact, including the subtitle, which the description
+        // string runs together with the body. Older layouts have no identifiers,
+        // so they still go through the split heuristics.
+        let lines = element.identifiedTextValues()
+        if let title = lines["title"] {
+            return BannerContent(appName: appName, title: title, subtitle: lines["subtitle"] ?? "",
+                                 body: lines["body"] ?? "", appIcon: lookupIcon(for: appName))
+        }
 
         let (title, body) = splitTitleBody(content: textPart, element: element, appName: appName)
         return BannerContent(appName: appName, title: title, body: body, appIcon: lookupIcon(for: appName))
