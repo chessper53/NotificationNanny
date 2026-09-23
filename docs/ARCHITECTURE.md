@@ -1,7 +1,7 @@
 # NotificationNanny — Architecture Documentation
 
 **Project:** notification-nanny  
-**Last Updated:** 2026-08-10  
+**Last Updated:** 2026-09-23  
 **Language:** English
 
 ---
@@ -22,6 +22,7 @@
 | 1.7     | 2026-08-09 | Claude   | `NotificationNannyCore` regrouped from a flat 31-file directory into `Engine/`, `Models/`, `UI/{SettingsView,MenuBar,Overlay}/`, `System/`, `Diagnostics/` (file moves only, no logic changes); `AXNotificationCenterAlert`/`AlertStack` recognised as banner subroles (fixes Persistent-style notifications not repositioning); custom-overlay background no longer forces dark HUD appearance; readiness-gate exhaustion and previously-silent skip paths now log a user-visible reason + AX subrole |
 | 1.8     | 2026-08-10 | Claude   | Global custom-banner text color (`bannerTextTint`, `effectiveBannerTextColor: Color?` — nil means adaptive `.primary`/`.secondary`/`.tertiary`, deliberately not a hardcoded default, so it can't regress the 1.7 appearance fix); universal (arm64+x86_64) release builds verified via `lipo` in `release.yml` + `scripts/test-release-workflow.sh` |
 | 1.9     | 2026-08-10 | Claude   | `AXObserverController` extracted from `NotificationRepositioner` (§11 P1#1); `AppIconCache` (persistent, shared between the repositioner's hot path and the Exceptions tab); menu-bar right-click quick actions (pause 15/30/60, Settings, Quit — separate from the left-click Settings window); privacy redaction toggle (`redactBannerContent`, blurs custom-banner title/body); `BannerAnimation.Spec` consolidates the four per-case switches into one; Preset-apply confirmation when it would overwrite different exception groups (§11 P2#4); debounced `appGroups` persistence + `flushPendingSaves()` (§11 P3#9); per-tag/search log filtering in the Diagnostics tab; conditional `UNUserNotificationCenter` path for test notifications (§11 P2#6); `FocusModeMonitor`'s Focus-file read moved to a background-refreshing task, off the main actor; String Catalog scaffolding (`Resources/Localizable.xcstrings`, inert until populated); `AXIntegrationTests.swift` (conditionally-enabled live AX pipeline test); CI `release-consistency` job (`scripts/test-version-consistency.sh` + wires the previously-unused `test-release-workflow.sh` into `ci.yml`) |
+| 2.0     | 2026-09-23 | Claude   | Custom banner rebuilt as a measured replica of the macOS 26+ banner: `NSGlassEffectView` background with a 5% white wash (HUD material kept as the pre-26 fallback), system banner geometry in `CustomBannerView.Metrics`, height taken from the real banner's AX size, subtitle read from the banner's labelled AX lines, close button over the leading corner. `scripts/banner-lab` measures the replica against the real banner pixel by pixel |
 
 **Status:** CURRENT
 
@@ -61,7 +62,7 @@ code-signing plus Accessibility permission matter.
 ### Workspace Structure
 
 ```
-NotificationNanny (v8.0.0)
+NotificationNanny (v8.0.1)
 ├── Sources/NotificationNanny/     — Thin @main executable entry point
 ├── Sources/NotificationNannyCore/ — All app logic (library target, testable)
 └── Tests/NotificationNannyTests/  — Swift Testing unit tests
@@ -304,7 +305,7 @@ Test target files stay flat (no subfolders) — SPM discovers them recursively r
 - `NotificationRepositioner` — The heart of the app. Attaches an `AXObserver` to the NC process, receives window lifecycle events, computes target positions, and either moves the real NC window or creates a custom `NSPanel` overlay. Accepts an injected `NannyLogger` (defaults to `.shared`).
 - `AppNameResolver` — Extracted concern: walks the AX element tree to find the notification banner child, reads `AXAttributedDescription`, strips Unicode marks, and maintains a per-window `CFHashCode → String` cache that is invalidated on `kAXUIElementDestroyedNotification`.
 - `PrivateWindowAPI` — Isolated namespace for all private SPI: `@_silgen_name` declarations (`CGSSetWindowTransform`, `CGSSetWindowAlpha`, `_AXUIElementGetWindow`) and runtime `dlopen`/`dlsym` for SkyLight. Exposes `windowID(for:)`, `setTransform(_:on:)`, `setAlpha(_:on:)`.
-- `CustomBannerManager` / `CustomBannerView` / `BannerAnimationController` — Full custom overlay pipeline: `NSPanel` + `NSVisualEffectView` host + SwiftUI `NSHostingView`. Keyed by `CFHashCode(axElement)`.
+- `CustomBannerManager` / `CustomBannerView` / `BannerAnimationController` — Full custom overlay pipeline: `NSPanel` + SwiftUI `NSHostingView`, with an `NSGlassEffectView` background on macOS 26+ (`NSVisualEffectView` before that). Keyed by `CFHashCode(axElement)`. Its geometry is measured from the real banner, not chosen; see `CustomBannerView.Metrics` and `scripts/banner-lab`.
 - `NotificationSettingsProviding` — Protocol used by `NotificationRepositioner` so tests can inject a mock settings object.
 
 #### NotificationNanny (executable)
@@ -352,8 +353,8 @@ Test target files stay flat (no subfolders) — SPM discovers them recursively r
 #### BannerContent (transient)
 
 - **Purpose:** Extracted notification content for rendering the custom overlay. Not persisted.
-- **Extraction:** The app name comes from the `AXAttributedDescription` prefix (`"AppName, …"`). Title/body are resolved by `splitTitleBody`: it takes the title from the first `AXStaticText` child that prefixes the content (authoritative, handles comma-containing senders and wrapped bodies) and the remainder as the body, falling back to the legacy newline/comma heuristic only when no static-text child matches.
-- **Equatable (by text):** `BannerContent` compares on `appName/title/body` (icon ignored). `NotificationRepositioner.overlayContent[CFHashCode]` stores what each live overlay shows so a window NC *reuses* for a newer back-to-back message is detected (`overlayContentChanged`) and the overlay refreshed instead of keeping stale text.
+- **Extraction:** The app name comes from the `AXAttributedDescription` prefix (`"AppName, …"`). On macOS 26+ the banner's `AXStaticText` children carry `AXIdentifier`s `title`, `subtitle` and `body`, and those are used directly, which is the only way to keep a subtitle apart from the body. Without identifiers, title/body are resolved by `splitTitleBody`: it takes the title from the first `AXStaticText` child that prefixes the content (authoritative, handles comma-containing senders and wrapped bodies) and the remainder as the body, falling back to the legacy newline/comma heuristic only when no static-text child matches.
+- **Equatable (by text):** `BannerContent` compares on `appName/title/subtitle/body` (icon ignored). `NotificationRepositioner.overlayContent[CFHashCode]` stores what each live overlay shows so a window NC *reuses* for a newer back-to-back message is detected (`overlayContentChanged`) and the overlay refreshed instead of keeping stale text.
 
 ### 4.2 Data Model Diagram
 
@@ -568,9 +569,9 @@ sequenceDiagram
     Extractor->>Extractor: lookupIcon(for: appName) — /Applications scan
     Extractor-->>Repo: BannerContent
     Repo->>NC: setWindowPosition(window, to: {x, -9999}) — hide real banner
-    Repo->>Mgr: showBanner(content:axTopLeft:width:scale:backgroundColor:...)
+    Repo->>Mgr: showBanner(content:axTopLeft:width:height:scale:backgroundColor:...)
     Mgr->>Panel: Create NSPanel (borderless, nonactivatingPanel, .statusBar level)
-    Mgr->>Panel: NSVisualEffectView (hudWindow material) + NSHostingView(CustomBannerView)
+    Mgr->>Panel: NSHostingView(CustomBannerView), NSGlassEffectView background (hudWindow material before macOS 26)
     Panel->>Panel: Animate alpha 0→1 (0.25s easeOut)
     Note over Mgr: DispatchSourceTimer set for autoDismiss (default 8s if 0)
     Panel-->>Repo: Banner visible on screen
@@ -1068,6 +1069,7 @@ The per-entry log row (timestamp, level capsule, tag capsule, message) was extra
 - [build-app.sh](../build-app.sh) — Release build entry point
 - [dev.sh](../dev.sh) — Debug build + relaunch loop
 - [scripts/assemble-bundle.sh](../scripts/assemble-bundle.sh) — Shared `.app` assembly and signing
+- [scripts/banner-lab/run.sh](../scripts/banner-lab/run.sh) — Measures the custom banner against the real one, pixel by pixel
 - [.github/workflows/ci.yml](../.github/workflows/ci.yml) — CI configuration
 
 ### External
