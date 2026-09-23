@@ -13,7 +13,7 @@ Position, scale, tint, and animate your notification banners globally or per app
 -->
 
 <p align="center">
-  <img width="852" height="1107" alt="image" src="https://github.com/user-attachments/assets/1a2b43ad-c62c-4698-a706-ae26c141e24e" />
+  <img width="850" height="1044" alt="image" src="https://github.com/user-attachments/assets/bd28d152-2d06-40ca-b032-e13373993e7a" />
 </p>
 
 ## Installation
