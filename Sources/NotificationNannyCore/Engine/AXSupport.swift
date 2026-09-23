@@ -58,6 +58,21 @@ extension AXUIElement {
         for child in children() { result.append(contentsOf: child.staticTextValues(depth: depth + 1)) }
         return result
     }
+
+    /// Cleaned values of the direct `AXStaticText` children, keyed by `AXIdentifier`.
+    /// Since macOS 26 a banner labels its lines "title", "subtitle" and "body", which
+    /// is the only reliable way to tell a subtitle from the first line of the body.
+    func identifiedTextValues() -> [String: String] {
+        var result: [String: String] = [:]
+        for child in children()
+        where child.stringAttribute(kAXRoleAttribute as String) == (kAXStaticTextRole as String) {
+            guard let id = child.stringAttribute(kAXIdentifierAttribute as String),
+                  let value = child.stringAttribute(kAXValueAttribute as String) else { continue }
+            let cleaned = cleanAXString(value)
+            if !cleaned.isEmpty { result[id] = cleaned }
+        }
+        return result
+    }
 }
 
 /// Strips default-ignorable scalars (e.g. WhatsApp's U+200E) and trims surrounding spaces.
