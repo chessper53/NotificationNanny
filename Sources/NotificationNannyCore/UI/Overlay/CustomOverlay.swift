@@ -197,28 +197,30 @@ struct CustomBannerView: View {
         .background {
             ZStack {
                 VisualEffectBackground(cornerRadius: 14 * scale)
+                // Untinted means "look like the system banner", so nothing is
+                // painted over the material at all. A flat black wash used to sit
+                // here, which is why an untinted custom banner could never be made
+                // to match Notification Center: no tint setting could cancel it.
                 if tint != .clear {
                     tint.opacity(0.45)
-                } else {
-                    Color.black.opacity(0.55)
                 }
             }
         }
         .clipShape(RoundedRectangle(cornerRadius: 14 * scale, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 14 * scale, style: .continuous)
-                .strokeBorder(Color.white.opacity(0.08), lineWidth: 0.5)
+                .strokeBorder(Color.primary.opacity(0.08), lineWidth: 0.5)
         )
         .overlay(alignment: .topTrailing) {
             if isHovered {
                 Button(action: onDismiss) {
                     ZStack {
                         Circle()
-                            .fill(Color.white.opacity(0.15))
+                            .fill(Color.primary.opacity(0.15))
                             .frame(width: 20 * scale, height: 20 * scale)
                         Image(systemName: "xmark")
                             .font(.system(size: 9 * scale, weight: .bold))
-                            .foregroundStyle(.white.opacity(0.7))
+                            .foregroundStyle(.primary.opacity(0.7))
                     }
                 }
                 .buttonStyle(.plain)
@@ -292,9 +294,9 @@ struct CustomBannerView: View {
                     .antialiased(true)
             } else {
                 ZStack {
-                    Color.white.opacity(0.12)
+                    Color.primary.opacity(0.12)
                     Image(systemName: "bell.fill")
-                        .foregroundStyle(.white.opacity(0.7))
+                        .foregroundStyle(.primary.opacity(0.7))
                         .font(.system(size: 17 * scale, weight: .medium))
                 }
             }
@@ -312,7 +314,12 @@ private struct VisualEffectBackground: NSViewRepresentable {
         v.material = .hudWindow
         v.blendingMode = .behindWindow
         v.state = .active
-        v.appearance = NSAppearance(named: .darkAqua)
+        // Deliberately no forced appearance. Leaving this nil lets the material
+        // follow the system's light/dark setting, which is what the real banner
+        // does. Forcing .darkAqua was reintroduced in 14c4c49 to make untinted
+        // banners "match native", but it only matches in Dark Mode: in Light Mode
+        // it swapped a light system banner for a dark custom one. 1c79558 had
+        // already removed it once for the same reason.
         v.maskImage = Self.maskImage(cornerRadius: cornerRadius)
         return v
     }
