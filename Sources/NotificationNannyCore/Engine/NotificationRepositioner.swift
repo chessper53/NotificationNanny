@@ -826,16 +826,18 @@ package final class NotificationRepositioner: ObservableObject {
             }
 
             let bannerEl = findBannerElement(in: window) ?? window
-            let content: BannerContent?
-            if testGroupID != nil {
+            // A test reads the real banner like any other notification, so the
+            // overlay shows the same title and icon the system banner would and
+            // the two can be compared side by side. The fixed text is only a
+            // fallback for when extraction fails.
+            var content = extractBannerContent(from: bannerEl, knownAppName: appName(for: window))
+            if content == nil, testGroupID != nil {
                 content = BannerContent(
                     appName: "NotificationNanny",
                     title: "Test Notification",
                     body: "Thank you for using NotificationNanny!",
-                    appIcon: nil
+                    appIcon: NSApp.applicationIconImage
                 )
-            } else {
-                content = extractBannerContent(from: bannerEl, knownAppName: appName(for: window))
             }
             if let content {
                 let preview = content.title.isEmpty ? content.body.prefix(50) : content.title.prefix(50)
