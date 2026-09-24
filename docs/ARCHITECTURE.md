@@ -102,7 +102,7 @@ NotificationNanny (v8.0.1)
 - `NotificationRepositioner` — AX observation loop, banner repositioning, scale hammering, sleep/wake handling
 - `AXObserverController` — Owns AXObserver attach/detach and NC-process discovery; delivers raw AX events to a closure the repositioner supplies (extracted from `NotificationRepositioner`)
 - `AppNameResolver` — AX attribute parsing, banner-element tree walk, per-window app-name cache (extracted from `NotificationRepositioner`)
-- `AppIconCache` — `@MainActor` cache mapping app name → `NSImage`, shared (`.shared`) between the repositioner's per-notification icon lookup and the Exceptions tab's app picker
+- `AppIconCache` — `@MainActor` cache mapping the app name Notification Center shows → `NSImage`, shared (`.shared`) between the repositioner's per-notification icon lookup and the Exceptions tab's app picker. Resolves through running apps, then `InstalledAppIndex`: every installed app keyed by file name, localized display name, `CFBundleDisplayName` and `CFBundleName`, built off the main thread when observing starts. A failed lookup is retried after 30s
 - `CustomBannerManager` — Manages `NSPanel`-based custom overlay windows keyed by AX element hash
 - `CustomBannerView` — SwiftUI view rendered inside the custom overlay panel
 - `NannyLogger` — In-memory ring buffer (1000 entries) observable by the UI; injectable into `NotificationRepositioner`
@@ -566,7 +566,7 @@ sequenceDiagram
     Repo->>Repo: shouldUseCustomBanner → true
     Repo->>Extractor: extractBannerContent(from: bannerElement)
     Note over Extractor: Parses AXAttributedDescription string<br/>"AppName, Title\nBody"
-    Extractor->>Extractor: lookupIcon(for: appName) — /Applications scan
+    Extractor->>Extractor: lookupIcon(for: appName) — running apps, then installed app index
     Extractor-->>Repo: BannerContent
     Repo->>NC: setWindowPosition(window, to: {x, -9999}) — hide real banner
     Repo->>Mgr: showBanner(content:axTopLeft:width:height:scale:backgroundColor:...)
@@ -908,7 +908,7 @@ NotificationRepositioner (orchestrator + banner decision logic)
 
 #### 11. Icon Lookup Hardcodes Four Directory Paths — resolved
 
-**Resolved:** `lookupIcon(for:)` now checks (1) running app list, (2) `NSWorkspace.urlForApplication(withBundleIdentifier:)` for any running app that matches the display name, (3) directory scan as last resort. Same improvement applied to `cachedIcon(for:)` in `ExceptionsTabView`.
+**Resolved (2026-09-24):** This was marked resolved before, but the code still guessed `<name>.app` in four folders, and the running app step only helped while the app was running. That missed 14 of 119 installed apps on the machine it was measured on (FindMy.app shows as "Find My", apps in subfolders, Safari behind a hidden symlink), and each miss drew a custom banner with a bell. `AppIconCache` now owns the whole lookup: running apps first, then `InstalledAppIndex`, which keys every app under /Applications, ~/Applications (three folders deep), /System/Applications and the top of /System/Library/CoreServices by all the names it can be shown under. 0 of 119 miss. The Exceptions tab uses the same lookup instead of its own copy, which also resized the shared cached images to 16pt.
 
 #### 12. `NannyLogger` is a Global Singleton with No Injection Path — resolved
 

@@ -266,23 +266,7 @@ struct ExceptionsTabView: View {
     }
 
     private func cachedIcon(for appName: String) -> NSImage? {
-        iconCache.icon(for: appName) { name in
-            if let icon = NSWorkspace.shared.runningApplications
-                .first(where: { $0.localizedName == name })?.icon {
-                return icon
-            }
-            let dirs = ["/Applications", NSHomeDirectory() + "/Applications",
-                        "/System/Applications", "/System/Applications/Utilities"]
-            for dir in dirs {
-                let path = "\(dir)/\(name).app"
-                if FileManager.default.fileExists(atPath: path) {
-                    let img = NSWorkspace.shared.icon(forFile: path)
-                    img.size = NSSize(width: 16, height: 16)
-                    return img
-                }
-            }
-            return nil
-        }
+        iconCache.icon(for: appName)
     }
 
     @ViewBuilder
