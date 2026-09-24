@@ -100,6 +100,7 @@ package final class NotificationRepositioner: ObservableObject {
             return
         }
         isObserving = true
+        iconCache.prewarm()
         logger.log("Observer started — NC PID \(axController.ncPid)", tag: "AX")
         repositionVisibleWindows()
     }
@@ -157,6 +158,12 @@ package final class NotificationRepositioner: ObservableObject {
             // Measured on 26.5.2 and again on 27.0: one banner produces three of these. They
             // can also arrive for the application element rather than a window, so don't trust
             // `element` — sweep whatever windows are currently up, coalesced.
+            //
+            // The app name cache is keyed by window, and since macOS 26 every banner lives
+            // in the same persistent host window. Without this, the first banner's app name
+            // stuck to every later one until the host happened to be torn down, so a custom
+            // banner showed another app's icon, or the bell if that first name had none.
+            resolver.invalidateAll()
             axLog.debug("handleAXEvent: layoutChanged — scheduling sweep")
             layoutChangeDebouncer.schedule(delay: 0.05) { [weak self] in
                 self?.repositionVisibleWindows()
@@ -985,29 +992,7 @@ package final class NotificationRepositioner: ObservableObject {
     private let iconCache = AppIconCache.shared
 
     private func lookupIcon(for appName: String) -> NSImage? {
-        iconCache.icon(for: appName, resolve: resolveIcon(for:))
-    }
-
-    private func resolveIcon(for appName: String) -> NSImage? {
-        let ws = NSWorkspace.shared
-        if let icon = ws.runningApplications.first(where: { $0.localizedName == appName })?.icon {
-            return icon
-        }
-        if let bundleID = ws.runningApplications.first(where: { $0.localizedName == appName })?.bundleIdentifier,
-           let url = ws.urlForApplication(withBundleIdentifier: bundleID) {
-            return ws.icon(forFile: url.path)
-        }
-        let dirs = [
-            "/Applications",
-            NSHomeDirectory() + "/Applications",
-            "/System/Applications",
-            "/System/Applications/Utilities",
-        ]
-        for dir in dirs {
-            let path = "\(dir)/\(appName).app"
-            if FileManager.default.fileExists(atPath: path) { return ws.icon(forFile: path) }
-        }
-        return nil
+        iconCache.icon(for: appName)
     }
 
     private func handleBannerTap(appName: String, bannerElement: AXUIElement) {
