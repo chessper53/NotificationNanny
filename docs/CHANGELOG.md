@@ -5,6 +5,13 @@ All notable changes to NotificationNanny are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [8.0.2] — 2026-09-24
+
+### Fixed
+- **Custom banners showed a bell instead of the app's icon.** The icon is found from the app name Notification Center shows, and the lookup only tried `<name>.app` in four folders, so it failed for apps whose name differs from their file name (Find My, Voice Memos), apps in subfolders, and Safari. It now searches an index of installed apps by every name they can be shown under.
+- **A custom banner could show another app's icon, or the bell for every notification.** Since macOS 26 all banners share one window, and the app name was cached per window, so the first banner's app stuck to the ones after it. The name is now read again for every new banner.
+- A failed icon lookup was never retried, so an app installed after NotificationNanny started kept the bell until relaunch. It is now retried after 30 seconds.
+
 ## [8.0.1] — 2026-09-23
 
 ### Fixed
