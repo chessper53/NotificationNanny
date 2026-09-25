@@ -8,7 +8,7 @@
 #
 # Requirements:
 #   - NotificationNanny already built and running, with Accessibility permission
-#     already granted (./dev.sh, or --launch below).
+#     already granted (./scripts/dev.sh, or --launch below).
 #   - One-time Automation permission for whichever terminal runs this script, to
 #     let it drive the app's UI via System Events (System Settings → Privacy &
 #     Security → Automation → <your terminal> → System Events). macOS prompts
@@ -41,7 +41,7 @@ INDICES=(1 3 2 4 5 8)
 
 if [[ "${1:-}" == "--launch" ]]; then
     echo "==> Building and launching..."
-    ./dev.sh
+    ./scripts/dev.sh
     sleep 3
 fi
 

@@ -92,7 +92,7 @@ jobs:
       # Assembles and ad-hoc signs NotificationNanny.app — catches packaging /
       # Info.plist / entitlements breakage that `swift build` alone won't.
       - name: Build .app bundle
-        run: ./build-app.sh
+        run: ./scripts/build-app.sh
 
       - name: Verify bundle
         run: |

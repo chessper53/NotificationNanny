@@ -18,7 +18,7 @@ jobs:
         run: echo "version=${GITHUB_REF_NAME#v}" >> $GITHUB_OUTPUT
 
       - name: Build
-        run: UNIVERSAL=1 ./build-app.sh
+        run: UNIVERSAL=1 ./scripts/build-app.sh
 
       - name: Verify universal binary
         run: |
