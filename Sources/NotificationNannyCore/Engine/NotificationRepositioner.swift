@@ -834,12 +834,18 @@ package final class NotificationRepositioner: ObservableObject {
 
             let bannerEl = findBannerElement(in: window) ?? window
             // A test reads the real banner like any other notification, so the
-            // overlay shows the same title and icon the system banner would and
-            // the two can be compared side by side. The fixed text is only a
-            // fallback for when extraction fails.
+            // overlay shows the same title and body the system banner would. The
+            // fixed text is only a fallback for when extraction fails.
             var content = extractBannerContent(from: bannerEl, knownAppName: appName(for: window))
-            if content == nil, testGroupID != nil {
-                content = BannerContent(
+            if testGroupID != nil {
+                // A test is NotificationNanny's own notification, so it carries
+                // NotificationNanny's icon. Without notification permission it is
+                // posted through osascript, which macOS attributes to Script Editor,
+                // and reading the banner would otherwise pick up that icon.
+                content = content.map {
+                    BannerContent(appName: $0.appName, title: $0.title, subtitle: $0.subtitle,
+                                  body: $0.body, appIcon: NSApp.applicationIconImage)
+                } ?? BannerContent(
                     appName: "NotificationNanny",
                     title: "Test Notification",
                     body: "Thank you for using NotificationNanny!",

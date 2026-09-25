@@ -147,7 +147,7 @@ way.
 ### 5. Ad-hoc signing and Gatekeeper
 
 The app is ad-hoc signed (`codesign --sign -` in
-[build-app.sh:75](../build-app.sh#L75)) and the cask strips quarantine in a
+[build-app.sh:75](../scripts/build-app.sh#L75)) and the cask strips quarantine in a
 postflight. Worth checking, though it ranks below the above:
 
 - Users who download the ZIP from Releases directly, rather than via brew, keep

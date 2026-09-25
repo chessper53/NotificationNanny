@@ -5,10 +5,10 @@ NotificationCenter process, so most debugging happens against a **running, signe
 build** with Accessibility permission granted. This guide covers the local
 build/run loop and the common gotchas.
 
-## The fast loop: `./dev.sh`
+## The fast loop: `./scripts/dev.sh`
 
 ```sh
-./dev.sh
+./scripts/dev.sh
 ```
 
 This does everything you need in one shot:
@@ -30,9 +30,9 @@ this is intentional: it mirrors a fresh install and surfaces permission bugs ear
 pkill -x NotificationNanny
 
 # Build + bundle (release-grade, host arch)
-./build-app.sh            # build only
-./build-app.sh --run      # build, reset TCC, launch
-./build-app.sh --install  # build, copy to /Applications
+./scripts/build-app.sh            # build only
+./scripts/build-app.sh --run      # build, reset TCC, launch
+./scripts/build-app.sh --install  # build, copy to /Applications
 
 # Clear Accessibility permission for the app
 tccutil reset Accessibility com.notificationnanny.app

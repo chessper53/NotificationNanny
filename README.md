@@ -1,41 +1,54 @@
-# NotificationNanny - Now on MacOS 27!
-
-Position, scale, tint, and animate your notification banners globally or per app, on whichever display you want.
-
-![Downloads](https://img.shields.io/github/downloads/chessper53/NotificationNanny/total?style=flat&label=downloads&color=3d4450&logo=apple&logoColor=white) ![Stars](https://img.shields.io/github/stars/chessper53/NotificationNanny?style=flat&label=stars&color=f0a202) ![macOS](https://img.shields.io/badge/macOS-14%2B-3d4450?style=flat)
-
-<!--
-  Demo video. To swap the still below for the clip:
-  drag the .mp4 into any GitHub issue comment, copy the
-  https://github.com/user-attachments/... URL it returns, and paste it on its
-  own line here. GitHub renders that URL as an inline player. Keep the <img>
-  as-is underneath, so the page still reads where video will not load.
--->
-
 <p align="center">
-  <img width="850" height="1044" alt="image" src="https://github.com/user-attachments/assets/bd28d152-2d06-40ca-b032-e13373993e7a" />
+  <img src="site/assets/icon-512.png" alt="NotificationNanny app icon" width="96" height="96" />
 </p>
 
-## Installation
+<h1 align="center">NotificationNanny - Now on MacOS 27!</h1>
 
-**Homebrew**
+<p align="center">
+  Position, scale, tint, and animate notification banners, globally or per app.
+</p>
+
+<p align="center">
+  <a href="https://github.com/chessper53/NotificationNanny/releases/latest"><b>Download for macOS</b></a> ·
+  <a href="https://chessper53.github.io/NotificationNanny/">Website</a> ·
+  <a href="docs/CHANGELOG.md">Changelog</a> ·
+  <a href="https://github.com/chessper53/NotificationNanny/issues">Report an issue</a>
+</p>
+
+<p align="center">
+  <img src="https://img.shields.io/github/downloads/chessper53/NotificationNanny/total?style=flat&label=downloads&color=3d4450&logo=apple&logoColor=white" alt="Downloads" />
+  <img src="https://img.shields.io/github/stars/chessper53/NotificationNanny?style=flat&label=stars&color=f0a202" alt="Stars" />
+  <img src="https://img.shields.io/badge/macOS-14%2B-3d4450?style=flat" alt="macOS 14+" />
+</p>
+
+<br />
+
+<p align="center">
+  <img src="docs/assets/readme-banner.png" width="699" alt="A tinted NotificationNanny banner placed at the bottom center of the screen, just above the Dock" />
+</p>
+
+<br />
+
+## Install
+
+With Homebrew:
 
 ```sh
 brew tap chessper53/notificationnanny https://github.com/chessper53/NotificationNanny
 brew install --cask notificationnanny
 ```
 
-**Direct download**
+Then click the bell icon in your menu bar and grant Accessibility permission. If you installed with Homebrew, updates are one click from the settings panel.
 
-Grab the latest zip from the [Releases page](https://github.com/chessper53/NotificationNanny/releases/latest) and drag `NotificationNanny.app` into your Applications folder.
+Or install manually:
 
-Either way, click the bell icon in your menu bar afterwards and grant Accessibility permission to get started. If you installed with Homebrew, updates are one click from the settings panel.
+1. [Download the latest zip](https://github.com/chessper53/NotificationNanny/releases/latest) and open it.
+2. Drag `NotificationNanny.app` into Applications, then launch it.
+3. Click the bell icon in your menu bar and grant Accessibility permission.
 
 You will need to grant Accessibility permission again after every update. macOS ties that permission to the exact build it was granted to, so a new version arrives as an unrecognised app.
 
 ## What it does
-
-macOS gives you one place for notification banners and no way to change it. NotificationNanny takes that control back.
 
 - Nine anchor points on any display, with independent settings per screen
 - Scale banners from 50% to 250%, tint the background or text, or replace the system banner with a custom styled one
@@ -56,7 +69,7 @@ No data is collected, transmitted, or stored outside your device. The Accessibil
 
 NotificationNanny uses the macOS Accessibility API to observe the notification center process. When a banner appears it repositions or replaces it according to your rules. For scaled, tinted, or custom banners it intercepts the notification, moves the system banner off screen, and shows its own window matching the macOS banner style. This relies on private internals, so Apple can change the behavior in any OS update. The app sandbox is disabled because cross process Accessibility access requires it.
 
-Supports macOS 14 Sonoma and later, tested through macOS 27.
+For contributors, [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) covers the internals.
 
 ## License
 

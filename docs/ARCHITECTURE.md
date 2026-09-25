@@ -39,7 +39,7 @@
 git clone https://github.com/chessper53/NotificationNanny
 cd NotificationNanny
 make build        # or: swift build
-./dev.sh          # kill, build, reset permission, launch
+./scripts/dev.sh          # kill, build, reset permission, launch
 ```
 
 **Command Line Tools alone are no longer sufficient.** The CLT 27.0 update
@@ -92,8 +92,8 @@ NotificationNanny (v8.0.2)
 - App Bundle Config: `Resources/Info.plist`
 - Entitlements: `Resources/NotificationNanny.entitlements`
 - Homebrew Cask: `Casks/notificationnanny.rb`
-- Release script: `release.sh`
-- Build script: `build-app.sh`
+- Release script: `scripts/release.sh`
+- Build script: `scripts/build-app.sh`
 
 ### Main Classes
 
@@ -772,7 +772,7 @@ sequenceDiagram
 - Add tests for domain logic (geometry, placement, settings, groups, presets) in
   `Tests/NotificationNannyTests/`. The AX observation loop, custom-banner windows,
   and private SPI are verified manually — they need a live system.
-- Before committing: `make test` passes, `./dev.sh` behaves as intended against
+- Before committing: `make test` passes, `./scripts/dev.sh` behaves as intended against
   real notifications, and [CHANGELOG.md](CHANGELOG.md) reflects the change.
 
 ---
@@ -1066,8 +1066,8 @@ The per-entry log row (timestamp, level capsule, tag capsule, message) was extra
 - [DEBUGGING.md](DEBUGGING.md) — Local build / run / debug loop
 - [VERSION](../VERSION) — Single source of truth for the version string
 - [Makefile](../Makefile) — Common development commands
-- [build-app.sh](../build-app.sh) — Release build entry point
-- [dev.sh](../dev.sh) — Debug build + relaunch loop
+- [build-app.sh](../scripts/build-app.sh) — Release build entry point
+- [dev.sh](../scripts/dev.sh) — Debug build + relaunch loop
 - [scripts/assemble-bundle.sh](../scripts/assemble-bundle.sh) — Shared `.app` assembly and signing
 - [scripts/banner-lab/run.sh](../scripts/banner-lab/run.sh) — Measures the custom banner against the real one, pixel by pixel
 - [.github/workflows/ci.yml](../.github/workflows/ci.yml) — CI configuration

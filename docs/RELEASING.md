@@ -12,7 +12,7 @@ echo "7.6.0" > VERSION
 git commit -am "chore: bump version to 7.6.0"
 
 # 2. Cut the release (builds, zips, publishes, bumps cask, pushes)
-UNIVERSAL=1 ./release.sh 7.6.0
+UNIVERSAL=1 ./scripts/release.sh 7.6.0
 ```
 
 `UNIVERSAL=1` is not optional for a real release. Without it you ship an
@@ -82,7 +82,7 @@ To ship a **universal** (arm64 + x86_64) binary for Intel Macs you need **full
 Xcode** installed, then:
 
 ```sh
-UNIVERSAL=1 ./release.sh 7.6.0
+UNIVERSAL=1 ./scripts/release.sh 7.6.0
 ```
 
 ## `release.yml` is what actually ships the build
@@ -125,7 +125,7 @@ the asset and `brew install` fails its integrity check for everyone.
 If `release.sh` fails partway, the equivalent steps are:
 
 ```sh
-VERSION=7.6.0 bash build-app.sh
+VERSION=7.6.0 bash scripts/build-app.sh
 ditto -c -k --sequesterRsrc --keepParent build/NotificationNanny.app build/NotificationNanny-7.6.0.zip
 shasum -a 256 build/NotificationNanny-7.6.0.zip          # note the hash
 
