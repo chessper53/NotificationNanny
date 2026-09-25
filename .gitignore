@@ -4,6 +4,9 @@
 # JetBrains IDEs
 .idea/
 
+# VS Code
+.vscode/
+
 # Xcode
 build/
 DerivedData/

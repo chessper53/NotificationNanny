@@ -2,7 +2,7 @@
 # Kill, debug-build, reset Accessibility TCC, and relaunch NotificationNanny.
 set -euo pipefail
 
-cd "$(dirname "$0")"
+cd "$(dirname "$0")/.."
 
 APP_NAME="NotificationNanny"
 BUNDLE_ID="com.notificationnanny.app"

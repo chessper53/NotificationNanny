@@ -3,7 +3,7 @@
 #
 # Shared by dev.sh (debug) and build-app.sh (release) so the two cannot drift.
 # They did drift: dev.sh copied only Info.plist and AppIcon.icns, so every
-# ./dev.sh bundle silently ran without the menu-bar glyphs (falling back to an
+# ./scripts/dev.sh bundle silently ran without the menu-bar glyphs (falling back to an
 # SF Symbol) and without any localization, while build-app.sh copied both. The
 # two scripts still differ in how they *build* — that part is deliberate — but
 # from the binary onward they now produce identical bundles.

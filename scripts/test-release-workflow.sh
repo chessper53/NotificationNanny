@@ -3,7 +3,7 @@ set -euo pipefail
 
 workflow="$(cd "$(dirname "$0")/.." && pwd)/.github/workflows/release.yml"
 
-grep -qF 'run: UNIVERSAL=1 ./build-app.sh' "$workflow" || {
+grep -qF 'run: UNIVERSAL=1 ./scripts/build-app.sh' "$workflow" || {
   echo "release workflow must request a universal build" >&2
   exit 1
 }
