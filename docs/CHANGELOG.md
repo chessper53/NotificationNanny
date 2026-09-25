@@ -5,6 +5,11 @@ All notable changes to NotificationNanny are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+- **Test notifications show NotificationNanny's icon.** Without notification permission a test is sent through AppleScript, which macOS shows as coming from Script Editor, so the test banner carried Script Editor's icon. A custom banner now always uses NotificationNanny's icon for a test, and if notification permission was never answered, sending a test asks for it, so the system banner shows the right icon too.
+
 ## [8.0.2] — 2026-09-24
 
 ### Fixed
