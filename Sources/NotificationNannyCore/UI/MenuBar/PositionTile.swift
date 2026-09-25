@@ -402,8 +402,18 @@ package enum TestNotification {
             return
         }
         Task { @MainActor in
-            let status = await UNUserNotificationCenter.current().notificationSettings().authorizationStatus
-            guard status == .authorized else {
+            let center = UNUserNotificationCenter.current()
+            let status = await center.notificationSettings().authorizationStatus
+            var authorized = status == .authorized
+            if status == .notDetermined {
+                // Only the launch request has asked so far, and it went unanswered.
+                // Sending a test is an explicit request for a notification, so ask
+                // here: without permission the test goes through osascript, which
+                // macOS shows as Script Editor with Script Editor's icon.
+                authorized = (try? await center.requestAuthorization(options: [.alert, .sound])) ?? false
+            }
+            guard authorized else {
+                NannyLogger.shared.log("TestNotification: no notification permission, sent via osascript (shows as Script Editor)")
                 run(script: "display notification \"\(escapeAS(body))\" with title \"\(escapeAS(title))\"")
                 return
             }
