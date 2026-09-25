@@ -12,7 +12,9 @@ cask "notificationnanny" do
   app "NotificationNanny.app"
 
   postflight_steps do
-    run "/usr/bin/xattr", args: ["-d", "-r", "com.apple.quarantine", "{{appdir}}/NotificationNanny.app"]
+    run "/usr/bin/xattr",
+        args:         ["-d", "-r", "com.apple.quarantine", "{{appdir}}/NotificationNanny.app"],
+        must_succeed: false
   end
 
   zap trash: [
