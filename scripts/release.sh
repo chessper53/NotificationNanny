@@ -1,42 +1,68 @@
 #!/usr/bin/env bash
-# Build a release zip + print the SHA256 you need for the Homebrew Cask.
+# Create a NotificationNanny release.
 #
-# Usage:  ./scripts/release.sh 0.1.0
+# Usage: ./scripts/release.sh <version>   e.g.  ./scripts/release.sh 3.0.0
+#
+# What it does:
+#   1. Builds a release .app with the given version stamped in Info.plist
+#   2. Packages it into a ZIP (using ditto, which preserves code-signing xattrs)
+#   3. Computes sha256
+#   4. Creates a GitHub release + uploads the ZIP
+#   5. Updates Casks/notificationnanny.rb with the new version + sha256
+#   6. Commits and pushes so the Homebrew tap picks up the change immediately
 
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-VERSION="${1:?Usage: release.sh <version>}"
+VERSION="${1:?Usage: ./scripts/release.sh <version>  e.g.  ./scripts/release.sh 3.0.0}"
+TAG="v${VERSION}"
+ZIP_NAME="NotificationNanny-${VERSION}.zip"
+CASK_FILE="Casks/notificationnanny.rb"
 
-echo "==> Generating icon…"
-swift scripts/generate-icon.swift > /dev/null
+# Guard: require gh CLI
+if ! command -v gh &>/dev/null; then
+    echo "error: 'gh' CLI not found. Install with: brew install gh" >&2
+    exit 1
+fi
 
-echo "==> Building app…"
-./build-app.sh > /dev/null
+# Guard: no uncommitted changes (cask commit needs a clean tree)
+if ! git diff --quiet || ! git diff --cached --quiet; then
+    echo "error: uncommitted changes in working tree. Commit or stash them first." >&2
+    exit 1
+fi
 
-OUT="build/NotificationNanny-${VERSION}.zip"
-rm -f "${OUT}"
+# Guard: tag must not already exist
+if git rev-parse "${TAG}" &>/dev/null; then
+    echo "error: tag ${TAG} already exists locally. Delete it first if you're re-releasing." >&2
+    exit 1
+fi
 
-echo "==> Zipping app bundle…"
-ditto -ck --keepParent --rsrc build/NotificationNanny.app "${OUT}"
+echo "==> Building ${VERSION}…"
+VERSION="${VERSION}" bash scripts/build-app.sh
 
-SHA=$(shasum -a 256 "${OUT}" | awk '{print $1}')
-SIZE=$(stat -f%z "${OUT}")
+echo "==> Packaging ${ZIP_NAME}…"
+rm -f "build/${ZIP_NAME}"
+ditto -c -k --sequesterRsrc --keepParent "build/NotificationNanny.app" "build/${ZIP_NAME}"
 
-cat <<EOF
+SHA=$(shasum -a 256 "build/${ZIP_NAME}" | awk '{print $1}')
+echo "    sha256: ${SHA}"
 
-==> Release artefact ready
-    File:   ${OUT}
-    Size:   ${SIZE} bytes
-    SHA256: ${SHA}
+echo "==> Publishing GitHub release ${TAG}…"
+gh release create "${TAG}" "build/${ZIP_NAME}" \
+    --title "NotificationNanny ${VERSION}" \
+    --generate-notes \
+    --latest
 
-Next steps:
-  1. Create a GitHub release tagged v${VERSION} and upload ${OUT}.
-  2. Update Casks/notificationnanny.rb:
-        version  "${VERSION}"
-        sha256   "${SHA}"
-        url      "https://github.com/<your-user>/NotificationNanny/releases/download/v${VERSION}/NotificationNanny-${VERSION}.zip"
-  3. Publish the cask in a tap, e.g.
-        brew tap <your-user>/notificationnanny
-        brew install --cask <your-user>/notificationnanny/notificationnanny
-EOF
+echo "==> Updating ${CASK_FILE}…"
+sed -i '' \
+    -e "s/version \"[^\"]*\"/version \"${VERSION}\"/" \
+    -e "s/sha256 \"[^\"]*\"/sha256 \"${SHA}\"/" \
+    "${CASK_FILE}"
+
+git add "${CASK_FILE}"
+git commit -m "cask: bump to ${TAG}"
+git push
+
+echo ""
+echo "Done! NotificationNanny ${VERSION} is live."
+echo "Users upgrade with:  brew update && brew upgrade --cask notificationnanny"
