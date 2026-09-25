@@ -2,7 +2,7 @@
   <img src="site/assets/icon-512.png" alt="NotificationNanny app icon" width="96" height="96" />
 </p>
 
-<h1 align="center">NotificationNanny</h1>
+<h1 align="center">NotificationNanny - Now on MacOS 27!</h1>
 
 <p align="center">
   Position, scale, tint, and animate notification banners, globally or per app.
