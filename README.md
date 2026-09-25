@@ -22,8 +22,9 @@
   <img src="https://img.shields.io/badge/macOS-14%2B-3d4450?style=flat" alt="macOS 14+" />
 </p>
 
-NotificationNanny is a menu bar app for macOS 14 Sonoma and later, tested through macOS 27. macOS puts every notification banner in the same corner and gives you no way to move it. NotificationNanny does.
+<img width="699" height="234" alt="image" src="https://github.com/user-attachments/assets/ffc1b459-e5e7-475d-ad96-a6d5531338ae" />
 
+NotificationNanny is a menu bar app for macOS 14 Sonoma and later, tested through macOS 27. macOS puts every notification banner in the same corner and gives you no way to move it. NotificationNanny does.
 - **Any corner, any display.** Nine anchor points, with separate settings for each screen.
 - **Your look.** Scale banners from 50% to 250%, tint them, or swap in a custom styled banner.
 - **Rules per app.** Named groups give specific apps their own position, display, scale, and tint.
@@ -46,18 +47,6 @@ Or install manually:
 3. Click the bell icon in your menu bar and grant Accessibility permission.
 
 You will need to grant Accessibility permission again after every update. macOS ties that permission to the exact build it was granted to, so a new version arrives as an unrecognised app.
-
-<!--
-  Demo video. To swap the still below for the clip:
-  drag the .mp4 into any GitHub issue comment, copy the
-  https://github.com/user-attachments/... URL it returns, and paste it on its
-  own line here. GitHub renders that URL as an inline player. Keep the <img>
-  as-is underneath, so the page still reads where video will not load.
--->
-
-<p align="center">
-  <img width="850" height="1044" alt="NotificationNanny settings window" src="https://github.com/user-attachments/assets/bd28d152-2d06-40ca-b032-e13373993e7a" />
-</p>
 
 ## What it does
 
