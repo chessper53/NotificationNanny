@@ -8,13 +8,13 @@
 # Output: ./build/NotificationNanny.app
 #
 # Usage:
-#   ./build-app.sh           # build only
-#   ./build-app.sh --run     # build, then open the app
-#   ./build-app.sh --install # build, then copy to /Applications
+#   ./scripts/build-app.sh           # build only
+#   ./scripts/build-app.sh --run     # build, then open the app
+#   ./scripts/build-app.sh --install # build, then copy to /Applications
 
 set -euo pipefail
 
-cd "$(dirname "$0")"
+cd "$(dirname "$0")/.."
 
 APP_NAME="NotificationNanny"
 BUNDLE_ID="com.notificationnanny.app"

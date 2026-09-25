@@ -8,7 +8,7 @@
 #
 # Requirements:
 #   - NotificationNanny already built and running, with Accessibility permission
-#     already granted (./dev.sh, or --launch below).
+#     already granted (./scripts/dev.sh, or --launch below).
 #   - One-time Automation permission for whichever terminal runs this script, to
 #     let it drive the app's UI via System Events (System Settings → Privacy &
 #     Security → Automation → <your terminal> → System Events). macOS prompts
@@ -34,14 +34,14 @@ FILES=(position banner exceptions presets general help)
 # AXStaticText either (confirmed by dumping both) — .buttonStyle(.plain) with
 # a custom HStack{Image;Text} label just doesn't surface searchable text here.
 # So: click by fixed position in the sidebar VStack instead. Order is exactly
-# SettingsView.swift's sidebarItem(...) call order: Position, Exceptions,
-# Banner, Presets, General, Backup, Diagnostics, Help (then Disable/Quit) — if
+# SettingsView.swift's sidebarItem(...) call order: Position, Banner,
+# Exceptions, Presets, General, Diagnostics, Help (then Disable/Quit) — if
 # that file's sidebar order ever changes, update this mapping to match.
-INDICES=(1 3 2 4 5 8)
+INDICES=(1 2 3 4 5 7)
 
 if [[ "${1:-}" == "--launch" ]]; then
     echo "==> Building and launching..."
-    ./dev.sh
+    ./scripts/dev.sh
     sleep 3
 fi
 
