@@ -22,9 +22,18 @@
   <img src="https://img.shields.io/badge/macOS-14%2B-3d4450?style=flat" alt="macOS 14+" />
 </p>
 
-<img width="699" height="234" alt="image" src="https://github.com/user-attachments/assets/ffc1b459-e5e7-475d-ad96-a6d5531338ae" />
+<br />
+
+<p align="center">
+  <img src="docs/assets/readme-banner.png" width="699" alt="A tinted NotificationNanny banner placed at the bottom center of the screen, just above the Dock" />
+  <br />
+  <sub>A tinted banner, moved from the top right corner to sit just above the Dock.</sub>
+</p>
+
+<br />
 
 NotificationNanny is a menu bar app for macOS 14 Sonoma and later, tested through macOS 27. macOS puts every notification banner in the same corner and gives you no way to move it. NotificationNanny does.
+
 - **Any corner, any display.** Nine anchor points, with separate settings for each screen.
 - **Your look.** Scale banners from 50% to 250%, tint them, or swap in a custom styled banner.
 - **Rules per app.** Named groups give specific apps their own position, display, scale, and tint.
