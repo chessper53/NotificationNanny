@@ -5,7 +5,6 @@
 <h1 align="center">NotificationNanny</h1>
 
 <p align="center">
-  <b>Don't let macOS decide where your notifications go.</b><br />
   Position, scale, tint, and animate notification banners, globally or per app.
 </p>
 
