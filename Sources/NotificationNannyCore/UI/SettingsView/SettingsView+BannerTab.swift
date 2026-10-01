@@ -40,7 +40,7 @@ struct BannerTabView: View {
                 }
             }
             .padding(12)
-            .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
+            .background(Color.nannyRaised(0.06), in: RoundedRectangle(cornerRadius: 10))
 
             VStack(alignment: .leading, spacing: 10) {
                 HStack {
@@ -56,7 +56,7 @@ struct BannerTabView: View {
                             Circle().fill(color).frame(width: 22, height: 22)
                                 .overlay(Circle().strokeBorder(
                                     settings.hasBannerColor && isColorMatch(color, settings.bannerColor)
-                                        ? Color.white : Color.clear,
+                                        ? Color.nannyStrong : Color.clear,
                                     lineWidth: 2))
                         }
                         .buttonStyle(.plain).help(name)
@@ -75,7 +75,7 @@ struct BannerTabView: View {
                     .font(.caption2).foregroundStyle(.tertiary)
             }
             .padding(12)
-            .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
+            .background(Color.nannyRaised(0.06), in: RoundedRectangle(cornerRadius: 10))
 
             VStack(alignment: .leading, spacing: 10) {
                 HStack {
@@ -104,7 +104,7 @@ struct BannerTabView: View {
                     .font(.caption2).foregroundStyle(.tertiary)
             }
             .padding(12)
-            .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
+            .background(Color.nannyRaised(0.06), in: RoundedRectangle(cornerRadius: 10))
 
             VStack(alignment: .leading, spacing: 10) {
                 HStack {
@@ -125,10 +125,10 @@ struct BannerTabView: View {
 
                 AnimationPreviewPane(animation: settings.bannerAnimation, replay: previewReplay,
                                      tint: settings.hasBannerColor ? settings.bannerColor : .clear,
-                                     textColor: settings.effectiveBannerTextColor ?? .white)
+                                     textColor: settings.effectiveBannerTextColor ?? .primary)
                     .frame(height: 64)
                     .frame(maxWidth: .infinity)
-                    .background(Color.black.opacity(0.22), in: RoundedRectangle(cornerRadius: 10))
+                    .background(Color.nannyInset(0.22), in: RoundedRectangle(cornerRadius: 10))
                     .clipShape(RoundedRectangle(cornerRadius: 10))
                     .contentShape(Rectangle())
                     .onTapGesture { previewReplay &+= 1 }
@@ -145,7 +145,7 @@ struct BannerTabView: View {
                     .font(.caption2).foregroundStyle(.tertiary)
             }
             .padding(12)
-            .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
+            .background(Color.nannyRaised(0.06), in: RoundedRectangle(cornerRadius: 10))
 
             // Per-group overrides used to be listed here, one row per group. They
             // now live with the rest of that group's settings in the Exceptions
@@ -187,7 +187,7 @@ struct BannerTabView: View {
             }
             .padding(.horizontal, 10).padding(.vertical, 7)
             .frame(maxWidth: .infinity)
-            .background(selected ? Color.nannyAccent.opacity(0.9) : Color.white.opacity(0.06),
+            .background(selected ? Color.nannyAccent.opacity(0.9) : Color.nannyRaised(0.06),
                         in: RoundedRectangle(cornerRadius: 8))
             .foregroundStyle(selected ? Color.white : Color.secondary)
         }
@@ -208,7 +208,9 @@ private struct AnimationPreviewPane: View {
     let animation: BannerAnimation
     let replay: Int
     var tint: Color = .clear
-    var textColor: Color = .white
+    /// `.primary` unless the user picked a text colour, so the sample reads like the
+    /// real banner: dark lines on a light banner in Light Mode, light lines in Dark Mode.
+    var textColor: Color = .primary
 
     @State private var animX: CGFloat = 0
     @State private var animY: CGFloat = 0
@@ -230,7 +232,7 @@ private struct AnimationPreviewPane: View {
     private var sample: some View {
         HStack(spacing: 8) {
             RoundedRectangle(cornerRadius: 6, style: .continuous)
-                .fill(Color.white.opacity(0.25)).frame(width: 26, height: 26)
+                .fill(Color.nannyRaised(0.25)).frame(width: 26, height: 26)
             VStack(alignment: .leading, spacing: 4) {
                 RoundedRectangle(cornerRadius: 3).fill(textColor.opacity(0.85)).frame(width: 64, height: 6)
                 RoundedRectangle(cornerRadius: 3).fill(textColor.opacity(0.55)).frame(width: 104, height: 6)
@@ -241,7 +243,8 @@ private struct AnimationPreviewPane: View {
         .frame(width: 220)
         .background {
             ZStack {
-                Color.black.opacity(0.5)
+                // The system banner is dark glass in Dark Mode and light glass in Light Mode.
+                Color.nannyAdaptive(light: .white.withAlphaComponent(0.85), dark: .black.withAlphaComponent(0.5))
                 if tint != .clear { tint.opacity(0.45) }
             }
         }

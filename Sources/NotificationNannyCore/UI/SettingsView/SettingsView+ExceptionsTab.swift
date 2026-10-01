@@ -27,7 +27,7 @@ struct ExceptionsTabView: View {
         VStack(alignment: .leading, spacing: 14) {
             LocalizedText("Create groups of apps and give each group its own rules: position, screen, banner type, and scale. Apps not in any group use the defaults.")
                 .font(.callout)
-                .foregroundStyle(Color(white: 0.55))
+                .foregroundStyle(Color.nannyMuted(0.55))
                 .fixedSize(horizontal: false, vertical: true)
 
             HStack(alignment: .center, spacing: 8) {
@@ -138,7 +138,7 @@ struct ExceptionsTabView: View {
             .buttonStyle(.borderedProminent).controlSize(.small)
         }
         .padding(14)
-        .background(Color.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 10))
+        .background(Color.nannyRaised(0.05), in: RoundedRectangle(cornerRadius: 10))
     }
 
     /// Apps in the group, then everything else.
@@ -161,7 +161,7 @@ struct ExceptionsTabView: View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
                 LocalizedText("Assigned Apps")
-                    .font(.footnote.weight(.semibold)).foregroundStyle(Color(white: 0.45))
+                    .font(.footnote.weight(.semibold)).foregroundStyle(Color.nannyMuted(0.45))
                 Text("\(assigned.count)")
                     .font(.caption2.monospacedDigit().weight(.medium))
                     .padding(.horizontal, 5).padding(.vertical, 1)
@@ -183,7 +183,7 @@ struct ExceptionsTabView: View {
                         }
                     }
                     .padding(.horizontal, 6).padding(.vertical, 3)
-                    .background(Color.white.opacity(0.06), in: Capsule())
+                    .background(Color.nannyRaised(0.06), in: Capsule())
                 }
             }
 
@@ -219,7 +219,7 @@ struct ExceptionsTabView: View {
                 .padding(.vertical, 4)
             }
             .frame(minHeight: 60, maxHeight: 160)
-            .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 6))
+            .background(Color.nannyRaised(0.06), in: RoundedRectangle(cornerRadius: 6))
         }
     }
 
@@ -291,7 +291,7 @@ struct ExceptionsTabView: View {
         .background(isSelected ? Color.nannyAccent : Color.clear)
         .foregroundStyle(isSelected ? Color.white : Color.primary)
         .clipShape(Capsule())
-        .overlay(Capsule().stroke(isSelected ? Color.clear : Color.white.opacity(0.15), lineWidth: 1))
+        .overlay(Capsule().stroke(isSelected ? Color.clear : Color.nannyRaised(0.15), lineWidth: 1))
     }
 
     private func commitNewGroup() {

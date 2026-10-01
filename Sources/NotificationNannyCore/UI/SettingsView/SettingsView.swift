@@ -92,7 +92,7 @@ package struct SettingsView: View {
                         .padding(.horizontal, 10)
                         .padding(.vertical, 7)
                         .contentShape(Rectangle())
-                        .foregroundStyle(Color(white: 0.45))
+                        .foregroundStyle(Color.nannyMuted(0.45))
                     }
                     .buttonStyle(.plain)
                     .keyboardShortcut("q")
@@ -124,7 +124,7 @@ package struct SettingsView: View {
                 .padding(8)
                 .frame(width: 150)
                 .frame(maxHeight: .infinity)
-                .background(Color.black.opacity(0.5))
+                .background(Color.nannySidebar)
 
                 Divider()
 
@@ -146,10 +146,9 @@ package struct SettingsView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color(white: 0.10))
+        .background(Color.nannyWindow)
         .background(WindowSizeLock(width: 660, height: 640))
         .tint(Color.nannyAccent)
-        .preferredColorScheme(.dark)
         .onAppear {
             repositioner.refreshAccessibilityStatus()
             if repositioner.hasAccessibilityPermission, !repositioner.isObserving {
@@ -179,7 +178,7 @@ package struct SettingsView: View {
                 activeTab == tab ? Color.nannyAccent.opacity(0.25) : Color.clear,
                 in: RoundedRectangle(cornerRadius: 8)
             )
-            .foregroundStyle(activeTab == tab ? Color.white : Color(white: 0.55))
+            .foregroundStyle(activeTab == tab ? Color.nannyStrong : Color.nannyMuted(0.55))
         }
         .buttonStyle(.plain)
     }
@@ -197,7 +196,7 @@ package struct SettingsView: View {
                 if !granted {
                     LocalizedText("NotificationNanny needs this to reposition and intercept notification banners.")
                         .font(.caption2)
-                        .foregroundStyle(Color(white: 0.65))
+                        .foregroundStyle(Color.nannyMuted(0.65))
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
@@ -246,7 +245,7 @@ package struct SettingsView: View {
                     if let last = brewUpdater.outputLines.last {
                         Text(last)
                             .font(.system(size: 10, design: .monospaced))
-                            .foregroundStyle(Color(white: 0.5))
+                            .foregroundStyle(Color.nannyMuted(0.5))
                             .lineLimit(1)
                     }
                 case .succeeded:
@@ -296,7 +295,7 @@ package struct SettingsView: View {
                 } label: {
                     Image(systemName: "xmark").font(.caption2.weight(.bold))
                 }
-                .buttonStyle(.plain).foregroundStyle(Color(white: 0.5))
+                .buttonStyle(.plain).foregroundStyle(Color.nannyMuted(0.5))
             }
         }
         .padding(.horizontal, 16).padding(.vertical, 10)
