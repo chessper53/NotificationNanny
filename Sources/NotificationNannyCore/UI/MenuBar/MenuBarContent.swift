@@ -11,6 +11,40 @@ extension Color {
             ? NSColor(srgbRed: 0xE8 / 255, green: 0x83 / 255, blue: 0x3A / 255, alpha: 1)
             : NSColor(srgbRed: 0xA8 / 255, green: 0x55 / 255, blue: 0x14 / 255, alpha: 1)
     })
+
+    /// Picks a colour by the appearance the view is drawn in. The settings tokens below
+    /// keep their original dark values exactly, so only light mode gains new colours.
+    static func nannyAdaptive(light: NSColor, dark: NSColor) -> Color {
+        Color(nsColor: NSColor(name: nil) { appearance in
+            appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua ? dark : light
+        })
+    }
+
+    static let nannyWindow = nannyAdaptive(light: NSColor(white: 0.95, alpha: 1),
+                                           dark: NSColor(white: 0.10, alpha: 1))
+    static let nannySidebar = nannyAdaptive(light: .black.withAlphaComponent(0.04),
+                                            dark: .black.withAlphaComponent(0.5))
+    /// Text on a selected sidebar item or swatch ring: white on dark, label colour on light.
+    static let nannyStrong = nannyAdaptive(light: .labelColor, dark: .white)
+
+    /// Cards and hairlines: a white lift on dark, a lighter black shade on light, since
+    /// the same opacity of black reads much heavier against a light window.
+    static func nannyRaised(_ opacity: CGFloat) -> Color {
+        nannyAdaptive(light: .black.withAlphaComponent(opacity * 0.7),
+                      dark: .white.withAlphaComponent(opacity))
+    }
+
+    /// Recessed wells such as log views: black on both, much fainter on light.
+    static func nannyInset(_ opacity: CGFloat) -> Color {
+        nannyAdaptive(light: .black.withAlphaComponent(opacity * 0.35),
+                      dark: .black.withAlphaComponent(opacity))
+    }
+
+    /// Muted grey text. The fixed dark greys drop under 3:1 on a light window, so light
+    /// mode uses the system secondary label colour instead.
+    static func nannyMuted(_ darkWhite: CGFloat) -> Color {
+        nannyAdaptive(light: .secondaryLabelColor, dark: NSColor(white: darkWhite, alpha: 1))
+    }
 }
 
 package struct MenuBarContent: View {

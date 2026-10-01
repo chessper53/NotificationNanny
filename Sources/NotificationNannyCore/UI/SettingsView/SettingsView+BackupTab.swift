@@ -12,7 +12,7 @@ struct BackupTabView: View {
         VStack(alignment: .leading, spacing: 14) {
             LocalizedText("Export your settings to a file or import a previously saved backup. Everything is included: positions, scale, per-app rules, presets, and general toggles.")
                 .font(.callout)
-                .foregroundStyle(Color(white: 0.55))
+                .foregroundStyle(Color.nannyMuted(0.55))
                 .fixedSize(horizontal: false, vertical: true)
 
             VStack(spacing: 0) {
@@ -44,7 +44,7 @@ struct BackupTabView: View {
                 }
                 .buttonStyle(.plain)
             }
-            .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
+            .background(Color.nannyRaised(0.06), in: RoundedRectangle(cornerRadius: 10))
             .confirmationDialog(loc.string("Replace all settings?"),
                                 isPresented: $showImportConfirmation,
                                 titleVisibility: .visible) {

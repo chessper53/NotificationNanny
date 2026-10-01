@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Settings follow Light Mode** (#37). The Settings window was always dark, whatever the system appearance. It now follows it: a light window, sidebar and cards in Light Mode, with the same graphite look as before in Dark Mode. Text that was a fixed light grey (muted labels, the activity log) uses the system's label colours in Light Mode, so it stays readable, and the animation preview shows a light banner, as macOS does.
+
 ### Fixed
 - **Test notifications show NotificationNanny's icon.** Without notification permission a test is sent through AppleScript, which macOS shows as coming from Script Editor, so the test banner carried Script Editor's icon. A custom banner now always uses NotificationNanny's icon for a test, and if notification permission was never answered, sending a test asks for it, so the system banner shows the right icon too.
 
