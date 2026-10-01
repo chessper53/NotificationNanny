@@ -147,7 +147,7 @@ package struct SettingsView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color.nannyWindow)
-        .background(WindowSizeLock(width: 660, height: 640))
+        .background(WindowAppearance(appearance: settings.settingsAppearance.nsAppearance))
         .tint(Color.nannyAccent)
         .onAppear {
             repositioner.refreshAccessibilityStatus()
@@ -309,22 +309,29 @@ package struct SettingsView: View {
 }
 
 // Bypasses SwiftUI's content-driven window sizing by reaching into the NSWindow directly.
-private struct WindowSizeLock: NSViewRepresentable {
-    let width: CGFloat
-    let height: CGFloat
+/// Puts the Settings window in the chosen appearance. On the window rather than via
+/// `.preferredColorScheme`, which does not reliably go back to following macOS once
+/// it has been set, and which would leave AppKit drawn parts (title bar, menus) behind.
+///
+/// This replaces a `WindowSizeLock` that pinned min and max size to 660x640 every
+/// time the view appeared. 8.0.0 made the window resizable in AppCoordinator but
+/// left that lock here, so the two fought over the window's size.
+private struct WindowAppearance: NSViewRepresentable {
+    let appearance: NSAppearance?
 
-    func makeNSView(context: Context) -> NSView {
-        let view = NSView()
-        DispatchQueue.main.async {
-            guard let window = view.window else { return }
-            let size = NSSize(width: width, height: height)
-            window.minSize = size
-            window.maxSize = size
-            window.setContentSize(size)
-        }
-        return view
+    func makeNSView(context: Context) -> Probe { Probe() }
+
+    func updateNSView(_ probe: Probe, context: Context) {
+        probe.target = appearance
+        probe.window?.appearance = appearance
     }
 
-    func updateNSView(_ nsView: NSView, context: Context) {}
+    final class Probe: NSView {
+        var target: NSAppearance?
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            window?.appearance = target
+        }
+    }
 }
 

@@ -33,6 +33,20 @@ struct GeneralTabView: View {
                 .padding(.horizontal, 14).padding(.vertical, 10)
             }
 
+            section("Appearance") {
+                HStack {
+                    LocalizedText("Settings window").font(.callout)
+                    Spacer()
+                    Picker("", selection: $settings.settingsAppearance) {
+                        ForEach(SettingsAppearance.allCases) { mode in
+                            Text(loc.string(mode.labelKey)).tag(mode)
+                        }
+                    }
+                    .labelsHidden().pickerStyle(.segmented).controlSize(.small).fixedSize()
+                }
+                .padding(.horizontal, 14).padding(.vertical, 10)
+            }
+
             section("Startup") {
                 toggleRow("Launch at login", isOn: Binding(
                     get: { launchAtLogin.isEnabled },
