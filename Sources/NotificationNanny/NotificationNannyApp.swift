@@ -188,6 +188,8 @@ final class AppCoordinator: NSObject, ObservableObject, NSApplicationDelegate, N
         return NSScreen.screens.first { $0.frame.contains(mouse) }
     }
 
+    static let settingsDefaultSize = NSSize(width: 640, height: 480)
+
     func openSettings(on screen: NSScreen? = nil) {
         if let win = settingsWindow {
             presentWindow(win, on: screen)
@@ -198,6 +200,11 @@ final class AppCoordinator: NSObject, ObservableObject, NSApplicationDelegate, N
             .environmentObject(repositioner)
             .environmentObject(launchAtLogin)
         let hosting = NSHostingController(rootView: rootView)
+        // The window's size is AppKit's: the default below, minSize, and whatever
+        // the user saved. Left to its default, the hosting controller resizes the
+        // window to the SwiftUI content's preferred size, which for a scrolling tab
+        // is its full height, so the window opened as tall as the screen or taller.
+        hosting.sizingOptions = []
         let window = NSWindow(contentViewController: hosting)
         window.title = "NotificationNanny Settings"
         // Resizable, with only a floor. It was pinned to exactly 660x640 by
@@ -206,13 +213,19 @@ final class AppCoordinator: NSObject, ObservableObject, NSApplicationDelegate, N
         // dead space nobody could reclaim. The content pane is already inside a
         // ScrollView, so shrinking scrolls rather than clips.
         window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
-        window.setContentSize(NSSize(width: 660, height: 560))
+        // A compact default; every tab scrolls, so it never needs to open tall.
+        window.setContentSize(Self.settingsDefaultSize)
         window.minSize = NSSize(width: 620, height: 440)
         window.isReleasedWhenClosed = false
         window.center()
         // Keeps whatever size the user settles on across launches. Set after
         // center() so a stored frame wins and a first run stays centred.
-        window.setFrameAutosaveName("NotificationNannySettingsWindow")
+        //
+        // Renamed from "NotificationNannySettingsWindow": frames stored under the
+        // old name were often far taller than any tab needs, saved on a tall
+        // display while a leftover size lock in SettingsView fought the resizing.
+        // A new name gives everyone the compact default once.
+        window.setFrameAutosaveName("NotificationNannySettings")
         settingsWindow = window
         presentWindow(window, on: screen)
     }

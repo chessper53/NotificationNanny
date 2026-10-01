@@ -122,9 +122,9 @@ struct ExceptionsTabView: View {
                 }
             }
 
-            // Sized so the whole group panel — preview, appearance, app list and
-            // the test button — clears the fixed 640pt window even while the
-            // accessibility banner is taking a strip off the top.
+            // Kept small so the group panel (preview, appearance, app list and the
+            // test button) stays compact. The window is resizable and the pane
+            // scrolls, so on a short window the rest is a scroll away.
             PlacementEditor(screen: exScreen, placement: placementBinding,
                             maxWidth: 408, maxHeight: 148)
 

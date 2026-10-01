@@ -35,6 +35,7 @@ package final class AppSettings: ObservableObject {
         static let hideMenuBarIcon      = "hideMenuBarIcon"
         static let snoozedUntil         = "snoozedUntil"
         static let redactBannerContent  = "redactBannerContent"
+        static let settingsAppearance   = "settingsAppearance"
     }
 
     private static let defaultKnownAppsFileURL: URL = {
@@ -141,6 +142,12 @@ package final class AppSettings: ObservableObject {
 
     @Published package var hideMenuBarIcon: Bool {
         didSet { defaults.set(hideMenuBarIcon, forKey: Key.hideMenuBarIcon) }
+    }
+
+    /// A preference about this app's own window, like `hideMenuBarIcon`, so it is
+    /// not part of backups or presets.
+    @Published package var settingsAppearance: SettingsAppearance {
+        didSet { defaults.set(settingsAppearance.rawValue, forKey: Key.settingsAppearance) }
     }
 
     package var bannerColor: Color {
@@ -353,6 +360,8 @@ package final class AppSettings: ObservableObject {
             self.bannerAnimation = .default
         }
         self.hideMenuBarIcon = (defaults.object(forKey: Key.hideMenuBarIcon) as? Bool) ?? false
+        self.settingsAppearance = defaults.string(forKey: Key.settingsAppearance)
+            .flatMap(SettingsAppearance.init(rawValue:)) ?? .system
         self.targetDisplayID    = CGDirectDisplayID(max(0, defaults.integer(forKey: Key.targetDisplay)))
 
         if let data = defaults.data(forKey: Key.placements),
