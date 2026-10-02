@@ -39,6 +39,17 @@ final class AppNameResolver {
         return nil
     }
 
+    /// Every banner in the window, not just the first. Since macOS 26 they all
+    /// share one host window, so banners that are up together are siblings in
+    /// the same tree, newest first.
+    func findBannerElements(in el: AXUIElement, depth: Int = 0) -> [AXUIElement] {
+        guard depth < 7 else { return [] }
+        if let sr = el.stringAttribute(kAXSubroleAttribute as String), Self.bannerSubroles.contains(sr) {
+            return [el]
+        }
+        return el.children().flatMap { findBannerElements(in: $0, depth: depth + 1) }
+    }
+
     private func nameFromElement(_ el: AXUIElement) -> String? {
         guard let str = el.stringAttribute("AXAttributedDescription"),
               let first = str.components(separatedBy: ", ").first else { return nil }

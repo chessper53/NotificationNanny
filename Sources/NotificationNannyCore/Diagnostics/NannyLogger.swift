@@ -23,10 +23,18 @@ package final class NannyLogger: ObservableObject {
     @Published package private(set) var entries: [LogEntry] = []
 
     private let cap = 1000
+    /// NN_LOG_STDERR=1 mirrors the session log to stderr, for scripted runs
+    /// (scripts/notify-lab) that can't open the in-app log.
+    private let mirrorToStderr = ProcessInfo.processInfo.environment["NN_LOG_STDERR"] == "1"
     private init() {}
 
     package func log(_ message: String, level: LogEntry.Level = .info, tag: String = "") {
         entries.append(LogEntry(timestamp: Date(), level: level, tag: tag, message: message))
+        if mirrorToStderr {
+            let tagPart = tag.isEmpty ? "" : "[\(tag)] "
+            let stamp = String(format: "%.3f", Date().timeIntervalSince1970.truncatingRemainder(dividingBy: 1000))
+            FileHandle.standardError.write(Data("\(stamp) [\(level.rawValue)] \(tagPart)\(message)\n".utf8))
+        }
         if entries.count > cap { entries.removeFirst(entries.count - cap) }
     }
 
