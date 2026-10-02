@@ -50,6 +50,12 @@ final class AppNameResolver {
         return el.children().flatMap { findBannerElements(in: $0, depth: depth + 1) }
     }
 
+    /// The app a single banner belongs to. `appName(for:)` answers for a window,
+    /// which since macOS 26 holds every banner that is up.
+    func appName(ofBanner el: AXUIElement) -> String? {
+        nameFromElement(el)
+    }
+
     private func nameFromElement(_ el: AXUIElement) -> String? {
         guard let str = el.stringAttribute("AXAttributedDescription"),
               let first = str.components(separatedBy: ", ").first else { return nil }

@@ -114,7 +114,9 @@ package final class NotificationRepositioner: ObservableObject {
         overlayContent.removeAll()
         dismissedKeys.removeAll()
         dismissTimers.cancelAll()
-        customBannerID.removeAll()
+        customPiles.removeAll()
+        closedBannerIDs.removeAll()
+        unreadableBannerSweeps.removeAll()
         loggedSkippedKeys.removeAll()
         resolver.invalidateAll()
         iconCache.invalidateAll()
@@ -148,7 +150,7 @@ package final class NotificationRepositioner: ObservableObject {
             generation.removeValue(forKey: key)
             overlayContent.removeValue(forKey: key)
             dismissedKeys.remove(key)
-            customBannerID.removeValue(forKey: key)
+            dismissCustomPile(key)
             loggedSkippedKeys.remove(key)
             if let bound = testBannerWindow, CFEqual(bound, element) { testBannerWindow = nil }
             stopScaleHammer()
@@ -168,9 +170,7 @@ package final class NotificationRepositioner: ObservableObject {
             // banner showed another app's icon, or the bell if that first name had none.
             resolver.invalidateAll()
             axLog.debug("handleAXEvent: layoutChanged — scheduling sweep")
-            layoutChangeDebouncer.schedule(delay: 0.05) { [weak self] in
-                self?.repositionVisibleWindows()
-            }
+            trackLayoutChange()
             return
         }
 
@@ -215,7 +215,24 @@ package final class NotificationRepositioner: ObservableObject {
     }
 
     private let destroySweepDebouncer = Debouncer()
-    private let layoutChangeDebouncer = Debouncer()
+    private var layoutTrackItems: [DispatchWorkItem] = []
+
+    /// Sweeps while macOS animates a layout change. A banner joining a pile slides
+    /// in at the top and pushes the others down over about half a second, but
+    /// only the start of that raises an event, so one sweep sees the pile half
+    /// moved and nothing corrects it afterwards. A bottom-anchored pile was left
+    /// hanging off the screen that way. Following the slide keeps the lowest
+    /// banner in place; a new event restarts the sequence.
+    private func trackLayoutChange() {
+        layoutTrackItems.forEach { $0.cancel() }
+        layoutTrackItems.removeAll(keepingCapacity: true)
+        for delay in Self.layoutTrackDelays {
+            let item = DispatchWorkItem { [weak self] in self?.repositionVisibleWindows() }
+            layoutTrackItems.append(item)
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: item)
+        }
+    }
+    private static let layoutTrackDelays: [Double] = [0.05, 0.15, 0.25, 0.35, 0.5, 0.75]
     private let settingsSettleDebouncer = Debouncer()
     private var burstWorkItems: [DispatchWorkItem] = []
 
@@ -238,6 +255,7 @@ package final class NotificationRepositioner: ObservableObject {
         if let settings, !settings.isActive {
             customBannerManager.dismissAll()
             overlayContent.removeAll()
+            customPiles.removeAll()
         }
         repositionVisibleWindows()
         settingsSettleDebouncer.schedule(delay: 0.25) { [weak self] in
@@ -257,6 +275,7 @@ package final class NotificationRepositioner: ObservableObject {
         if let settings, !settings.isActive {
             customBannerManager.dismissAll()
             overlayContent.removeAll()
+            customPiles.removeAll()
         }
         burstWorkItems.forEach { $0.cancel() }
         burstWorkItems.removeAll(keepingCapacity: true)
@@ -280,9 +299,11 @@ package final class NotificationRepositioner: ObservableObject {
             return
         }
         log.debug("repositionVisibleWindows: \(windows.count) window(s) from ncApp")
-        if !dismissTimers.armedIDs.isEmpty {
-            let present = windows.flatMap { resolver.findBannerElements(in: $0) }.compactMap(\.identifier)
-            dismissTimers.prune(keeping: Set(present))
+        if !dismissTimers.armedIDs.isEmpty || !closedBannerIDs.isEmpty || !unreadableBannerSweeps.isEmpty {
+            let present = Set(windows.flatMap { resolver.findBannerElements(in: $0) }.compactMap(\.identifier))
+            dismissTimers.prune(keeping: present)
+            closedBannerIDs.formIntersection(present)
+            unreadableBannerSweeps = unreadableBannerSweeps.filter { present.contains($0.key) }
         }
         let baseTargets: [(AXUIElement, RepositionTarget)] = windows.compactMap { w in
             guard let t = targetOrigin(for: w, stackIndex: 0) else { return nil }
@@ -382,10 +403,14 @@ package final class NotificationRepositioner: ObservableObject {
     /// (one window per banner, before macOS 26); see `closeBanner(id:reason:)`.
     private var dismissedKeys: Set<CFHashCode> = []
     private let dismissTimers = BannerDismissTimers()
-    /// The banner, by identifier, that the custom path last handled in each NC
-    /// window. Since macOS 26 the host window outlives its banners, so a different
-    /// identifier in the same window is a new banner that needs its own overlay.
-    private var customBannerID: [CFHashCode: String] = [:]
+    /// Custom overlays per NC window, by banner identifier; see `syncCustomPile`.
+    private var customPiles: [CFHashCode: [String]] = [:]
+    /// Banners closed through their Close action. macOS takes a moment to remove
+    /// them, and a sweep in that moment must not give them a fresh overlay.
+    private var closedBannerIDs: Set<String> = []
+    /// Sweeps a banner's content could not be read in, so it gets a plain overlay
+    /// rather than none.
+    private var unreadableBannerSweeps: [String: Int] = [:]
     private var loggedSkippedKeys: Set<CFHashCode> = []
     /// targetOrigin runs many times per sweep; log the host's stack only when it changes.
     private var lastLoggedHostBannerCount = 1
@@ -621,8 +646,8 @@ package final class NotificationRepositioner: ObservableObject {
         let isOverlay = size.width > 700 || size.height > 400
         let bannerOffset: CGPoint
         let bannerSz: CGSize
-        // How far the lowest banner in the host reaches below the first one.
-        var stackOverhang: CGFloat = 0
+        // Height of the pile the first banner heads; see below.
+        var stackHeight: CGFloat = 0
 
         if isOverlay {
             guard let bannerEl = findBannerElement(in: window) else {
@@ -644,29 +669,24 @@ package final class NotificationRepositioner: ObservableObject {
             bannerOffset = CGPoint(x: offsetX, y: offsetY)
             bannerSz = bSz
 
-            // Several banners at once share this host, and macOS lays them out
-            // top down. Anchoring the first one at a bottom position pushes the
-            // rest off the screen, so anchor the lowest instead and let the
-            // stack grow upward. A custom overlay only ever covers the first
-            // banner, so it keeps the single banner geometry. The open Notification
-            // Center panel lists past notifications with the same subroles, which
-            // are not a banner stack.
-            let usesCustom = testGroupID != nil
-                ? settings.shouldUseCustomBanner(forGroupID: testGroupID!)
-                : settings.shouldUseCustomBanner(for: appNameStr)
-            if placement.position.stacksUpward, !usesCustom, !isNCFocusedPanel(window),
-               let bPos = bannerEl.point() {
+            // Banners that are up together share this host, newest on top, and
+            // macOS lays the rest out downward from it. Placing just the first one
+            // pushes the others off a bottom edge, so the pile is placed as a whole,
+            // from the top of the first banner to the bottom of the lowest. The open
+            // Notification Center panel lists past notifications with the same
+            // subroles, which are not a pile to place.
+            stackHeight = bSz.height
+            if !isNCFocusedPanel(window), let bPos = bannerEl.point() {
                 let banners = resolver.findBannerElements(in: window)
-                let firstBottom = bPos.y + bSz.height
                 let lowestBottom = banners.compactMap { el -> CGFloat? in
                     guard let p = el.point(), let s = el.size() else { return nil }
                     return p.y + s.height
-                }.max() ?? firstBottom
-                stackOverhang = max(0, lowestBottom - firstBottom)
+                }.max() ?? bPos.y + bSz.height
+                stackHeight = max(bSz.height, lowestBottom - bPos.y)
                 if banners.count != lastLoggedHostBannerCount {
                     lastLoggedHostBannerCount = banners.count
                     if banners.count > 1 {
-                        logger.log("\(banners.count) banners in host, stack reaches \(Int(stackOverhang))pt below the first — anchoring the lowest", tag: "Banner")
+                        logger.log("\(banners.count) banners up together, \(Int(stackHeight))pt tall — placing them as one pile", tag: "Banner")
                     }
                 }
             }
@@ -678,13 +698,15 @@ package final class NotificationRepositioner: ObservableObject {
                 return nil
             }
             bannerOffset = .zero; bannerSz = size
+            stackHeight = size.height
         }
 
         let stackDirection: CGFloat = placement.position.stacksUpward ? -1 : 1
         let stackYOffset = stackDirection * CGFloat(stackIndex) * (bannerSz.height + Self.stackGap)
-        let bannerTarget = placement.position.axOrigin(
-            forWindowSize: bannerSz, screen: screen,
-            xOffset: CGFloat(placement.xOffset), yOffset: CGFloat(placement.yOffset) + stackYOffset - stackOverhang)
+        // The first banner tops the pile, so the pile's origin is its origin.
+        let bannerTarget = placement.position.axStackOrigin(
+            stackSize: CGSize(width: bannerSz.width, height: stackHeight), screen: screen,
+            xOffset: CGFloat(placement.xOffset), yOffset: CGFloat(placement.yOffset) + stackYOffset)
         let origin = CGPoint(x: bannerTarget.x - bannerOffset.x, y: bannerTarget.y - bannerOffset.y)
 
         log.debug("targetOrigin: → (\(origin.x, format: .fixed(precision: 0)),\(origin.y, format: .fixed(precision: 0))) \(placement.position.rawValue, privacy: .public) screen=\(screen.displayID, privacy: .public)")
@@ -715,11 +737,21 @@ package final class NotificationRepositioner: ObservableObject {
             scale = settings?.effectiveBannerScale(for: appName(for: window)) ?? 1.0
         }
 
+        // Banners with identifiers (macOS 26 on) get one overlay each, laid out as
+        // a pile. The window-keyed overlay below is for banners without one.
+        if hasIdentifiedBanners(window) {
+            if shouldKeepCustom, !isNCFocusedPanel(window) {
+                syncCustomPile(window, target: t)
+                return
+            }
+            dismissCustomPile(CFHash(window))
+        }
+
         if customBannerManager.isActive(key: CFHash(window)) {
             if !shouldKeepCustom {
                 customBannerManager.dismiss(key: CFHash(window))
                 overlayContent.removeValue(forKey: CFHash(window))
-            } else if testGroupID == nil, overlayContentChanged(for: window) || isNewCustomBanner(in: window) {
+            } else if testGroupID == nil, overlayContentChanged(for: window) {
                 customBannerManager.dismiss(key: CFHash(window))
                 overlayContent.removeValue(forKey: CFHash(window))
                 repositionWindow(window)
@@ -745,14 +777,6 @@ package final class NotificationRepositioner: ObservableObject {
                                          scale: CGFloat(scale))
                 return
             }
-        }
-
-        // A new banner in a host whose overlay has already closed. Sweeps reach it
-        // before any window event does, and placing it natively here would show the
-        // system banner where a custom one belongs.
-        if shouldKeepCustom, testGroupID == nil, isNewCustomBanner(in: window) {
-            repositionWindow(window)
-            return
         }
 
         log.debug("snapWindow: setting position → (\(t.windowOrigin.x, format: .fixed(precision: 1)), \(t.windowOrigin.y, format: .fixed(precision: 1)))")
@@ -850,16 +874,19 @@ package final class NotificationRepositioner: ObservableObject {
             useCustomBanner = false
             logger.log("Notification Center panel — forcing native move (no custom overlay)", tag: "Banner")
         }
-        // Recorded whichever way this goes, so a sweep doesn't send the same banner
-        // back here when it ended up native.
-        let isNewBanner = testGroupID == nil && isNewCustomBanner(in: window)
-        let bannerID = findBannerElement(in: window)?.identifier
-        if testGroupID == nil, let bannerID { customBannerID[CFHash(window)] = bannerID }
         let resolvedName: String
         if testGroupID != nil { resolvedName = "Test" } else { resolvedName = appName(for: window) ?? "unknown" }
         let modeLabel = useCustomBanner ? "custom" : "native"
         let scaleLabel = scale != 1.0 ? " \(String(format: "%.0f%%", scale * 100))" : ""
         logger.log("\(resolvedName) → \(info.placement.position.rawValue), \(modeLabel)\(scaleLabel), pos (\(Int(info.windowOrigin.x)), \(Int(info.windowOrigin.y)))", tag: "Banner")
+
+        let identified = hasIdentifiedBanners(window)
+        if useCustomBanner, identified {
+            syncCustomPile(window, target: info)
+            scheduleHolds(window: window, stackIndex: stackIndex, generation: gen)
+            return
+        }
+        if identified { dismissCustomPile(CFHash(window)) }
 
         if useCustomBanner {
             let key = CFHash(window)
@@ -873,7 +900,7 @@ package final class NotificationRepositioner: ObservableObject {
                 return
             }
 
-            if customBannerManager.isActive(key: key), !isNewBanner, !(testGroupID == nil && overlayContentChanged(for: window)) {
+            if customBannerManager.isActive(key: key), !(testGroupID == nil && overlayContentChanged(for: window)) {
                 hideOffscreen(window, atX: info.windowOrigin.x)
                 let scaledWidth = info.bannerSize.width * scale
                 let widthDelta = scaledWidth - info.bannerSize.width
@@ -955,7 +982,7 @@ package final class NotificationRepositioner: ObservableObject {
                     autoDismissSeconds: settings.autoDismissSeconds,
                     animation: animation,
                     onOpen: { [weak self] in self?.handleBannerTap(appName: capturedName, bannerElement: capturedEl) },
-                    onUnderlyingDismiss: { [weak self] in self?.retireUnderlyingWindow(window, bannerID: bannerID) },
+                    onUnderlyingDismiss: { [weak self] in self?.retireUnderlyingWindow(window) },
                     key: key
                 )
                 if testGroupID == nil { overlayContent[key] = content }
@@ -1076,13 +1103,6 @@ package final class NotificationRepositioner: ObservableObject {
         }
     }
 
-    /// Whether the window's banner differs from the one the custom path last
-    /// handled there, i.e. a new banner arrived in the shared host.
-    private func isNewCustomBanner(in window: AXUIElement) -> Bool {
-        guard let id = findBannerElement(in: window)?.identifier else { return false }
-        return customBannerID[CFHash(window)] != id
-    }
-
     /// Starts auto-dismiss for every banner in the window that doesn't have it yet.
     /// Returns false when the banners carry no identifier, so the caller can fall
     /// back to dismissing the whole window, which is right only when each banner
@@ -1098,7 +1118,8 @@ package final class NotificationRepositioner: ObservableObject {
         return true
     }
 
-    /// Closes one banner through its own Close action, the same as clicking its ✕.
+    /// Closes one banner through its own Close action, the same as clicking its ✕
+    /// (Clear All for several notifications of one app merged into a stack).
     /// The host window stays put, so the banners around it are unaffected.
     /// Returns false only when the banner is still up and offers no Close action;
     /// a banner that is already gone counts as closed.
@@ -1110,13 +1131,150 @@ package final class NotificationRepositioner: ObservableObject {
               let windows = value as? [AXUIElement] else { return false }
         for window in windows {
             for banner in resolver.findBannerElements(in: window) where banner.identifier == id {
+                // Several notifications from one app merge into a stack, which
+                // offers Clear All instead of Close.
                 let closed = banner.performCustomAction(named: "Close")
+                    || banner.performCustomAction(named: "Clear All")
+                if closed { closedBannerIDs.insert(id) }
                 logger.log("\(reason) — \(closed ? "closed the banner" : "banner has no Close action")",
                            level: closed ? .info : .warn, tag: "Banner")
                 return closed
             }
         }
         return true
+    }
+
+    // MARK: - Custom pile
+
+    /// Gap between overlays in a custom pile, before scale.
+    private static let pileGap: CGFloat = 8
+
+    private func hasIdentifiedBanners(_ window: AXUIElement) -> Bool {
+        let banners = resolver.findBannerElements(in: window)
+        return !banners.isEmpty && banners.allSatisfy { $0.identifier != nil }
+    }
+
+    private func overlayKey(_ bannerID: String) -> CFHashCode {
+        CFHashCode(truncatingIfNeeded: bannerID.hashValue)
+    }
+
+    private func dismissCustomPile(_ windowKey: CFHashCode) {
+        for id in customPiles.removeValue(forKey: windowKey) ?? [] {
+            customBannerManager.dismiss(key: overlayKey(id))
+        }
+    }
+
+    /// One custom overlay per banner in the window, laid out the way the native
+    /// banners are: placed as one pile (growing upward at bottom positions) and
+    /// kept on screen as a whole. The host itself is parked off screen. Each
+    /// overlay takes its own app's look; the pile takes the placement of the
+    /// newest banner, as the native pile does. An overlay goes when its banner
+    /// leaves, and dismissing an overlay closes its banner.
+    private func syncCustomPile(_ window: AXUIElement, target t: RepositionTarget) {
+        guard let settings else { return }
+        let windowKey = CFHash(window)
+        hideOffscreen(window, atX: t.windowOrigin.x)
+
+        struct Item {
+            let id: String
+            let element: AXUIElement
+            let name: String?
+            let testGroup: UUID??
+            let size: CGSize
+        }
+        let items: [Item] = resolver.findBannerElements(in: window).compactMap { el in
+            guard let id = el.identifier, !closedBannerIDs.contains(id) else { return nil }
+            let description = el.stringAttribute("AXAttributedDescription") ?? ""
+            let isTest = testGroupID != nil && pendingTestTitle.map { description.contains($0) } == true
+            var size = el.size() ?? Self.bannerSize
+            if size.width > Self.maxBannerWidth { size.width = Self.bannerSize.width }
+            return Item(id: id, element: el, name: resolver.appName(ofBanner: el),
+                        testGroup: isTest ? testGroupID : nil, size: size)
+        }
+        func scale(_ item: Item) -> CGFloat {
+            CGFloat(item.testGroup.map { settings.effectiveBannerScale(forGroupID: $0) }
+                    ?? settings.effectiveBannerScale(for: item.name))
+        }
+
+        let sizes = items.map { CGSize(width: $0.size.width * scale($0), height: $0.size.height * scale($0)) }
+        let gap = Self.pileGap
+        let pile = CGSize(width: sizes.map(\.width).max() ?? 0,
+                          height: sizes.map(\.height).reduce(0, +) + gap * CGFloat(max(0, sizes.count - 1)))
+        let origin = t.placement.position.axStackOrigin(
+            stackSize: pile, screen: t.screen,
+            xOffset: CGFloat(t.placement.xOffset), yOffset: CGFloat(t.placement.yOffset))
+
+        var y = origin.y
+        for (item, size) in zip(items, sizes) {
+            let x: CGFloat
+            switch t.placement.position {
+            case .topRight, .middleRight, .bottomRight:    x = origin.x + pile.width - size.width
+            case .topCenter, .middleCenter, .bottomCenter: x = origin.x + (pile.width - size.width) / 2
+            default:                                        x = origin.x
+            }
+            let topLeft = CGPoint(x: x, y: y)
+            y += size.height + gap
+
+            let key = overlayKey(item.id)
+            if customBannerManager.isActive(key: key) {
+                customBannerManager.move(key: key, axTopLeft: topLeft,
+                                         width: size.width, height: size.height, scale: scale(item))
+            } else {
+                showPileOverlay(item.id, element: item.element, appName: item.name, testGroup: item.testGroup,
+                                at: topLeft, size: size, scale: scale(item), settings: settings)
+            }
+        }
+
+        let current = items.map(\.id)
+        for old in customPiles[windowKey] ?? [] where !current.contains(old) {
+            customBannerManager.dismiss(key: overlayKey(old))
+        }
+        customPiles[windowKey] = current
+    }
+
+    private func showPileOverlay(_ id: String, element: AXUIElement, appName: String?, testGroup: UUID??,
+                                 at topLeft: CGPoint, size: CGSize, scale: CGFloat,
+                                 settings: any NotificationSettingsProviding) {
+        var content = extractBannerContent(from: element, knownAppName: appName)
+        if content == nil {
+            // Not readable yet; the next sweep usually is. Past a few, show what
+            // is known rather than leave a hole in the pile.
+            let tries = (unreadableBannerSweeps[id] ?? 0) + 1
+            unreadableBannerSweeps[id] = tries
+            guard tries > 3 else { return }
+            let name = appName ?? "Notification"
+            content = BannerContent(appName: name, title: name, body: "", appIcon: lookupIcon(for: name))
+            logger.log("Content unreadable after \(tries) sweeps — plain overlay", level: .warn, tag: "Custom")
+        }
+        guard var content else { return }
+        unreadableBannerSweeps.removeValue(forKey: id)
+        if testGroup != nil {
+            // A test is NotificationNanny's own notification; see repositionWindow.
+            content = BannerContent(appName: content.appName, title: content.title, subtitle: content.subtitle,
+                                    body: content.body, appIcon: NSApp.applicationIconImage)
+        }
+        let color = testGroup.map { settings.effectiveBannerColor(forGroupID: $0) }
+            ?? settings.effectiveBannerColor(for: appName)
+        let animation = testGroup.map { settings.effectiveBannerAnimation(forGroupID: $0) }
+            ?? settings.effectiveBannerAnimation(for: appName)
+        let preview = content.title.isEmpty ? content.body.prefix(50) : content.title.prefix(50)
+        logger.log("Overlay: \(content.appName) — \"\(preview)\"", tag: "Custom")
+        let tapName = content.appName
+        customBannerManager.showBanner(
+            content: content,
+            axTopLeft: topLeft,
+            width: size.width,
+            height: size.height,
+            scale: Double(scale),
+            backgroundColor: color,
+            textColor: settings.effectiveBannerTextColor,
+            redactContent: settings.redactBannerContent,
+            autoDismissSeconds: settings.autoDismissSeconds,
+            animation: animation,
+            onOpen: { [weak self] in self?.handleBannerTap(appName: tapName, bannerElement: element) },
+            onUnderlyingDismiss: { [weak self] in self?.closeBanner(id: id, reason: "Custom banner dismissed") },
+            key: overlayKey(id)
+        )
     }
 
     private func scheduleAutoDismiss(window: AXUIElement, info: RepositionTarget, generation gen: Int) {
@@ -1129,10 +1287,10 @@ package final class NotificationRepositioner: ObservableObject {
         }
     }
 
-    private func retireUnderlyingWindow(_ window: AXUIElement, bannerID: String?) {
-        // Close just the banner the overlay stood for. Parking the window instead
-        // would park the shared host, and every banner after this one with it.
-        if let bannerID, closeBanner(id: bannerID, reason: "Custom banner dismissed") { return }
+    /// Hides the window behind a dismissed overlay for good. Only for banners
+    /// without an identifier, which have a window each; identified banners are
+    /// closed one by one instead (`closeBanner`).
+    private func retireUnderlyingWindow(_ window: AXUIElement) {
         let key = CFHash(window)
         let gen = nextGeneration(for: key)
         dismissedKeys.insert(key)

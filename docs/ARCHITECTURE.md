@@ -717,6 +717,7 @@ sequenceDiagram
 
 - **Purpose:** When multiple banners exist, they must stack in the correct direction (upward for bottom-anchored positions, downward for top-anchored) without interfering with each other.
 - **Implementation:** `repositionVisibleWindows` does a first pass to resolve each banner's `RepositionTarget` at `stackIndex=0`, then groups by `(displayID, position)` anchor and assigns a monotonically increasing `stackIndex` per group. Each banner's Y is offset by `stackIndex × (bannerHeight + 8)`.
+- **Piles (macOS 26 on):** banners that are up together are siblings in one host window, newest on top, laid out downward by macOS; window stacking never sees them. `targetOrigin` measures the pile (top of the first banner to the bottom of the lowest) and places it as one block with `NotificationPosition.axStackOrigin`: bottom positions anchor the pile's bottom so it grows upward, and the whole pile is clamped into the screen's visible frame (taller than the screen keeps the newest in view). In custom mode `syncCustomPile` parks the host and shows one overlay per banner, keyed by the banner's `AXIdentifier`, laid out the same way. A banner joining a pile slides in over about half a second with a single `AXLayoutChanged` at the start, so `trackLayoutChange` sweeps a few more times while it settles. Two host windows up at once are still stacked as windows, so their piles can overlap; this has only been seen with stale banners left over.
 
 ### 3. Drift Guard (Self-Move Filter)
 
