@@ -373,6 +373,8 @@ package final class NotificationRepositioner: ObservableObject {
     private var overlayContent: [CFHashCode: BannerContent] = [:]
     private var dismissedKeys: Set<CFHashCode> = []
     private var loggedSkippedKeys: Set<CFHashCode> = []
+    /// targetOrigin runs many times per sweep; log the host's stack only when it changes.
+    private var lastLoggedHostBannerCount = 1
     private var testGroupID: UUID?? = nil
     private var testBannerWindow: AXUIElement? = nil
     private var pendingTestTitle: String? = nil
@@ -605,6 +607,8 @@ package final class NotificationRepositioner: ObservableObject {
         let isOverlay = size.width > 700 || size.height > 400
         let bannerOffset: CGPoint
         let bannerSz: CGSize
+        // How far the lowest banner in the host reaches below the first one.
+        var stackOverhang: CGFloat = 0
 
         if isOverlay {
             guard let bannerEl = findBannerElement(in: window) else {
@@ -625,6 +629,33 @@ package final class NotificationRepositioner: ObservableObject {
             }
             bannerOffset = CGPoint(x: offsetX, y: offsetY)
             bannerSz = bSz
+
+            // Several banners at once share this host, and macOS lays them out
+            // top down. Anchoring the first one at a bottom position pushes the
+            // rest off the screen, so anchor the lowest instead and let the
+            // stack grow upward. A custom overlay only ever covers the first
+            // banner, so it keeps the single banner geometry. The open Notification
+            // Center panel lists past notifications with the same subroles, which
+            // are not a banner stack.
+            let usesCustom = testGroupID != nil
+                ? settings.shouldUseCustomBanner(forGroupID: testGroupID!)
+                : settings.shouldUseCustomBanner(for: appNameStr)
+            if placement.position.stacksUpward, !usesCustom, !isNCFocusedPanel(window),
+               let bPos = bannerEl.point() {
+                let banners = resolver.findBannerElements(in: window)
+                let firstBottom = bPos.y + bSz.height
+                let lowestBottom = banners.compactMap { el -> CGFloat? in
+                    guard let p = el.point(), let s = el.size() else { return nil }
+                    return p.y + s.height
+                }.max() ?? firstBottom
+                stackOverhang = max(0, lowestBottom - firstBottom)
+                if banners.count != lastLoggedHostBannerCount {
+                    lastLoggedHostBannerCount = banners.count
+                    if banners.count > 1 {
+                        logger.log("\(banners.count) banners in host, stack reaches \(Int(stackOverhang))pt below the first — anchoring the lowest", tag: "Banner")
+                    }
+                }
+            }
         } else {
             if settings.protectDesktopWidgets, findBannerElement(in: window) == nil {
                 log.info("targetOrigin: skipped — small window, no banner subrole (desktop widget)")
@@ -639,7 +670,7 @@ package final class NotificationRepositioner: ObservableObject {
         let stackYOffset = stackDirection * CGFloat(stackIndex) * (bannerSz.height + Self.stackGap)
         let bannerTarget = placement.position.axOrigin(
             forWindowSize: bannerSz, screen: screen,
-            xOffset: CGFloat(placement.xOffset), yOffset: CGFloat(placement.yOffset) + stackYOffset)
+            xOffset: CGFloat(placement.xOffset), yOffset: CGFloat(placement.yOffset) + stackYOffset - stackOverhang)
         let origin = CGPoint(x: bannerTarget.x - bannerOffset.x, y: bannerTarget.y - bannerOffset.y)
 
         log.debug("targetOrigin: → (\(origin.x, format: .fixed(precision: 0)),\(origin.y, format: .fixed(precision: 0))) \(placement.position.rawValue, privacy: .public) screen=\(screen.displayID, privacy: .public)")
