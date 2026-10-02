@@ -113,6 +113,8 @@ package final class NotificationRepositioner: ObservableObject {
         generation.removeAll()
         overlayContent.removeAll()
         dismissedKeys.removeAll()
+        dismissTimers.cancelAll()
+        customBannerID.removeAll()
         loggedSkippedKeys.removeAll()
         resolver.invalidateAll()
         iconCache.invalidateAll()
@@ -146,6 +148,7 @@ package final class NotificationRepositioner: ObservableObject {
             generation.removeValue(forKey: key)
             overlayContent.removeValue(forKey: key)
             dismissedKeys.remove(key)
+            customBannerID.removeValue(forKey: key)
             loggedSkippedKeys.remove(key)
             if let bound = testBannerWindow, CFEqual(bound, element) { testBannerWindow = nil }
             stopScaleHammer()
@@ -277,6 +280,10 @@ package final class NotificationRepositioner: ObservableObject {
             return
         }
         log.debug("repositionVisibleWindows: \(windows.count) window(s) from ncApp")
+        if !dismissTimers.armedIDs.isEmpty {
+            let present = windows.flatMap { resolver.findBannerElements(in: $0) }.compactMap(\.identifier)
+            dismissTimers.prune(keeping: Set(present))
+        }
         let baseTargets: [(AXUIElement, RepositionTarget)] = windows.compactMap { w in
             guard let t = targetOrigin(for: w, stackIndex: 0) else { return nil }
             return (w, t)
@@ -371,7 +378,14 @@ package final class NotificationRepositioner: ObservableObject {
     private var lastSelfSetPositions: [CFHashCode: CGPoint] = [:]
     private var lastRepositionAt: [CFHashCode: Date] = [:]
     private var overlayContent: [CFHashCode: BannerContent] = [:]
+    /// Windows parked for good. Only the fallback for banners without an identifier
+    /// (one window per banner, before macOS 26); see `closeBanner(id:reason:)`.
     private var dismissedKeys: Set<CFHashCode> = []
+    private let dismissTimers = BannerDismissTimers()
+    /// The banner, by identifier, that the custom path last handled in each NC
+    /// window. Since macOS 26 the host window outlives its banners, so a different
+    /// identifier in the same window is a new banner that needs its own overlay.
+    private var customBannerID: [CFHashCode: String] = [:]
     private var loggedSkippedKeys: Set<CFHashCode> = []
     private var testGroupID: UUID?? = nil
     private var testBannerWindow: AXUIElement? = nil
@@ -674,7 +688,7 @@ package final class NotificationRepositioner: ObservableObject {
             if !shouldKeepCustom {
                 customBannerManager.dismiss(key: CFHash(window))
                 overlayContent.removeValue(forKey: CFHash(window))
-            } else if testGroupID == nil, overlayContentChanged(for: window) {
+            } else if testGroupID == nil, overlayContentChanged(for: window) || isNewCustomBanner(in: window) {
                 customBannerManager.dismiss(key: CFHash(window))
                 overlayContent.removeValue(forKey: CFHash(window))
                 repositionWindow(window)
@@ -702,8 +716,17 @@ package final class NotificationRepositioner: ObservableObject {
             }
         }
 
+        // A new banner in a host whose overlay has already closed. Sweeps reach it
+        // before any window event does, and placing it natively here would show the
+        // system banner where a custom one belongs.
+        if shouldKeepCustom, testGroupID == nil, isNewCustomBanner(in: window) {
+            repositionWindow(window)
+            return
+        }
+
         log.debug("snapWindow: setting position → (\(t.windowOrigin.x, format: .fixed(precision: 1)), \(t.windowOrigin.y, format: .fixed(precision: 1)))")
         setWindowPosition(window, to: t.windowOrigin)
+        armAutoDismiss(in: window)
     }
 
     private func startScaleHammer(bannerElement: AXUIElement, naturalSize: CGSize, scale: Double) {
@@ -796,6 +819,11 @@ package final class NotificationRepositioner: ObservableObject {
             useCustomBanner = false
             logger.log("Notification Center panel — forcing native move (no custom overlay)", tag: "Banner")
         }
+        // Recorded whichever way this goes, so a sweep doesn't send the same banner
+        // back here when it ended up native.
+        let isNewBanner = testGroupID == nil && isNewCustomBanner(in: window)
+        let bannerID = findBannerElement(in: window)?.identifier
+        if testGroupID == nil, let bannerID { customBannerID[CFHash(window)] = bannerID }
         let resolvedName: String
         if testGroupID != nil { resolvedName = "Test" } else { resolvedName = appName(for: window) ?? "unknown" }
         let modeLabel = useCustomBanner ? "custom" : "native"
@@ -814,7 +842,7 @@ package final class NotificationRepositioner: ObservableObject {
                 return
             }
 
-            if customBannerManager.isActive(key: key), !(testGroupID == nil && overlayContentChanged(for: window)) {
+            if customBannerManager.isActive(key: key), !isNewBanner, !(testGroupID == nil && overlayContentChanged(for: window)) {
                 hideOffscreen(window, atX: info.windowOrigin.x)
                 let scaledWidth = info.bannerSize.width * scale
                 let widthDelta = scaledWidth - info.bannerSize.width
@@ -896,7 +924,7 @@ package final class NotificationRepositioner: ObservableObject {
                     autoDismissSeconds: settings.autoDismissSeconds,
                     animation: animation,
                     onOpen: { [weak self] in self?.handleBannerTap(appName: capturedName, bannerElement: capturedEl) },
-                    onUnderlyingDismiss: { [weak self] in self?.retireUnderlyingWindow(window) },
+                    onUnderlyingDismiss: { [weak self] in self?.retireUnderlyingWindow(window, bannerID: bannerID) },
                     key: key
                 )
                 if testGroupID == nil { overlayContent[key] = content }
@@ -924,8 +952,8 @@ package final class NotificationRepositioner: ObservableObject {
 
         scheduleHolds(window: window, stackIndex: stackIndex, generation: gen)
 
-        if settings.autoDismissSeconds > 0 {
-            log.debug("repositionWindow: scheduling auto-dismiss after \(settings.autoDismissSeconds, format: .fixed(precision: 1))s")
+        if settings.autoDismissSeconds > 0, !armAutoDismiss(in: window) {
+            log.debug("repositionWindow: no banner identifiers — auto-dismissing the window after \(settings.autoDismissSeconds, format: .fixed(precision: 1))s")
             scheduleAutoDismiss(window: window, info: info, generation: gen)
         }
     }
@@ -1017,6 +1045,49 @@ package final class NotificationRepositioner: ObservableObject {
         }
     }
 
+    /// Whether the window's banner differs from the one the custom path last
+    /// handled there, i.e. a new banner arrived in the shared host.
+    private func isNewCustomBanner(in window: AXUIElement) -> Bool {
+        guard let id = findBannerElement(in: window)?.identifier else { return false }
+        return customBannerID[CFHash(window)] != id
+    }
+
+    /// Starts auto-dismiss for every banner in the window that doesn't have it yet.
+    /// Returns false when the banners carry no identifier, so the caller can fall
+    /// back to dismissing the whole window, which is right only when each banner
+    /// has a window of its own.
+    @discardableResult
+    private func armAutoDismiss(in window: AXUIElement) -> Bool {
+        guard let delay = settings?.autoDismissSeconds, delay > 0 else { return true }
+        let ids = resolver.findBannerElements(in: window).compactMap(\.identifier)
+        guard !ids.isEmpty else { return false }
+        dismissTimers.arm(ids, delay: delay) { [weak self] id in
+            self?.closeBanner(id: id, reason: "Auto-dismiss")
+        }
+        return true
+    }
+
+    /// Closes one banner through its own Close action, the same as clicking its ✕.
+    /// The host window stays put, so the banners around it are unaffected.
+    /// Returns false only when the banner is still up and offers no Close action;
+    /// a banner that is already gone counts as closed.
+    @discardableResult
+    private func closeBanner(id: String, reason: String) -> Bool {
+        guard let ncApp else { return false }
+        var value: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(ncApp, kAXWindowsAttribute as CFString, &value) == .success,
+              let windows = value as? [AXUIElement] else { return false }
+        for window in windows {
+            for banner in resolver.findBannerElements(in: window) where banner.identifier == id {
+                let closed = banner.performCustomAction(named: "Close")
+                logger.log("\(reason) — \(closed ? "closed the banner" : "banner has no Close action")",
+                           level: closed ? .info : .warn, tag: "Banner")
+                return closed
+            }
+        }
+        return true
+    }
+
     private func scheduleAutoDismiss(window: AXUIElement, info: RepositionTarget, generation gen: Int) {
         guard let delay = settings?.autoDismissSeconds, delay > 0 else { return }
         DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
@@ -1027,7 +1098,10 @@ package final class NotificationRepositioner: ObservableObject {
         }
     }
 
-    private func retireUnderlyingWindow(_ window: AXUIElement) {
+    private func retireUnderlyingWindow(_ window: AXUIElement, bannerID: String?) {
+        // Close just the banner the overlay stood for. Parking the window instead
+        // would park the shared host, and every banner after this one with it.
+        if let bannerID, closeBanner(id: bannerID, reason: "Custom banner dismissed") { return }
         let key = CFHash(window)
         let gen = nextGeneration(for: key)
         dismissedKeys.insert(key)
