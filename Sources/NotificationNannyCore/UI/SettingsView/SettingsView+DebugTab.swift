@@ -51,7 +51,7 @@ struct DebugTabView: View {
             }
             .padding(14)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
+            .background(Color.nannyRaised(0.06), in: RoundedRectangle(cornerRadius: 10))
 
             // MARK: Developer — repro a pasted report, inspect logs, drive edge cases.
             CollapsibleSection(title: "Developer", systemImage: "hammer") {
@@ -80,8 +80,8 @@ struct DebugTabView: View {
                 .font(.caption2.monospaced())
                 .frame(height: 110)
                 .padding(4)
-                .background(Color.black.opacity(0.15), in: RoundedRectangle(cornerRadius: 6))
-                .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.white.opacity(0.1)))
+                .background(Color.nannyInset(0.15), in: RoundedRectangle(cornerRadius: 6))
+                .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.nannyRaised(0.1)))
             HStack(spacing: 8) {
                 Button {
                     if let pasted = NSPasteboard.general.string(forType: .string) { pasteText = pasted }
@@ -107,7 +107,7 @@ struct DebugTabView: View {
         }
         .padding(.horizontal, 12).padding(.vertical, 10)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 8))
+        .background(Color.nannyRaised(0.05), in: RoundedRectangle(cornerRadius: 8))
     }
 
     // MARK: Activity log
@@ -150,7 +150,7 @@ struct DebugTabView: View {
                 .labelsHidden().pickerStyle(.menu).controlSize(.mini).fixedSize()
             }
             .padding(.horizontal, 8).padding(.vertical, 6)
-            .background(Color.black.opacity(0.15), in: RoundedRectangle(cornerRadius: 6))
+            .background(Color.nannyInset(0.15), in: RoundedRectangle(cornerRadius: 6))
 
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 1) {
@@ -167,7 +167,7 @@ struct DebugTabView: View {
                 .padding(6)
             }
             .frame(height: 260)
-            .background(Color.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 8))
+            .background(Color.nannyRaised(0.05), in: RoundedRectangle(cornerRadius: 8))
         }
     }
 
@@ -208,7 +208,7 @@ struct DebugTabView: View {
                     .menuStyle(.borderlessButton).fixedSize()
                 }
             }
-            .background(Color.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 8))
+            .background(Color.nannyRaised(0.05), in: RoundedRectangle(cornerRadius: 8))
         }
     }
 
@@ -273,6 +273,6 @@ private struct CollapsibleSection<Trailing: View, Content: View>: View {
         }
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
+        .background(Color.nannyRaised(0.06), in: RoundedRectangle(cornerRadius: 10))
     }
 }

@@ -13,7 +13,7 @@ struct GeneralTabView: View {
         VStack(alignment: .leading, spacing: 16) {
             LocalizedText("App-wide settings for startup, timing, and notification behaviour. These apply globally and are not affected by presets or per-app rules.")
                 .font(.callout)
-                .foregroundStyle(Color(white: 0.55))
+                .foregroundStyle(Color.nannyMuted(0.55))
                 .fixedSize(horizontal: false, vertical: true)
 
             section("Language") {
@@ -29,6 +29,20 @@ struct GeneralTabView: View {
                         }
                     }
                     .labelsHidden().pickerStyle(.menu).controlSize(.small).fixedSize()
+                }
+                .padding(.horizontal, 14).padding(.vertical, 10)
+            }
+
+            section("Appearance") {
+                HStack {
+                    LocalizedText("Settings window").font(.callout)
+                    Spacer()
+                    Picker("", selection: $settings.settingsAppearance) {
+                        ForEach(SettingsAppearance.allCases) { mode in
+                            Text(loc.string(mode.labelKey)).tag(mode)
+                        }
+                    }
+                    .labelsHidden().pickerStyle(.segmented).controlSize(.small).fixedSize()
                 }
                 .padding(.horizontal, 14).padding(.vertical, 10)
             }
@@ -129,7 +143,7 @@ struct GeneralTabView: View {
                 .font(.caption2.weight(.semibold)).foregroundStyle(.tertiary).kerning(0.5)
                 .padding(.leading, 4)
             VStack(spacing: 0) { content() }
-                .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
+                .background(Color.nannyRaised(0.06), in: RoundedRectangle(cornerRadius: 10))
         }
     }
 

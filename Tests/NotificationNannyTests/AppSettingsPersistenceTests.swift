@@ -229,4 +229,30 @@ struct AppSettingsPersistenceTests {
         #expect(a.placement(for: screen).xOffset == 7)
         #expect(a.placement(for: screen).position == .bottomRight)
     }
+
+    @Test func settingsAppearance_defaultsToSystem() {
+        let store = Store(); defer { store.cleanup() }
+        #expect(store.make().settingsAppearance == .system)
+    }
+
+    @Test func settingsAppearance_persistsAcrossInit() {
+        let store = Store(); defer { store.cleanup() }
+        store.make().settingsAppearance = .light
+        #expect(store.make().settingsAppearance == .light)
+        store.make().settingsAppearance = .dark
+        #expect(store.make().settingsAppearance == .dark)
+    }
+
+    @Test func settingsAppearance_unknownStoredValue_fallsBackToSystem() {
+        let store = Store(); defer { store.cleanup() }
+        UserDefaults(suiteName: store.suiteName)!.set("sepia", forKey: "settingsAppearance")
+        #expect(store.make().settingsAppearance == .system)
+    }
+
+    @Test func settingsAppearance_systemFollowsMacOS() {
+        // nil on the window is what makes it follow macOS; anything else pins it.
+        #expect(SettingsAppearance.system.nsAppearance == nil)
+        #expect(SettingsAppearance.light.nsAppearance?.name == .aqua)
+        #expect(SettingsAppearance.dark.nsAppearance?.name == .darkAqua)
+    }
 }

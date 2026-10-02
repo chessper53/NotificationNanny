@@ -85,6 +85,14 @@
 /* General tab */
 "App-wide settings for startup, timing, and notification behaviour. These apply globally and are not affected by presets or per-app rules." = "App-weite Einstellungen für Start, Timing und Benachrichtigungsverhalten. Sie gelten global und werden von Voreinstellungen oder App-Regeln nicht beeinflusst.";
 "Language" = "Sprache";
+
+/* Appearance (General tab, also the group appearance row in Exceptions) */
+"Appearance" = "Erscheinungsbild";
+"Settings window" = "Einstellungsfenster";
+"System" = "System";
+"Light" = "Hell";
+"Dark" = "Dunkel";
+
 "App Language" = "App-Sprache";
 "System Default" = "Systemstandard";
 "Restart NotificationNanny to apply the new language." = "Starte NotificationNanny neu, um die neue Sprache zu übernehmen.";
