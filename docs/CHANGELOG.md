@@ -7,7 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Settings follow Light Mode** (#37). The Settings window was always dark, whatever the system appearance. It now follows it: a light window, sidebar and cards in Light Mode, with the same graphite look as before in Dark Mode. Text that was a fixed light grey (muted labels, the activity log) uses the system's label colours in Light Mode, so it stays readable, and the animation preview shows a light banner, as macOS does.
+- **Appearance setting.** General has a new Appearance row to keep the Settings window in Light or Dark regardless of macOS, or to follow the system, which is the default. Banners are not affected: they always follow macOS, as the system banners do. The Exceptions tab's "Appearance" label is now translated too.
+
 ### Fixed
+- **The Settings window could open as tall as the screen, or taller.** It resized itself to the full height of whatever the tab contained, and a leftover size lock from before 8.0.0 kept pulling it back to 660x640, so the size you set did not stick either. The window now opens at a compact 640x480, can be resized freely down to 620x440, and keeps the size you choose. Sizes saved by earlier versions are not reused, so everyone starts from the new default once.
 - **Test notifications show NotificationNanny's icon.** Without notification permission a test is sent through AppleScript, which macOS shows as coming from Script Editor, so the test banner carried Script Editor's icon. A custom banner now always uses NotificationNanny's icon for a test, and if notification permission was never answered, sending a test asks for it, so the system banner shows the right icon too.
 
 ## [8.0.2] — 2026-09-24

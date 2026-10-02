@@ -15,7 +15,7 @@ struct PresetsTabView: View {
         VStack(alignment: .leading, spacing: 8) {
             LocalizedText("Save and switch between named configurations. Presets capture your full setup including per-app rules.")
                 .font(.callout)
-                .foregroundStyle(Color(white: 0.55))
+                .foregroundStyle(Color.nannyMuted(0.55))
                 .fixedSize(horizontal: false, vertical: true)
 
             LocalizedText("Presets").font(.caption.weight(.medium)).foregroundStyle(.secondary)
@@ -53,7 +53,7 @@ struct PresetsTabView: View {
                         .padding(.horizontal, 14).padding(.vertical, 10)
                 }
             }
-            .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
+            .background(Color.nannyRaised(0.06), in: RoundedRectangle(cornerRadius: 10))
         }
         .confirmationDialog(
             loc.string("Replace your current exception groups?"),

@@ -56,17 +56,17 @@ find_window_bounds() {
     # Matching by title (kCGWindowName) doesn't work unless the calling process
     # has Screen Recording permission — without it, macOS redacts window titles
     # from CGWindowListCopyWindowInfo entirely (the key is just absent), even
-    # though bounds/layer/alpha are still reported. Match by the Settings
-    # window's fixed content width (660, set explicitly in Swift) instead —
-    # that's stable and doesn't require an extra permission. The only other
-    # window this process owns is the unused Settings{EmptyView()} scene's
-    # window, which is 500x500 and won't match.
+    # though bounds/layer/alpha are still reported. Match by owner and size
+    # instead, which needs no extra permission. The Settings window is
+    # resizable but never narrower than 620 (its minSize), while the only other
+    # normal window this process owns, the unused Settings{EmptyView()} scene's,
+    # is 500x500. Banner overlays sit above layer 0 and are skipped.
     python3 -c "
 import Quartz
-for w in Quartz.CGWindowListCopyWindowInfo(Quartz.kCGWindowListOptionAll, Quartz.kCGNullWindowID):
-    if w.get('kCGWindowOwnerName') == '$APP_NAME':
+for w in Quartz.CGWindowListCopyWindowInfo(Quartz.kCGWindowListOptionOnScreenOnly, Quartz.kCGNullWindowID):
+    if w.get('kCGWindowOwnerName') == '$APP_NAME' and w.get('kCGWindowLayer') == 0:
         b = w['kCGWindowBounds']
-        if int(b['Width']) == 660:
+        if int(b['Width']) >= 600:
             print(int(b['X']), int(b['Y']), int(b['Width']), int(b['Height']))
             break
 "
