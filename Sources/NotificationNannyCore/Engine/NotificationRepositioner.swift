@@ -1067,7 +1067,8 @@ package final class NotificationRepositioner: ObservableObject {
         return true
     }
 
-    /// Closes one banner through its own Close action, the same as clicking its ✕.
+    /// Closes one banner through its own Close action, the same as clicking its ✕
+    /// (Clear All for several notifications of one app merged into a stack).
     /// The host window stays put, so the banners around it are unaffected.
     /// Returns false only when the banner is still up and offers no Close action;
     /// a banner that is already gone counts as closed.
@@ -1079,7 +1080,10 @@ package final class NotificationRepositioner: ObservableObject {
               let windows = value as? [AXUIElement] else { return false }
         for window in windows {
             for banner in resolver.findBannerElements(in: window) where banner.identifier == id {
+                // Several notifications from one app merge into a stack, which
+                // offers Clear All instead of Close.
                 let closed = banner.performCustomAction(named: "Close")
+                    || banner.performCustomAction(named: "Clear All")
                 logger.log("\(reason) — \(closed ? "closed the banner" : "banner has no Close action")",
                            level: closed ? .info : .warn, tag: "Banner")
                 return closed

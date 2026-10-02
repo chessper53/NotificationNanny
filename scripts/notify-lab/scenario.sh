@@ -16,6 +16,8 @@
 #   --scale F            custom banner scale (implies the custom banner)
 #   --seconds N          how long to watch (default 10)
 #   --app PATH           the .app to run (default build/NotificationNanny.app)
+#   --keep-existing      leave banners already on screen instead of closing them
+#                        first, to test a pile that predates the app
 #
 # The app is run straight from this shell, so it shares the shell's
 # Accessibility permission and a rebuild doesn't need a new grant. The settings
@@ -34,7 +36,7 @@ cd "$(dirname "$0")/../.."
 DOMAIN=com.notificationnanny.app
 LAB=build/notify-lab
 APP=build/NotificationNanny.app
-POSITION=bottomRight X=0 Y=0 AUTO=0 CUSTOM=0 SCALE=1 WATCH_SECS=10
+POSITION=bottomRight X=0 Y=0 AUTO=0 CUSTOM=0 SCALE=1 WATCH_SECS=10 KEEP=0
 POSTS=()
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -46,6 +48,7 @@ while [[ $# -gt 0 ]]; do
         --scale) SCALE=$2; CUSTOM=1; shift 2 ;;
         --seconds) WATCH_SECS=$2; shift 2 ;;
         --app) APP=$2; shift 2 ;;
+        --keep-existing) KEEP=1; shift ;;
         *) POSTS+=("$1"); shift ;;
     esac
 done
@@ -61,12 +64,12 @@ KEYS=(placementsByDisplayID targetDisplayID autoDismissSeconds redactBannerConte
       lastBinaryMtime)
 NN_MATCH="\.app/Contents/MacOS/NotificationNanny"
 NN_PID=""
+# Only the instance this script started is ever stopped.
 quit_nn() {
-    if [[ -n "$NN_PID" ]]; then kill "$NN_PID" 2>/dev/null || true; wait "$NN_PID" 2>/dev/null || true; fi
+    [[ -n "$NN_PID" ]] || return 0
+    kill "$NN_PID" 2>/dev/null || true
+    wait "$NN_PID" 2>/dev/null || true
     NN_PID=""
-    pkill -f "$NN_MATCH" 2>/dev/null || true
-    for _ in $(seq 20); do pgrep -f "$NN_MATCH" >/dev/null || return 0; sleep 0.25; done
-    echo "WARNING: NotificationNanny did not quit" >&2
 }
 restore() {
     set +e
@@ -101,11 +104,17 @@ if bad:
 print("settings restored")
 PY
 }
-quit_nn
+# Another NotificationNanny would fight this one over the banners, and it is
+# not this script's to quit.
+if pgrep -f "$NN_MATCH" >/dev/null; then
+    echo "NotificationNanny is already running; quit it first:" >&2
+    pgrep -lf "$NN_MATCH" >&2
+    exit 65
+fi
 defaults export "$DOMAIN" "$BACKUP"
 trap restore EXIT
 
-"$LAB/watch" --close-all >/dev/null
+[[ $KEEP == 1 ]] || "$LAB/watch" --close-all >/dev/null
 
 # Same placement on every display, so it doesn't matter which one gets the banner.
 PLACEMENTS=$("$LAB/watch" --screens | awk -v p="$POSITION" -v x="$X" -v y="$Y" '

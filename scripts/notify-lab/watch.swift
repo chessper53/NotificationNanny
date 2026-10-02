@@ -8,6 +8,7 @@
 //
 //   offscreen   a visible banner or overlay sticking out of its screen's visible frame
 //   swallowed   banners exist but nothing has been visible for more than 1.5 s
+//   hidden      some banners have no visible counterpart for more than 1.5 s
 //   overlap     two visible banners or overlays covering each other
 //
 // Exit status is the number of failed checks. Needs Accessibility for whatever
@@ -80,14 +81,17 @@ guard AXIsProcessTrusted(),
 else { print("needs Accessibility, and Notification Center running"); exit(99) }
 let ncApp = AXUIElementCreateApplication(nc.processIdentifier)
 
-// `watch --close-all`: closes every banner on screen, e.g. persistent leftovers.
+// `watch --close-all`: closes the lab apps' banners, e.g. persistent leftovers.
+// Only theirs: anything else on screen is a real notification and stays.
 if args.first == "--close-all" {
     var closed = 0
     for w in (attr(ncApp, kAXWindowsAttribute) as? [AXUIElement] ?? []) {
-        for b in banners(in: w) {
+        for b in banners(in: w) where label(b).hasPrefix("Lab ") {
             var names: CFArray?
             AXUIElementCopyActionNames(b, &names)
-            if let close = (names as? [String])?.first(where: { $0.hasPrefix("Name:Close") }),
+            // Several notifications from one app merge into a stack, which offers
+            // Clear All instead of Close.
+            if let close = (names as? [String])?.first(where: { $0.hasPrefix("Name:Close\n") || $0.hasPrefix("Name:Clear All\n") }),
                AXUIElementPerformAction(b, close as CFString) == .success { closed += 1 }
         }
     }
@@ -107,6 +111,7 @@ var overlaps: [String] = []
 var outFor: [String: Double] = [:], overlapFor: [String: Double] = [:]
 let persist = 0.6
 var swallowedFor: Double = 0, worstSwallow: Double = 0
+var hiddenFor: Double = 0, worstHidden: Double = 0, worstHiddenCount = 0
 var lastSig = ""
 let start = Date()
 var lastTick = start
@@ -132,12 +137,18 @@ while Date().timeIntervalSince(start) < seconds {
         guard let b = w[kCGWindowBounds as String] as? [String: CGFloat] else { continue }
         let f = CGRect(x: b["X"] ?? 0, y: b["Y"] ?? 0, width: b["Width"] ?? 0, height: b["Height"] ?? 0)
         guard f.width < 900, f.height < 400, (w[kCGWindowAlpha as String] as? Double ?? 1) > 0.05 else { continue }
-        overlays.append(Item(kind: "overlay", name: "panel", frame: f.insetBy(dx: 12, dy: 12)))
+        // CustomBannerView.Metrics.chromeInset (8) at scale 1.
+        overlays.append(Item(kind: "overlay", name: "panel", frame: f.insetBy(dx: 8, dy: 8)))
     }
 
     let visible = present.filter { onAnyScreen($0.frame) } + overlays
     if !present.isEmpty && visible.isEmpty { swallowedFor += dt } else { swallowedFor = 0 }
     worstSwallow = max(worstSwallow, swallowedFor)
+    // Banners with no visible counterpart: parked natively with no overlay
+    // standing in for them, e.g. a custom pile showing only its newest.
+    let missing = present.count - visible.count
+    if missing > 0 { hiddenFor += dt } else { hiddenFor = 0 }
+    if hiddenFor > worstHidden { worstHidden = hiddenFor; worstHiddenCount = missing }
 
     let ids = visible.enumerated().map { "\($0.element.kind) \($0.element.kind == "overlay" ? "#\($0.offset)" : $0.element.name)" }
     var seenOut = Set<String>(), seenOverlap = Set<String>()
@@ -178,6 +189,8 @@ if offscreen.isEmpty { print("ok    offscreen: nothing visible outside a screen"
 else { failures += 1; print("FAIL  offscreen:"); offscreen.prefix(8).forEach { print("        \($0)") } }
 if worstSwallow <= 1.5 { print("ok    swallowed: longest gap with banners but nothing visible \(String(format: "%.2f", worstSwallow))s") }
 else { failures += 1; print("FAIL  swallowed: banners present but nothing visible for \(String(format: "%.2f", worstSwallow))s") }
+if worstHidden <= 1.5 { print("ok    hidden: every banner visible natively or as an overlay") }
+else { failures += 1; print("FAIL  hidden: \(worstHiddenCount) banner(s) not shown for \(String(format: "%.2f", worstHidden))s") }
 if overlaps.isEmpty { print("ok    overlap: none") }
 else { failures += 1; print("FAIL  overlap:"); overlaps.prefix(8).forEach { print("        \($0)") } }
 exit(Int32(failures))
