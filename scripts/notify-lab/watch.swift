@@ -66,6 +66,21 @@ func fullyVisible(_ c: CGRect) -> Bool {
 
 let args = CommandLine.arguments.dropFirst()
 
+// `watch --locked`: exit status 0 when the screen is locked. While locked macOS
+// shows no banners and only queues them, so any run then measures nothing.
+if args.first == "--locked" {
+    let session = CGSessionCopyCurrentDictionary() as? [String: Any] ?? [:]
+    exit((session["CGSSessionScreenIsLocked"] as? Bool ?? false) ? 0 : 1)
+}
+
+// `watch --windows <pid>`: how many windows the process owns, on screen or not.
+// Custom overlays are panels; a count that only grows means they leak.
+if args.first == "--windows", let pid = args.dropFirst().first.flatMap({ Int32($0) }) {
+    let all = CGWindowListCopyWindowInfo([.optionAll], kCGNullWindowID) as? [[String: Any]] ?? []
+    print(all.filter { ($0[kCGWindowOwnerPID as String] as? Int32) == pid }.count)
+    exit(0)
+}
+
 // `watch --screens`: display UUIDs, the keys NotificationNanny stores placements under.
 if args.first == "--screens" {
     for s in NSScreen.screens {
@@ -83,10 +98,12 @@ let ncApp = AXUIElementCreateApplication(nc.processIdentifier)
 
 // `watch --close-all`: closes the lab apps' banners, e.g. persistent leftovers.
 // Only theirs: anything else on screen is a real notification and stays.
-if args.first == "--close-all" {
+// `watch --close-app Bravo`: closes just that lab app's banner, as a user would.
+if args.first == "--close-all" || args.first == "--close-app" {
+    let prefix = args.first == "--close-app" ? "Lab \(args.dropFirst().first ?? "")," : "Lab "
     var closed = 0
     for w in (attr(ncApp, kAXWindowsAttribute) as? [AXUIElement] ?? []) {
-        for b in banners(in: w) where label(b).hasPrefix("Lab ") {
+        for b in banners(in: w) where label(b).hasPrefix(prefix) {
             var names: CFArray?
             AXUIElementCopyActionNames(b, &names)
             // Several notifications from one app merge into a stack, which offers
@@ -110,6 +127,10 @@ var overlaps: [String] = []
 // mid-slide pokes out for a few samples; only what stays wrong counts.
 var outFor: [String: Double] = [:], overlapFor: [String: Double] = [:]
 let persist = 0.6
+// macOS slides every new banner in from past the screen edge, and under load
+// the samples are further apart than 50 ms, so that slide alone can measure
+// 0.6 s. Real placement failures last seconds.
+let persistOffscreen = 1.0
 var swallowedFor: Double = 0, worstSwallow: Double = 0
 var hiddenFor: Double = 0, worstHidden: Double = 0, worstHiddenCount = 0
 var lastSig = ""
@@ -156,7 +177,7 @@ while Date().timeIntervalSince(start) < seconds {
         seenOut.insert(id)
         outFor[id, default: 0] += dt
         let msg = "\(id) at \(r(v.frame))"
-        if outFor[id]! >= persist, !offscreen.contains(where: { $0.hasPrefix(id + " at") }) { offscreen.append(msg) }
+        if outFor[id]! >= persistOffscreen, !offscreen.contains(where: { $0.hasPrefix(id + " at") }) { offscreen.append(msg) }
     }
     for i in visible.indices {
         for j in visible.indices where j > i
