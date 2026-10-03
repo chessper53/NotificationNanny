@@ -5,6 +5,9 @@
 // wraps this one binary as several bundles with their own names and bundle IDs.
 //
 //   "Lab Alpha.app/Contents/MacOS/notifier" "Title" "Body"
+//   "Lab Alpha.app/Contents/MacOS/notifier" --clear      removes everything this
+//                                                         app has delivered, e.g. a
+//                                                         backlog queued while locked
 //
 // The first post from each bundle asks for notification permission.
 
@@ -14,6 +17,12 @@ import UserNotifications
 final class Delegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ note: Notification) {
         let args = Array(CommandLine.arguments.dropFirst())
+        if args.first == "--clear" {
+            UNUserNotificationCenter.current().removeAllDeliveredNotifications()
+            // The removal is handed to the notification daemon asynchronously.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { NSApp.terminate(nil) }
+            return
+        }
         let title = args.first ?? "Lab notification"
         let body = args.dropFirst().first ?? "Sent by notify-lab"
         Task { @MainActor in
