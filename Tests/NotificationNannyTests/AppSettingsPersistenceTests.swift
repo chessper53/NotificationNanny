@@ -37,6 +37,13 @@ struct AppSettingsPersistenceTests {
         #expect(store.make().isEnabled == false)
     }
 
+    @Test func newestBannerAtBottom_defaultsOff_andPersists() {
+        let store = Store(); defer { store.cleanup() }
+        #expect(store.make().newestBannerAtBottom == false)
+        store.make().newestBannerAtBottom = true
+        #expect(store.make().newestBannerAtBottom == true)
+    }
+
     @Test func autoDismissSeconds_persistsAcrossInit() {
         let store = Store(); defer { store.cleanup() }
         store.make().autoDismissSeconds = 42

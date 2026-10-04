@@ -17,6 +17,7 @@
 #   --custom             use the custom banner (via a 1.002 scale, which looks
 #                        the same as 1 but switches the custom banner on)
 #   --scale F            custom banner scale (implies the custom banner)
+#   --newest-at-bottom   custom pile order: newest at the bottom
 #   --seconds N          how long to watch (default 10)
 #   --app PATH           the .app to run (default build/NotificationNanny.app)
 #   --oslog              also capture the app's debug log (last-oslog.txt); this
@@ -43,7 +44,7 @@ cd "$(dirname "$0")/../.."
 DOMAIN=com.notificationnanny.app
 LAB=build/notify-lab
 APP=build/NotificationNanny.app
-POSITION=bottomRight X=0 Y=0 AUTO=0 CUSTOM=0 SCALE=1 WATCH_SECS=10 KEEP=0 OSLOG=0
+POSITION=bottomRight X=0 Y=0 AUTO=0 CUSTOM=0 SCALE=1 WATCH_SECS=10 KEEP=0 OSLOG=0 NEWEST_BOTTOM=0
 POSTS=()
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -57,6 +58,7 @@ while [[ $# -gt 0 ]]; do
         --app) APP=$2; shift 2 ;;
         --keep-existing) KEEP=1; shift ;;
         --oslog) OSLOG=1; shift ;;
+        --newest-at-bottom) NEWEST_BOTTOM=1; shift ;;
         *) POSTS+=("$1"); shift ;;
     esac
 done
@@ -69,7 +71,7 @@ BACKUP=$LAB/defaults-backup.plist
 # lastBinaryMtime is stamped by the app itself on every launch.
 KEYS=(placementsByDisplayID targetDisplayID autoDismissSeconds redactBannerContent bannerScale
       hasBannerColor bannerAnimation followActiveScreen holdWhileAsleep pauseWhileStreaming pauseDuringFocus
-      lastBinaryMtime)
+      lastBinaryMtime newestBannerAtBottom)
 NN_MATCH="\.app/Contents/MacOS/NotificationNanny"
 NN_PID=""
 # Only the instance this script started is ever stopped.
@@ -140,6 +142,7 @@ defaults write "$DOMAIN" placementsByDisplayID -data "$(printf '%s' "$PLACEMENTS
 defaults write "$DOMAIN" targetDisplayID -int 0
 defaults write "$DOMAIN" autoDismissSeconds -float "$AUTO"
 defaults write "$DOMAIN" redactBannerContent -bool NO
+defaults write "$DOMAIN" newestBannerAtBottom -bool $([[ $NEWEST_BOTTOM == 1 ]] && echo YES || echo NO)
 defaults write "$DOMAIN" bannerScale -float "$SCALE"
 defaults write "$DOMAIN" hasBannerColor -bool NO
 defaults write "$DOMAIN" bannerAnimation -string Default
@@ -147,7 +150,7 @@ for key in followActiveScreen holdWhileAsleep pauseWhileStreaming pauseDuringFoc
     defaults write "$DOMAIN" "$key" -bool NO
 done
 
-echo "==> $POSITION offset ($X,$Y), auto-dismiss ${AUTO}s, $([[ $CUSTOM == 1 ]] && echo "custom, scale ${SCALE}" || echo native)"
+echo "==> $POSITION offset ($X,$Y), auto-dismiss ${AUTO}s, $([[ $CUSTOM == 1 ]] && echo "custom, scale ${SCALE}" || echo native)$([[ $NEWEST_BOTTOM == 1 ]] && echo ", newest at the bottom")"
 NN_LOG_STDERR=1 NN_TIMING=1 "$APP/Contents/MacOS/NotificationNanny" > "$LAB/last-app.log" 2>&1 &
 NN_PID=$!
 sleep 3

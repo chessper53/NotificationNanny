@@ -420,6 +420,10 @@ final class CustomBannerManager {
         /// of stretching the already-rendered view.
         let hosting: NSHostingView<CustomBannerView>
         var scale: CGFloat
+        /// Where a glide is taking the panel; its frame is still on the way.
+        var destination: NSRect?
+        /// When that glide ends (system uptime).
+        var glideEnds: Double = 0
     }
 
     private var active: [CFHashCode: Entry] = [:]
@@ -508,6 +512,8 @@ final class CustomBannerManager {
     }
 
     func isActive(key: CFHashCode) -> Bool { active[key] != nil }
+    /// When the overlay's glide ends (system uptime); in the past when it isn't gliding.
+    func glideEnd(key: CFHashCode) -> Double { active[key]?.glideEnds ?? 0 }
     var hasActive: Bool { !active.isEmpty }
 
     func resetDismissTimers(autoDismissSeconds: Double) {
@@ -523,7 +529,11 @@ final class CustomBannerManager {
         }
     }
 
-    func move(key: CFHashCode, axTopLeft: CGPoint, width: CGFloat, height: CGFloat, scale: CGFloat? = nil) {
+    /// - Parameter glide: ease into place instead of jumping, for a pile closing
+    ///   a gap or making room. A settings drag must not glide: it would trail
+    ///   behind the pointer.
+    func move(key: CFHashCode, axTopLeft: CGPoint, width: CGFloat, height: CGFloat, scale: CGFloat? = nil,
+              glide: Bool = false) {
         guard var entry = active[key] else { return }
 
         // A live scale change has to re-render the SwiftUI content at the new
@@ -539,8 +549,40 @@ final class CustomBannerManager {
 
         let target = Self.panelFrame(axOrigin: axTopLeft, size: CGSize(width: width, height: height),
                                      scale: entry.scale)
-        let current = entry.panel.frame
+        // Compared with where it is heading, so a sweep during a glide doesn't
+        // restart it.
+        let current = entry.destination ?? entry.panel.frame
         guard current != target else { return }
+
+        if glide {
+            // A point or two is the banner settling, not the pile moving; easing
+            // that only made it shimmer.
+            guard hypot(target.minX - current.minX, target.minY - current.minY) >= 2
+                    || abs(target.width - current.width) >= 2 || abs(target.height - current.height) >= 2
+            else { return }
+            entry.destination = target
+            active[key] = entry
+            let panel = entry.panel
+            // Farther takes a little longer, so two slots don't move at twice the
+            // speed of one.
+            let distance = hypot(target.minX - current.minX, target.minY - current.minY)
+            let duration = min(Self.maxGlideDuration, max(Self.glideDuration, distance / 400))
+            active[key]?.glideEnds = ProcessInfo.processInfo.systemUptime + duration
+            NSAnimationContext.runAnimationGroup { ctx in
+                ctx.duration = duration
+                ctx.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+                // A size change of a point or two rides along; the hosting view
+                // follows the panel through its autoresizing mask.
+                panel.animator().setFrame(target, display: false)
+            } completionHandler: { [weak self] in
+                MainActor.assumeIsolated {
+                    if self?.active[key]?.destination == target { self?.active[key]?.destination = nil }
+                }
+            }
+            return
+        }
+        entry.destination = nil
+        active[key] = entry
 
         // Dragging the position tile drives this at screen refresh rate. When only
         // the origin moves, which is the common case, setFrameOrigin skips the
@@ -553,6 +595,11 @@ final class CustomBannerManager {
             entry.hosting.frame = CGRect(origin: .zero, size: target.size)
         }
     }
+
+    /// How long a pile takes to close a gap or make room, close to macOS's own
+    /// slide: one slot in this, farther up to `maxGlideDuration`.
+    static let glideDuration: Double = 0.22
+    static let maxGlideDuration: Double = 0.4
 
     private func makePanel(frame: NSRect, contentView: NSView) -> NSPanel {
         let panel = NSPanel(contentRect: frame,

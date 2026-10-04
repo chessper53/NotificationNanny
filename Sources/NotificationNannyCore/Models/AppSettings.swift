@@ -35,6 +35,7 @@ package final class AppSettings: ObservableObject {
         static let hideMenuBarIcon      = "hideMenuBarIcon"
         static let snoozedUntil         = "snoozedUntil"
         static let redactBannerContent  = "redactBannerContent"
+        static let newestBannerAtBottom = "newestBannerAtBottom"
         static let settingsAppearance   = "settingsAppearance"
     }
 
@@ -114,6 +115,13 @@ package final class AppSettings: ObservableObject {
     /// Blurs the title/body text on the custom banner overlay instead of hiding the
     /// notification outright — for shoulder-surfing privacy without losing the "something
     /// arrived" signal. Forces the custom-banner path (native banners can't be redacted).
+    /// Order of a custom banner pile: the newest at the bottom and the oldest on
+    /// top, instead of the other way round. The system banner can't follow it:
+    /// macOS lays out its own pile, newest on top.
+    @Published package var newestBannerAtBottom: Bool {
+        didSet { defaults.set(newestBannerAtBottom, forKey: Key.newestBannerAtBottom) }
+    }
+
     @Published package var redactBannerContent: Bool {
         didSet { defaults.set(redactBannerContent, forKey: Key.redactBannerContent) }
     }
@@ -342,6 +350,7 @@ package final class AppSettings: ObservableObject {
         self.pauseDuringFocus      = (defaults.object(forKey: Key.pauseDuringFocus) as? Bool) ?? false
         self.holdWhileAsleep       = (defaults.object(forKey: Key.holdWhileAsleep) as? Bool) ?? false
         self.redactBannerContent  = (defaults.object(forKey: Key.redactBannerContent) as? Bool) ?? false
+        self.newestBannerAtBottom = (defaults.object(forKey: Key.newestBannerAtBottom) as? Bool) ?? false
         self.autoDismissSeconds    = defaults.double(forKey: Key.autoDismiss)
         let storedScale = defaults.double(forKey: Key.bannerScale)
         self.bannerScale = storedScale == 0 ? 1.0 : storedScale
@@ -578,6 +587,7 @@ package final class AppSettings: ObservableObject {
         var followActiveScreen: Bool?
         var pauseDuringFocus: Bool?
         var redactBannerContent: Bool?
+        var newestBannerAtBottom: Bool?
         var appGroups: [AppGroup]
         var presets: [Preset]
     }
@@ -595,6 +605,7 @@ package final class AppSettings: ObservableObject {
             followActiveScreen: followActiveScreen,
             pauseDuringFocus: pauseDuringFocus,
             redactBannerContent: redactBannerContent,
+            newestBannerAtBottom: newestBannerAtBottom,
             appGroups: appGroups,
             presets: presets
         )
@@ -621,6 +632,7 @@ package final class AppSettings: ObservableObject {
         followActiveScreen  = imported.followActiveScreen ?? false
         pauseDuringFocus    = imported.pauseDuringFocus ?? false
         redactBannerContent = imported.redactBannerContent ?? false
+        newestBannerAtBottom = imported.newestBannerAtBottom ?? false
         appGroups           = imported.appGroups
         presets             = imported.presets
         flushPendingSaves()
@@ -673,6 +685,7 @@ package final class AppSettings: ObservableObject {
         bannerAnimation    = .default
         hideMenuBarIcon    = false
         redactBannerContent = false
+        newestBannerAtBottom = false
         flushPendingSaves()
     }
 

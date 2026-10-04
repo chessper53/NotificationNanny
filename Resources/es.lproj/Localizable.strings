@@ -175,3 +175,9 @@
 "Pause for…" = "Pausar durante…";
 "Settings…" = "Ajustes…";
 "Quit NotificationNanny" = "Salir de NotificationNanny";
+
+/* Banner tab: order of a custom banner pile */
+"Stacking" = "Apilado";
+"Newest on top" = "Las más recientes arriba";
+"Newest at the bottom" = "Las más recientes abajo";
+"Order of notifications that are up together. Custom banner only: macOS stacks its own banner newest on top." = "Orden de las notificaciones que se muestran a la vez. Solo para el banner personalizado: macOS apila su propio banner con la más reciente arriba.";
