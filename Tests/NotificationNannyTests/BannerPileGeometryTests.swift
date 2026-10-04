@@ -3,7 +3,7 @@ import Foundation
 import Testing
 @testable import NotificationNannyCore
 
-// Placement of a pile of banners (#39). Since macOS 26 banners that are up
+// Placement of a pile of banners. Since macOS 26 banners that are up
 // together share one host, newest on top, and they are placed as one block:
 // growing upward from a bottom corner, and kept on screen as a whole.
 @Suite("Banner pile geometry") @MainActor
