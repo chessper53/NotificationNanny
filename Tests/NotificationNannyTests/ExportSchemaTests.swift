@@ -31,6 +31,7 @@ struct ExportSchemaTests {
         s.pauseDuringFocus = true
         s.followActiveScreen = true
         s.pauseWhileStreaming = true
+        s.newestBannerAtBottom = true
 
         let data = try s.exportData()
 
@@ -44,6 +45,7 @@ struct ExportSchemaTests {
         #expect(restored.pauseDuringFocus == true)
         #expect(restored.followActiveScreen == true)
         #expect(restored.pauseWhileStreaming == true)
+        #expect(restored.newestBannerAtBottom == true)
     }
 
     /// A backup written before these toggles (and before schema versioning) must
@@ -65,11 +67,13 @@ struct ExportSchemaTests {
         let s = makeSettings()
         s.protectDesktopWidgets = false   // ensure import resets it, not leaves stale
         s.pauseDuringFocus = true
+        s.newestBannerAtBottom = true
         try s.importData(legacy)
 
         #expect(s.protectDesktopWidgets == true)   // default when absent
         #expect(s.pauseDuringFocus == false)       // default when absent
         #expect(s.followActiveScreen == false)     // default when absent
+        #expect(s.newestBannerAtBottom == false)   // default when absent
     }
 
     /// A backup from a hypothetical newer schema must still import the fields we
