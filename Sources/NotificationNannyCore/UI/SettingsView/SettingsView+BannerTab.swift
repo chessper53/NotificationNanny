@@ -201,7 +201,7 @@ struct BannerTabView: View {
             }
             .padding(.horizontal, 10).padding(.vertical, 7)
             .frame(maxWidth: .infinity)
-            .background(selected ? Color.nannyAccent.opacity(0.9) : Color.nannyRaised(0.06),
+            .background(selected ? Color.nannyProminent.opacity(0.9) : Color.nannyRaised(0.06),
                         in: RoundedRectangle(cornerRadius: 8))
             .foregroundStyle(selected ? Color.white : Color.secondary)
         }
