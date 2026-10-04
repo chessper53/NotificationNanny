@@ -165,7 +165,7 @@ struct ExceptionsTabView: View {
                 Text("\(assigned.count)")
                     .font(.caption2.monospacedDigit().weight(.medium))
                     .padding(.horizontal, 5).padding(.vertical, 1)
-                    .background(Color.nannyAccent.opacity(0.22), in: Capsule())
+                    .background(Color.nannyWash(0.22), in: Capsule())
                 Spacer()
                 // Only worth the space once scanning the list by eye stops working.
                 if settings.knownAppNames.count > 8 {
@@ -260,7 +260,7 @@ struct ExceptionsTabView: View {
         }
         .buttonStyle(.plain)
         .background(
-            isAssigned ? Color.nannyAccent.opacity(0.1) : Color.clear,
+            isAssigned ? Color.nannyWash(0.1) : Color.clear,
             in: RoundedRectangle(cornerRadius: 4)
         )
     }
@@ -288,7 +288,7 @@ struct ExceptionsTabView: View {
                 .foregroundStyle(isSelected ? Color.white.opacity(0.7) : Color.secondary)
             }
         }
-        .background(isSelected ? Color.nannyAccent : Color.clear)
+        .background(isSelected ? Color.nannyProminent : Color.clear)
         .foregroundStyle(isSelected ? Color.white : Color.primary)
         .clipShape(Capsule())
         .overlay(Capsule().stroke(isSelected ? Color.clear : Color.nannyRaised(0.15), lineWidth: 1))

@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - **Stacking order for custom banners.** The Banner tab has a new Stacking setting: newest notification on top, as before, or newest at the bottom with the oldest on top. It orders the pile by when each notification arrived. It only applies to the custom banner; macOS lays out its own banner pile and always puts the newest on top.
 - **Settings follow Light Mode** (#37). The Settings window was always dark, whatever the system appearance. It now follows it: a light window, sidebar and cards in Light Mode, with the same graphite look as before in Dark Mode. Text that was a fixed light grey (muted labels, the activity log) uses the system's label colours in Light Mode, so it stays readable, and the animation preview shows a light banner, as macOS does.
+- **Light Mode colours.** Large accent areas in light mode (the Send Test Notification button, switches, segmented controls, a selected chip or group) are graphite, where the deep amber read as brown on white, and the selected sidebar item is a neutral grey with an amber icon instead of a tan wash. Small accents such as links and icons stay amber. Dark Mode is unchanged.
 - **Appearance setting.** General has a new Appearance row to keep the Settings window in Light or Dark regardless of macOS, or to follow the system, which is the default. Banners are not affected: they always follow macOS, as the system banners do. The Exceptions tab's "Appearance" label is now translated too.
 
 ### Fixed
