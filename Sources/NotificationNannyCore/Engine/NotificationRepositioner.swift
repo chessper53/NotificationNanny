@@ -125,6 +125,10 @@ package final class NotificationRepositioner: ObservableObject {
         dismissedKeys.removeAll()
         dismissTimers.cancelAll()
         customPiles.removeAll()
+        bannerFirstSeen.removeAll()
+        nativePiles.removeAll()
+        followTimer?.cancel()
+        followTimer = nil
         closedBannerIDs.removeAll()
         unreadableBannerSweeps.removeAll()
         loggedSkippedKeys.removeAll()
@@ -161,6 +165,7 @@ package final class NotificationRepositioner: ObservableObject {
             overlayContent.removeValue(forKey: key)
             dismissedKeys.remove(key)
             dismissCustomPile(key)
+            nativePiles.removeValue(forKey: key)
             loggedSkippedKeys.remove(key)
             if let bound = testBannerWindow, CFEqual(bound, element) { testBannerWindow = nil }
             stopScaleHammer()
@@ -238,8 +243,11 @@ package final class NotificationRepositioner: ObservableObject {
     private func trackLayoutChange() {
         layoutTrackItems.forEach { $0.cancel() }
         layoutTrackItems.removeAll(keepingCapacity: true)
+        // A pile already up starts following at once; the slide has begun.
+        if !nativePiles.isEmpty { followPiles(for: Self.followDuration) }
         schedule(after: Self.layoutTrackDelays[0]) { [weak self] in
             guard let self, self.repositionVisibleWindows() else { return }
+            self.followPiles(for: Self.followDuration)
             for delay in Self.layoutTrackDelays.dropFirst() {
                 self.schedule(after: delay - Self.layoutTrackDelays[0]) { [weak self] in
                     self?.repositionVisibleWindows()
@@ -252,8 +260,114 @@ package final class NotificationRepositioner: ObservableObject {
         layoutTrackItems.append(item)
         DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: item)
     }
-    /// Spans the half-second slide: one at the start, two during, one settled.
-    private static let layoutTrackDelays: [Double] = [0.05, 0.2, 0.4, 0.7]
+    /// Full sweeps: one at the start of the slide and one once it has settled.
+    /// Between them `followPiles` keeps native piles in place frame by frame.
+    private static let layoutTrackDelays: [Double] = [0.05, 0.8]
+    private static let followDuration: Double = 0.8
+    /// Gliding speed in points per frame: at 60 Hz 480 pt/s, a full banner slot
+    /// (64 pt) in about 0.13 s.
+    private static let maxFollowStep: CGFloat = 8
+
+    // MARK: - Following macOS's slide
+
+    /// A native pile as the last sweep placed it, for following between sweeps.
+    private struct NativePile {
+        let window: AXUIElement
+        let placement: ScreenPlacement
+        let screen: NSScreen
+        var banners: [AXUIElement]
+        /// The lowest banner last frame, and whether the pile is gliding to a new
+        /// resting place because that changed; see followPile.
+        var lowest: AXUIElement? = nil
+        var gliding = false
+    }
+    private var nativePiles: [CFHashCode: NativePile] = [:]
+    /// Whether the last follow frame still moved a pile.
+    private var followMoved = false
+    private var followTimer: DispatchSourceTimer?
+    private var followUntil: Double = 0
+
+    /// macOS animates a pile inside its own window: a banner joining slides the
+    /// others down, one leaving lets the rest close up, over about half a second.
+    /// Sweeps can only correct the window afterwards, so a bottom-anchored pile
+    /// dipped and snapped back, or dropped in one step when a gap closed. Every
+    /// frame for the length of the slide, this moves the window by however much
+    /// macOS has just moved the pile, so its bottom stays put and the rest glide.
+    private func followPiles(for duration: Double) {
+        followUntil = max(followUntil, ProcessInfo.processInfo.systemUptime + duration)
+        guard followTimer == nil else { return }
+        let timer = DispatchSource.makeTimerSource(queue: .main)
+        timer.schedule(deadline: .now(), repeating: .milliseconds(16), leeway: .milliseconds(2))
+        timer.setEventHandler { [weak self] in
+            MainActor.assumeIsolated { self?.followTick() }
+        }
+        timer.resume()
+        followTimer = timer
+    }
+
+    private func followTick() {
+        let started = DispatchTime.now().uptimeNanoseconds
+        defer { nnTiming("follow", Double(DispatchTime.now().uptimeNanoseconds - started) / 1_000_000) }
+        // A glide still under way finishes even past the window.
+        guard ProcessInfo.processInfo.systemUptime < followUntil || followMoved, !nativePiles.isEmpty else {
+            followTimer?.cancel()
+            followTimer = nil
+            return
+        }
+        followMoved = false
+        for key in Array(nativePiles.keys) { followPile(key) }
+    }
+
+    /// Keeps one pile's anchored edge where its placement puts it. At bottom and
+    /// middle positions that is the bottom of the lowest banner, which doesn't
+    /// depend on the banner still sliding in at the top. Top positions grow
+    /// downward from a fixed top already, which macOS's own slide does right.
+    private func followPile(_ key: CFHashCode) {
+        guard var pile = nativePiles[key] else { return }
+        switch pile.placement.position {
+        case .topLeft, .topCenter, .topRight: return
+        default: break
+        }
+        func frames() -> [CGRect]? {
+            var result: [CGRect] = []
+            for el in pile.banners {
+                guard let p = el.point(), let s = el.size() else { return nil }
+                result.append(CGRect(origin: p, size: s))
+            }
+            return result.isEmpty ? nil : result
+        }
+        var current = frames()
+        if current == nil {
+            // A banner left or arrived since the sweep; read the pile again.
+            pile.banners = resolver.findBannerElements(in: pile.window)
+            nativePiles[key] = pile
+            current = frames()
+        }
+        guard let rects = current, let first = rects.first,
+              let lowestIndex = rects.indices.max(by: { rects[$0].maxY < rects[$1].maxY }),
+              let host = pile.window.point() else { return }
+        let lowest = rects[lowestIndex].maxY
+        // Same lowest banner as last frame: macOS is sliding the pile, and the
+        // window follows exactly, so the bottom doesn't move at all. A different
+        // one (a banner arrived below, or the lowest left): the pile has a new
+        // resting place and glides there.
+        let lowestBanner = pile.banners[lowestIndex]
+        if let previous = pile.lowest, !CFEqual(previous, lowestBanner) { pile.gliding = true }
+        pile.lowest = lowestBanner
+        defer { nativePiles[key] = pile }
+        var width = first.width
+        if width > Self.maxBannerWidth { width = Self.bannerSize.width }
+        let height = lowest - first.minY
+        let target = pile.placement.position.axStackOrigin(
+            stackSize: CGSize(width: width, height: height), screen: pile.screen,
+            xOffset: CGFloat(pile.placement.xOffset), yOffset: CGFloat(pile.placement.yOffset))
+        let dy = (target.y + height - lowest).rounded()
+        if abs(dy) <= Self.maxFollowStep { pile.gliding = false }
+        guard abs(dy) >= 1 else { return }
+        let step = pile.gliding ? max(-Self.maxFollowStep, min(Self.maxFollowStep, dy)) : dy
+        setWindowPosition(pile.window, to: CGPoint(x: host.x, y: host.y + step))
+        followMoved = true
+    }
     private let settingsSettleDebouncer = Debouncer()
     private var burstWorkItems: [DispatchWorkItem] = []
 
@@ -278,11 +392,17 @@ package final class NotificationRepositioner: ObservableObject {
             overlayContent.removeAll()
             customPiles.removeAll()
         }
+        placingFromSettings = true
         repositionVisibleWindows()
+        placingFromSettings = false
         settingsSettleDebouncer.schedule(delay: 0.25) { [weak self] in
             self?.repositionVisibleWindows()
         }
     }
+
+    /// Set while a settings change places banners: a drag of the position tile
+    /// must follow the pointer at once, not glide after it.
+    private var placingFromSettings = false
 
     private static let burstDelays: [Double] = [0.03, 0.06, 0.1, 0.2, 0.4, 0.8, 1.5, 2.5]
 
@@ -329,10 +449,12 @@ package final class NotificationRepositioner: ObservableObject {
         log.debug("repositionVisibleWindows: \(windows.count) window(s) from ncApp")
         sweepBanners = [:]
         defer { sweepBanners = nil }
-        if !dismissTimers.armedIDs.isEmpty || !closedBannerIDs.isEmpty || !unreadableBannerSweeps.isEmpty {
+        if !dismissTimers.armedIDs.isEmpty || !closedBannerIDs.isEmpty || !unreadableBannerSweeps.isEmpty
+            || !bannerFirstSeen.isEmpty {
             let present = Set(windows.flatMap { banners(in: $0) }.compactMap(\.id))
             dismissTimers.prune(keeping: present)
             closedBannerIDs.formIntersection(present)
+            bannerFirstSeen = bannerFirstSeen.filter { present.contains($0.key) }
             unreadableBannerSweeps = unreadableBannerSweeps.filter { present.contains($0.key) }
         }
         let baseTargets: [(AXUIElement, RepositionTarget)] = windows.compactMap { w in
@@ -468,6 +590,8 @@ package final class NotificationRepositioner: ObservableObject {
     /// Banners closed through their Close action. macOS takes a moment to remove
     /// them, and a sweep in that moment must not give them a fresh overlay.
     private var closedBannerIDs: Set<String> = []
+    /// When each banner was first seen (system uptime), for ordering a custom pile.
+    private var bannerFirstSeen: [String: Double] = [:]
     /// Sweeps a banner's content could not be read in, so it gets a plain overlay
     /// rather than none.
     private var unreadableBannerSweeps: [String: Int] = [:]
@@ -814,6 +938,7 @@ package final class NotificationRepositioner: ObservableObject {
         // a pile. The window-keyed overlay below is for banners without one.
         if hasIdentifiedBanners(window) {
             if shouldKeepCustom, !isNCFocusedPanel(window) {
+                nativePiles.removeValue(forKey: CFHash(window))
                 syncCustomPile(window, target: t)
                 return
             }
@@ -852,8 +977,8 @@ package final class NotificationRepositioner: ObservableObject {
             }
         }
 
-        log.debug("snapWindow: setting position → (\(t.windowOrigin.x, format: .fixed(precision: 1)), \(t.windowOrigin.y, format: .fixed(precision: 1)))")
-        setWindowPosition(window, to: t.windowOrigin)
+        log.debug("snapWindow: placing at (\(t.windowOrigin.x, format: .fixed(precision: 1)), \(t.windowOrigin.y, format: .fixed(precision: 1)))")
+        placeNative(window, at: t)
         armAutoDismiss(in: window)
     }
 
@@ -955,6 +1080,7 @@ package final class NotificationRepositioner: ObservableObject {
 
         let identified = hasIdentifiedBanners(window)
         if useCustomBanner, identified {
+            nativePiles.removeValue(forKey: CFHash(window))
             syncCustomPile(window, target: info)
             scheduleHolds(window: window, stackIndex: stackIndex, generation: gen)
             return
@@ -1079,7 +1205,7 @@ package final class NotificationRepositioner: ObservableObject {
             overlayContent.removeValue(forKey: CFHash(window))
         }
 
-        setWindowPosition(window, to: info.windowOrigin)
+        placeNative(window, at: info)
 
         scheduleHolds(window: window, stackIndex: stackIndex, generation: gen)
 
@@ -1222,6 +1348,38 @@ package final class NotificationRepositioner: ObservableObject {
     /// Gap between overlays in a custom pile, before scale.
     private static let pileGap: CGFloat = 8
 
+    /// Puts a native window where `t` says. A pile already up that only has to
+    /// move up or down is left to followPile, which follows macOS's slide
+    /// exactly or glides to a new resting place; anything new, and a settings
+    /// drag, moves at once.
+    private func placeNative(_ window: AXUIElement, at t: RepositionTarget) {
+        if !placingFromSettings, nativePiles[CFHash(window)] != nil,
+           let current = window.point(), abs(current.x - t.windowOrigin.x) < 1,
+           abs(current.y - t.windowOrigin.y) > Self.maxFollowStep {
+            rememberNativePile(window, target: t)
+            followPiles(for: 0.4)
+            return
+        }
+        setWindowPosition(window, to: t.windowOrigin)
+        rememberNativePile(window, target: t)
+    }
+
+    /// Only the shared host (macOS 26 on) holds a pile; a small window is one banner.
+    /// What the follow has learnt about the pile (its lowest banner, a glide under
+    /// way) carries over, or a sweep in the middle of a change would hide it.
+    private func rememberNativePile(_ window: AXUIElement, target t: RepositionTarget) {
+        let key = CFHash(window)
+        guard t.windowSize.width > 700 || t.windowSize.height > 400, !isNCFocusedPanel(window) else {
+            nativePiles.removeValue(forKey: key)
+            return
+        }
+        var pile = NativePile(window: window, placement: t.placement, screen: t.screen,
+                              banners: banners(in: window).map(\.element))
+        pile.lowest = nativePiles[key]?.lowest
+        pile.gliding = nativePiles[key]?.gliding ?? false
+        nativePiles[key] = pile
+    }
+
     private func hasIdentifiedBanners(_ window: AXUIElement) -> Bool {
         let banners = banners(in: window)
         return !banners.isEmpty && banners.allSatisfy { $0.id != nil }
@@ -1291,7 +1449,10 @@ package final class NotificationRepositioner: ObservableObject {
             }
         }
         let leaving = Set(slots.values.filter { ($0.leavingUntil ?? 0) > now }.map(\.id))
-        let order = PileOrder.merge(current: items.map(\.id), previous: previous.map(\.id), leaving: leaving)
+        for item in items where bannerFirstSeen[item.id] == nil { bannerFirstSeen[item.id] = now }
+        let arranged = PileOrder.arrange(items.map(\.id), firstSeen: bannerFirstSeen,
+                                         newestAtBottom: settings.newestBannerAtBottom)
+        let order = PileOrder.merge(current: arranged, previous: previous.map(\.id), leaving: leaving)
 
         let live = Dictionary(items.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
         func size(of id: String) -> CGSize {
@@ -1308,6 +1469,7 @@ package final class NotificationRepositioner: ObservableObject {
 
         var y = origin.y
         var next: [PileSlot] = []
+        var arrivals: [(id: String, item: Item, topLeft: CGPoint, size: CGSize)] = []
         for (id, size) in zip(order, sizes) {
             let x: CGFloat
             switch t.placement.position {
@@ -1325,14 +1487,30 @@ package final class NotificationRepositioner: ObservableObject {
             let key = overlayKey(id)
             if customBannerManager.isActive(key: key) {
                 customBannerManager.move(key: key, axTopLeft: topLeft,
-                                         width: size.width, height: size.height, scale: scale(item))
+                                         width: size.width, height: size.height, scale: scale(item),
+                                         glide: !placingFromSettings)
             } else {
-                showPileOverlay(id, element: item.element, appName: item.name, testGroup: item.testGroup,
-                                at: topLeft, size: size, scale: scale(item), settings: settings)
+                arrivals.append((id, item, topLeft, size))
             }
             next.append(PileSlot(id: id, size: size, exit: exit(item), leavingUntil: nil))
         }
         customPiles[windowKey] = next
+
+        // Make room first: while the pile glides aside, a new overlay would land
+        // on the one still leaving its slot. Its slot is kept, and it slides in
+        // once the glide is over.
+        let settles = next.map { customBannerManager.glideEnd(key: overlayKey($0.id)) }.max() ?? 0
+        if !arrivals.isEmpty, settles > now {
+            DispatchQueue.main.asyncAfter(deadline: .now() + (settles - now) + 0.02) { [weak self] in
+                self?.repositionVisibleWindows()
+            }
+            return
+        }
+        for arrival in arrivals {
+            showPileOverlay(arrival.id, element: arrival.item.element, appName: arrival.item.name,
+                            testGroup: arrival.item.testGroup, at: arrival.topLeft, size: arrival.size,
+                            scale: scale(arrival.item), settings: settings)
+        }
     }
 
     /// CustomBannerManager fades a panel out over 0.2 s after its outro.
