@@ -5,7 +5,7 @@ All notable changes to NotificationNanny are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [8.0.3] — 2026-10-04
 
 ### Added
 - **Stacking order for custom banners.** The Banner tab has a new Stacking setting: newest notification on top, as before, or newest at the bottom with the oldest on top. It orders the pile by when each notification arrived. It only applies to the custom banner; macOS lays out its own banner pile and always puts the newest on top.
