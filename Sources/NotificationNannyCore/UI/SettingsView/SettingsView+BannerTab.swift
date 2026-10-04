@@ -147,6 +147,20 @@ struct BannerTabView: View {
             .padding(12)
             .background(Color.nannyRaised(0.06), in: RoundedRectangle(cornerRadius: 10))
 
+            VStack(alignment: .leading, spacing: 10) {
+                LocalizedText("Stacking").font(.caption.weight(.medium)).foregroundStyle(.secondary)
+                Picker("", selection: $settings.newestBannerAtBottom) {
+                    LocalizedText("Newest on top").tag(false)
+                    LocalizedText("Newest at the bottom").tag(true)
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                LocalizedText("Order of notifications that are up together. Custom banner only: macOS stacks its own banner newest on top.")
+                    .font(.caption2).foregroundStyle(.tertiary)
+            }
+            .padding(12)
+            .background(Color.nannyRaised(0.06), in: RoundedRectangle(cornerRadius: 10))
+
             // Per-group overrides used to be listed here, one row per group. They
             // now live with the rest of that group's settings in the Exceptions
             // tab, so this tab is purely the defaults those overrides apply on top
@@ -187,7 +201,7 @@ struct BannerTabView: View {
             }
             .padding(.horizontal, 10).padding(.vertical, 7)
             .frame(maxWidth: .infinity)
-            .background(selected ? Color.nannyAccent.opacity(0.9) : Color.nannyRaised(0.06),
+            .background(selected ? Color.nannyProminent.opacity(0.9) : Color.nannyRaised(0.06),
                         in: RoundedRectangle(cornerRadius: 8))
             .foregroundStyle(selected ? Color.white : Color.secondary)
         }

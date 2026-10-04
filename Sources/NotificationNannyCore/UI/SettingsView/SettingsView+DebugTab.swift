@@ -46,7 +46,7 @@ struct DebugTabView: View {
                     .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.borderedProminent)
-                .tint(diagCopied ? .green : Color.nannyAccent)
+                .tint(diagCopied ? .green : Color.nannyProminent)
                 .animation(.easeInOut(duration: 0.15), value: diagCopied)
             }
             .padding(14)

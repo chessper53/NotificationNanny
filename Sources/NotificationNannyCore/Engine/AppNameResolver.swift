@@ -39,10 +39,27 @@ final class AppNameResolver {
         return nil
     }
 
-    private func nameFromElement(_ el: AXUIElement) -> String? {
-        guard let str = el.stringAttribute("AXAttributedDescription"),
-              let first = str.components(separatedBy: ", ").first else { return nil }
+    /// Every banner in the window, not just the first. Since macOS 26 they all
+    /// share one host window, so banners that are up together are siblings in
+    /// the same tree, newest first.
+    func findBannerElements(in el: AXUIElement, depth: Int = 0) -> [AXUIElement] {
+        guard depth < 7 else { return [] }
+        if let sr = el.stringAttribute(kAXSubroleAttribute as String), Self.bannerSubroles.contains(sr) {
+            return [el]
+        }
+        return el.children().flatMap { findBannerElements(in: $0, depth: depth + 1) }
+    }
+
+    /// The app a single banner belongs to, from its description ("App, Title,
+    /// Body"). `appName(for:)` answers for a window, which since macOS 26 holds
+    /// every banner that is up.
+    static func appName(fromDescription description: String) -> String? {
+        guard let first = description.components(separatedBy: ", ").first else { return nil }
         let cleaned = cleanAXString(first)
         return cleaned.isEmpty ? nil : cleaned
+    }
+
+    private func nameFromElement(_ el: AXUIElement) -> String? {
+        el.stringAttribute("AXAttributedDescription").flatMap(Self.appName(fromDescription:))
     }
 }

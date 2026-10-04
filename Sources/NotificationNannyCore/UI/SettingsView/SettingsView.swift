@@ -148,7 +148,7 @@ package struct SettingsView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color.nannyWindow)
         .background(WindowAppearance(appearance: settings.settingsAppearance.nsAppearance))
-        .tint(Color.nannyAccent)
+        .tint(Color.nannyProminent)
         .onAppear {
             repositioner.refreshAccessibilityStatus()
             if repositioner.hasAccessibilityPermission, !repositioner.isObserving {
@@ -167,6 +167,7 @@ package struct SettingsView: View {
         Button { activeTab = tab } label: {
             HStack(spacing: 8) {
                 Image(systemName: systemImage).frame(width: 16, alignment: .center)
+                    .foregroundStyle(activeTab == tab ? Color.nannySelectedIcon : Color.nannyMuted(0.55))
                 LocalizedText(labelKey)
                 Spacer()
             }
@@ -175,7 +176,7 @@ package struct SettingsView: View {
             .padding(.vertical, 7)
             .contentShape(Rectangle())
             .background(
-                activeTab == tab ? Color.nannyAccent.opacity(0.25) : Color.clear,
+                activeTab == tab ? Color.nannyWash(0.25) : Color.clear,
                 in: RoundedRectangle(cornerRadius: 8)
             )
             .foregroundStyle(activeTab == tab ? Color.nannyStrong : Color.nannyMuted(0.55))

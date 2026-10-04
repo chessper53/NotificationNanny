@@ -38,6 +38,23 @@ extension AXUIElement {
         return nil
     }
 
+    /// The element's `AXIdentifier`. Since macOS 26 every banner carries a UUID here
+    /// that stays the same for as long as that banner is up.
+    var identifier: String? { stringAttribute(kAXIdentifierAttribute as String) }
+
+    /// Performs a custom action by its display name. Custom actions are reported as
+    /// "Name:Close\nTarget:0x0\nSelector:(null)", so match on the name line.
+    /// Returns false when the element offers no such action.
+    @discardableResult
+    func performCustomAction(named name: String) -> Bool {
+        var ref: CFArray?
+        guard AXUIElementCopyActionNames(self, &ref) == .success,
+              let names = ref as? [String],
+              let action = names.first(where: { $0 == name || $0.hasPrefix("Name:\(name)\n") })
+        else { return false }
+        return AXUIElementPerformAction(self, action as CFString) == .success
+    }
+
     /// The element's children, or an empty array.
     func children() -> [AXUIElement] {
         var ref: CFTypeRef?

@@ -86,4 +86,34 @@ package enum NotificationPosition: String, CaseIterable, Identifiable, Codable {
 
         return CGPoint(x: x + xOffset, y: y + yOffset)
     }
+
+    /// Where a pile of banners goes, as the top-left of the whole pile.
+    ///
+    /// The pile is placed like one tall banner, so at bottom positions it grows
+    /// upward from the corner and at top positions downward. It is then kept
+    /// inside the screen's visible frame as a whole: whatever the offsets, if it
+    /// would run off an edge, everything moves back together. A pile taller than
+    /// the screen keeps its top, the newest banner, in view.
+    func axStackOrigin(stackSize: CGSize,
+                       screen: NSScreen,
+                       xOffset: CGFloat,
+                       yOffset: CGFloat) -> CGPoint {
+        let placed = axOrigin(forWindowSize: stackSize, screen: screen, xOffset: xOffset, yOffset: yOffset)
+        return Self.clamp(placed, size: stackSize, into: Self.axVisibleFrame(of: screen))
+    }
+
+    /// The screen's visible frame (without menu bar and Dock) in Accessibility coordinates.
+    static func axVisibleFrame(of screen: NSScreen) -> CGRect {
+        let primaryHeight = NSScreen.screens.first?.frame.height ?? screen.frame.height
+        let visible = screen.visibleFrame
+        return CGRect(x: visible.minX, y: primaryHeight - visible.maxY,
+                      width: visible.width, height: visible.height)
+    }
+
+    /// Moves a rect of `size` at `origin` the least distance that puts it inside
+    /// `frame`. When it is bigger than the frame, its top-left edge wins.
+    static func clamp(_ origin: CGPoint, size: CGSize, into frame: CGRect) -> CGPoint {
+        CGPoint(x: max(min(origin.x, frame.maxX - size.width), frame.minX),
+                y: max(min(origin.y, frame.maxY - size.height), frame.minY))
+    }
 }
