@@ -44,25 +44,23 @@ brew update && brew upgrade --cask notificationnanny
 
 ## Screenshots
 
-`README.md` and `site/index.html` both reference the same six settings-tab
-screenshots (Position, Banner, Exceptions, Presets, General, Help) by filename
-from `docs/screenshots/` and `site/assets/screenshots/` — not an external URL.
-To refresh them for a release:
+The landing page shows every settings tab (Position, Banner, Exceptions,
+Presets, General, Diagnostics, Help) in dark and light, from
+`site/assets/screenshots/<tab>.webp` and `<tab>-light.webp`. To refresh them
+for a release:
 
 ```sh
-./scripts/capture-screenshots.sh --launch
+./scripts/capture-screenshots.sh
 ```
 
-It builds and launches the app, clicks through each tab via System Events, and
-writes matching PNGs into both directories. Run it, look over the results, then
-`git add docs/screenshots site/assets/screenshots` alongside your other release
-changes — there's no manual capture-and-reupload step.
+It runs an opt-in snapshot test (`SettingsSnapshotTests`) that renders each
+tab's content offscreen with demo data, then converts the PNGs to WebP. It
+doesn't launch or touch an installed copy of the app, never draws on screen,
+and needs no Automation or Screen Recording permission. Look over the results,
+then `git add site/assets/screenshots` alongside your other release changes.
 
-One-time setup: the terminal running the script needs Automation permission to
-drive the app's UI (System Settings → Privacy & Security → Automation → your
-terminal → System Events). macOS prompts for this the first time you run it
-interactively; if it fails with "Not authorized to send Apple events to System
-Events," that permission hasn't been granted yet.
+With only the Command Line Tools installed, pass the same SDK and plugin path
+the test suite needs (see `scripts/capture-screenshots.sh`).
 
 ## Versioning
 
