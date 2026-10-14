@@ -3,12 +3,11 @@
 // via a single <script src="main.js" defer> tag.
 
 const REPO = "chessper53/NotificationNanny";
-const CACHE_KEY = "nn-site-stats-v1";
+const CACHE_KEY = "nn-site-stats-v2";
 const CACHE_TTL_MS = 60 * 60 * 1000; // 1h — plenty fresh for marketing numbers, keeps us well under the unauthenticated GitHub API rate limit.
 
 interface RepoStats {
   stars: number;
-  forks: number;
   downloads: number;
   latestTag: string | null;
   fetchedAt: number;
@@ -69,55 +68,23 @@ async function fetchLiveStats(): Promise<RepoStats> {
 
   return {
     stars: repo.stargazers_count ?? 0,
-    forks: repo.forks_count ?? 0,
     downloads,
     latestTag: releases[0]?.tag_name ?? null,
     fetchedAt: Date.now(),
   };
 }
 
-function prefersReducedMotion(): boolean {
-  return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-}
-
-function easeOutCubic(t: number): number {
-  return 1 - Math.pow(1 - t, 3);
-}
-
-function animateCountUp(el: HTMLElement, to: number, duration = 1200): void {
-  const start = performance.now();
-
-  function tick(now: number): void {
-    const progress = Math.min(1, (now - start) / duration);
-    const value = Math.round(to * easeOutCubic(progress));
-    el.textContent = formatCompact(value);
-    if (progress < 1) {
-      requestAnimationFrame(tick);
-    }
-  }
-
-  requestAnimationFrame(tick);
-}
-
-const animatedStats = new Set<string>();
-
 function renderStats(stats: RepoStats): void {
   const numericTiles: Record<string, number> = {
     downloads: stats.downloads,
     stars: stats.stars,
-    forks: stats.forks,
   };
 
   for (const [key, value] of Object.entries(numericTiles)) {
     const el = document.querySelector<HTMLElement>(`[data-stat="${key}"] [data-value]`);
     if (!el) continue;
+    el.textContent = formatCompact(value);
     el.classList.remove("is-loading");
-    if (prefersReducedMotion() || animatedStats.has(key)) {
-      el.textContent = formatCompact(value);
-    } else {
-      animatedStats.add(key);
-      animateCountUp(el, value);
-    }
   }
 
   const versionEl = document.querySelector<HTMLElement>('[data-stat="version"] [data-value]');
@@ -193,53 +160,75 @@ function setupCopyButtons(): void {
 }
 
 // ---------------------------------------------------------------------------
-// Reveal-on-scroll — small, single-fire, respects prefers-reduced-motion via
-// the CSS transition-duration override (see styles.css).
+// Features showcase: one tab per settings tab, following the WAI-ARIA tabs
+// pattern (roving tabindex, arrow keys, Home/End, selection follows focus).
+// The markup ships with the tab list hidden and every panel visible, so
+// without JS the page still shows all screenshots, stacked.
 // ---------------------------------------------------------------------------
 
-function setupReveal(): void {
-  const targets = document.querySelectorAll<HTMLElement>("[data-reveal]");
-  if (!("IntersectionObserver" in window) || targets.length === 0) {
-    targets.forEach((el) => el.classList.add("is-visible"));
-    return;
+function setupShowcase(): void {
+  const root = document.querySelector<HTMLElement>("[data-showcase]");
+  const tablist = root?.querySelector<HTMLElement>('[role="tablist"]');
+  if (!root || !tablist) return;
+
+  const tabs = Array.from(tablist.querySelectorAll<HTMLButtonElement>('[role="tab"]'));
+  if (tabs.length === 0) return;
+
+  function select(next: HTMLButtonElement, moveFocus: boolean): void {
+    for (const tab of tabs) {
+      const isSelected = tab === next;
+      tab.setAttribute("aria-selected", String(isSelected));
+      tab.tabIndex = isSelected ? 0 : -1;
+      const panel = document.getElementById(tab.getAttribute("aria-controls") ?? "");
+      if (panel) panel.hidden = !isSelected;
+    }
+    if (moveFocus) next.focus();
+    // On narrow screens the tab list scrolls sideways; keep the selection in view.
+    next.scrollIntoView({ block: "nearest", inline: "nearest" });
   }
 
-  const observer = new IntersectionObserver(
-    (entries) => {
-      for (const entry of entries) {
-        if (!entry.isIntersecting) continue;
-        entry.target.classList.add("is-visible");
-        observer.unobserve(entry.target);
+  tabs.forEach((tab, index) => {
+    tab.addEventListener("click", () => select(tab, false));
+    tab.addEventListener("keydown", (event) => {
+      let target: number;
+      switch (event.key) {
+        case "ArrowDown":
+        case "ArrowRight":
+          target = (index + 1) % tabs.length;
+          break;
+        case "ArrowUp":
+        case "ArrowLeft":
+          target = (index - 1 + tabs.length) % tabs.length;
+          break;
+        case "Home":
+          target = 0;
+          break;
+        case "End":
+          target = tabs.length - 1;
+          break;
+        default:
+          return;
       }
-    },
-    { threshold: 0.15, rootMargin: "0px 0px -40px 0px" }
-  );
-
-  targets.forEach((el) => observer.observe(el));
-}
-
-// ---------------------------------------------------------------------------
-// Screenshot skeletons — the shimmering placeholder (see .shot in styles.css)
-// stays up until each lazy-loaded screenshot actually decodes, then fades in.
-// ---------------------------------------------------------------------------
-
-function setupScreenshotSkeletons(): void {
-  document.querySelectorAll<HTMLImageElement>(".shot img").forEach((img) => {
-    const reveal = () => img.closest(".shot")?.classList.add("is-loaded");
-    if (img.complete) {
-      reveal();
-    } else {
-      img.addEventListener("load", reveal, { once: true });
-      img.addEventListener("error", reveal, { once: true });
-    }
+      const next = tabs[target];
+      if (!next) return;
+      event.preventDefault();
+      select(next, true);
+    });
   });
+
+  const initial = tabs.find((tab) => tab.getAttribute("aria-selected") === "true") ?? tabs[0];
+  for (const tab of tabs) {
+    const panel = document.getElementById(tab.getAttribute("aria-controls") ?? "");
+    if (panel) panel.hidden = tab !== initial;
+  }
+  tablist.hidden = false;
+  root.classList.add("is-enhanced");
 }
 
 // ---------------------------------------------------------------------------
 
 document.addEventListener("DOMContentLoaded", () => {
   setupCopyButtons();
-  setupReveal();
-  setupScreenshotSkeletons();
+  setupShowcase();
   void loadStats();
 });
