@@ -1,7 +1,7 @@
 /* ==========================================================================
    Tokens
    Brand pulled from the app itself: nannyAccent (amber, MenuBarContent.swift)
-   on the icon's graphite. Deliberately flat: no gradients anywhere.
+   on nannyGraphite, the same base as the icon and the settings window. Deliberately flat: no gradients anywhere.
    ========================================================================== */
 
 :root {
@@ -10,6 +10,10 @@
 
   --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+
+  /* One content column for every section below the hero: the showcase's
+     200 px tab list, a 24 px gap, and a screenshot at its 2x size (509 px). */
+  --column: 733px;
 
   --radius-lg: 18px;
   --radius-md: 14px;
@@ -26,15 +30,24 @@
   color-scheme: dark light;
 
   /* Dark (default) */
-  --bg: #0d0e11;
-  --bg-raised: #15171c;
+  --bg: #1a1c21;
+  --bg-raised: #212329;
   --surface: rgba(255, 255, 255, 0.045);
   --surface-strong: rgba(255, 255, 255, 0.07);
   --border: rgba(255, 255, 255, 0.09);
   --border-strong: rgba(255, 255, 255, 0.16);
   --text-primary: rgba(255, 255, 255, 0.94);
   --text-secondary: rgba(255, 255, 255, 0.62);
-  --text-muted: rgba(255, 255, 255, 0.4);
+  --text-muted: rgba(255, 255, 255, 0.55);
+
+  /* Selected sidebar row, as the app draws it (nannyWash(0.25), nannySelectedIcon):
+     an amber wash with a white icon on dark, a neutral wash with an amber icon on light. */
+  --tab-selected-bg: rgba(232, 131, 58, 0.25);
+  --tab-selected-icon: #ffffff;
+
+  /* nannyProminent: large accent fills are amber on dark, graphite on light. */
+  --prominent: #e8833a;
+  --on-prominent: #1a1c21;
 }
 
 @media (prefers-color-scheme: light) {
@@ -49,7 +62,11 @@
     --border-strong: rgba(18, 18, 20, 0.16);
     --text-primary: rgba(14, 14, 16, 0.92);
     --text-secondary: rgba(14, 14, 16, 0.6);
-    --text-muted: rgba(14, 14, 16, 0.42);
+    --text-muted: rgba(14, 14, 16, 0.56);
+    --tab-selected-bg: rgba(0, 0, 0, 0.08);
+    --tab-selected-icon: var(--accent);
+    --prominent: #2a2d34;
+    --on-prominent: #ffffff;
   }
 }
 
@@ -84,7 +101,15 @@ body {
   padding: 0 var(--space-4);
 }
 
+.column { max-width: calc(var(--column) + 2 * var(--space-4)); }
+
 a { color: inherit; text-decoration: none; }
+
+/* One focus ring for every link, button, and tab, drawn only for keyboard focus. */
+:focus-visible {
+  outline: 2px solid var(--accent-strong);
+  outline-offset: 2px;
+}
 
 /* ==========================================================================
    Nav
@@ -129,7 +154,7 @@ a { color: inherit; text-decoration: none; }
 
 .nav-links a { transition: color 0.15s ease; }
 .nav-links a:hover { color: var(--text-primary); }
-.nav-gh { color: var(--text-primary) !important; font-weight: 500; }
+.nav-links a { display: inline-flex; align-items: center; gap: 6px; }
 
 /* ==========================================================================
    Hero
@@ -217,14 +242,21 @@ a { color: inherit; text-decoration: none; }
 .install-copy {
   display: flex;
   align-items: center;
-  height: 44px;
   border-radius: 12px;
   background: var(--bg-raised);
   border: 1px solid var(--border-strong);
-  padding: 0 var(--space-2) 0 var(--space-3);
+  padding: 10px var(--space-2) 10px var(--space-3);
   gap: var(--space-3);
   max-width: 100%;
   min-width: 0;
+}
+
+.install-copy-lines {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  text-align: left;
 }
 
 .install-copy code {
@@ -254,8 +286,21 @@ a { color: inherit; text-decoration: none; }
   transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
 }
 .copy-btn:hover { background: var(--surface-strong); color: var(--text-primary); }
-.copy-btn.copied { color: #6fd08c; border-color: color-mix(in srgb, #6fd08c 45%, var(--border-strong)); }
+.copy-btn.copied { color: var(--accent-strong); border-color: color-mix(in srgb, var(--accent) 45%, var(--border-strong)); }
 .copy-btn svg { flex-shrink: 0; }
+/* The hero's copy button is the page's one primary action, filled like the
+   app's prominent button (Send Test Notification). */
+.copy-btn-prominent {
+  border-color: transparent;
+  background: var(--prominent);
+  color: var(--on-prominent);
+  font-weight: 600;
+}
+.copy-btn-prominent:hover { background: color-mix(in srgb, var(--prominent) 88%, var(--text-primary)); color: var(--on-prominent); }
+.copy-btn-prominent.copied { border-color: transparent; color: var(--on-prominent); }
+.copy-btn .copied-icon,
+.copy-btn.copied .copy-icon { display: none; }
+.copy-btn.copied .copied-icon { display: block; }
 
 /* ==========================================================================
    Stats
@@ -287,7 +332,7 @@ a { color: inherit; text-decoration: none; }
 
 .stats-grid {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(3, 1fr);
   gap: 1px;
   background: var(--border);
   border: 1px solid var(--border);
@@ -340,14 +385,12 @@ a { color: inherit; text-decoration: none; }
 }
 
 /* ==========================================================================
-   Screenshots
+   Demo
    ========================================================================== */
 
 /* Demo clip. Shares the window-chrome framing with .shot so the player reads as
-   the same object as the screenshots below it, just wider. */
+   the same object as the screenshots below it. */
 .demo-frame {
-  margin: 0 auto;
-  max-width: 860px;
   background: var(--bg-raised);
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
@@ -368,10 +411,99 @@ a { color: inherit; text-decoration: none; }
   text-align: center;
 }
 
-.shots-grid {
+/* ==========================================================================
+   Features showcase
+   A tab list styled like the app's sidebar next to the selected tab's
+   screenshot. Without JS (.is-enhanced never added) the tab list stays
+   hidden and every panel shows, stacked.
+   ========================================================================== */
+
+.showcase {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: var(--space-3);
+  grid-template-columns: minmax(0, 509px);
+  gap: var(--space-4);
+}
+
+.showcase.is-enhanced { grid-template-columns: 200px minmax(0, 509px); }
+
+/* Sticks beside the tall screenshot, under the 56 px nav. */
+.showcase-tabs {
+  position: sticky;
+  top: 80px;
+  align-self: start;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--space-2);
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+.showcase-tabs[hidden] { display: none; }
+
+.showcase-tab {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-secondary);
+  font-family: var(--font);
+  font-size: 14px;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.showcase-tab svg { width: 17px; height: 17px; flex-shrink: 0; color: var(--text-muted); }
+.showcase-tab:hover { background: var(--surface-strong); color: var(--text-primary); }
+.showcase-tab[aria-selected="true"] { background: var(--tab-selected-bg); color: var(--text-primary); }
+.showcase-tab[aria-selected="true"] svg { color: var(--tab-selected-icon); }
+
+/* Help sits apart at the bottom of the app's sidebar; a hairline stands in for the spacer. */
+.showcase-tab-end {
+  margin-top: var(--space-2);
+  position: relative;
+}
+.showcase-tab-end::before {
+  content: "";
+  position: absolute;
+  top: calc(-1 * var(--space-1) - 1px);
+  left: 10px;
+  right: 10px;
+  border-top: 1px solid var(--border);
+}
+
+.showcase-panels {
+  display: grid;
+  gap: var(--space-6);
+  min-width: 0;
+}
+
+/* Panels share one grid cell, so the frame keeps the height of the tallest one
+   and switching tabs never shifts the page. Hidden panels stay laid out
+   (visibility, not display) so their lazy screenshots load before first click. */
+.showcase.is-enhanced .showcase-panel { grid-area: 1 / 1; }
+.showcase.is-enhanced .showcase-panel[hidden] { display: block; visibility: hidden; }
+.showcase.is-enhanced .showcase-panel-title { display: none; }
+
+.showcase-panel { min-width: 0; border-radius: var(--radius-md); }
+
+.showcase-panel-title {
+  font-size: 15px;
+  font-weight: 620;
+  letter-spacing: -0.01em;
+  margin: 0 0 var(--space-2);
+}
+
+.showcase-panel p {
+  font-size: 14.5px;
+  line-height: 1.55;
+  color: var(--text-secondary);
+  margin: var(--space-3) 0 0;
 }
 
 .shot {
@@ -393,81 +525,18 @@ a { color: inherit; text-decoration: none; }
   background: var(--border-strong);
 }
 
+.shot picture { display: block; }
+
 .shot img {
   display: block;
   width: 100%;
   height: auto;
   background: var(--surface);
-  opacity: 0;
-  transition: opacity 0.35s ease;
-}
-
-.shot.is-loaded img {
-  opacity: 1;
-}
-
-.shot:not(.is-loaded) {
-  background: var(--bg-raised);
-}
-
-.shot figcaption {
-  padding: 10px 14px 14px;
-  font-size: 13px;
-  color: var(--text-secondary);
-  font-weight: 500;
-}
-
-/* ==========================================================================
-   Features
-   ========================================================================== */
-
-.feature-grid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 1px;
-  background: var(--border);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  overflow: hidden;
-}
-
-.feature {
-  background: var(--bg-raised);
-  padding: var(--space-4);
-}
-
-.feature-icon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 34px;
-  height: 34px;
-  border-radius: 9px;
-  background: color-mix(in srgb, var(--accent) 16%, transparent);
-  color: var(--accent-strong);
-  margin-bottom: var(--space-3);
-}
-.feature-icon svg { width: 18px; height: 18px; }
-
-.feature h3 {
-  font-size: 15px;
-  font-weight: 620;
-  margin: 0 0 6px;
-  letter-spacing: -0.01em;
-}
-
-.feature p {
-  font-size: 13.5px;
-  line-height: 1.55;
-  color: var(--text-secondary);
-  margin: 0;
 }
 
 /* ==========================================================================
    Install / terminal
    ========================================================================== */
-
-.install-wrap { max-width: 640px; }
 
 .terminal {
   position: relative;
@@ -504,10 +573,13 @@ a { color: inherit; text-decoration: none; }
 .prompt { color: var(--text-muted); flex-shrink: 0; }
 .terminal-line code { color: var(--text-primary); white-space: nowrap; }
 
+/* Sits inside the title bar, clear of the commands. */
 .terminal-copy {
   position: absolute;
-  top: 8px;
-  right: 12px;
+  top: 4px;
+  right: 8px;
+  height: 24px;
+  padding: 0 10px;
 }
 
 .install-alt {
@@ -518,6 +590,7 @@ a { color: inherit; text-decoration: none; }
   margin: 0 0 var(--space-2);
 }
 .install-alt a { color: var(--accent-strong); font-weight: 500; }
+.section-sub code,
 .install-alt code {
   font-family: var(--font-mono);
   font-size: 12.5px;
@@ -567,15 +640,19 @@ a { color: inherit; text-decoration: none; }
    Responsive
    ========================================================================== */
 
-@media (max-width: 900px) {
-  .shots-grid { grid-template-columns: repeat(2, 1fr); }
-}
-
 @media (max-width: 760px) {
   .nav-links { gap: var(--space-3); }
+  /* GitHub is the one link kept on phones. */
   .nav-links a:not(.nav-gh) { display: none; }
 
-  .stats-grid { grid-template-columns: repeat(2, 1fr); }
-  .feature-grid { grid-template-columns: 1fr; }
-  .shots-grid { grid-template-columns: 1fr; }
+  /* The meta line wraps here; dots would dangle at line ends, so space the items instead. */
+  .hero-meta { column-gap: var(--space-3); }
+  .hero-meta .dot { display: none; }
+
+  /* The tab list turns into a horizontal scroller above the screenshot. */
+  .showcase.is-enhanced { grid-template-columns: minmax(0, 1fr); gap: var(--space-3); }
+  .showcase-tabs { position: static; flex-direction: row; overflow-x: auto; scrollbar-width: none; }
+  .showcase-tab { width: auto; white-space: nowrap; }
+  .showcase-tab-end { margin-top: 0; }
+  .showcase-tab-end::before { display: none; }
 }
