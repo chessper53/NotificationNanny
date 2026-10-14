@@ -25,8 +25,13 @@ def main() -> int:
 
     referenced = set()
     for attribute in ("src", "href"):
-        for match in re.finditer(rf'{attribute}="([^"]+)"', stripped):
+        for match in re.finditer(rf'\s{attribute}="([^"]+)"', stripped):
             referenced.add(match.group(1))
+    # <source srcset> may list several candidates ("a.webp 1x, b.webp 2x").
+    for match in re.finditer(r'\ssrcset="([^"]+)"', stripped):
+        for candidate in match.group(1).split(","):
+            if candidate.strip():
+                referenced.add(candidate.strip().split()[0])
 
     missing = []
     for reference in sorted(referenced):
