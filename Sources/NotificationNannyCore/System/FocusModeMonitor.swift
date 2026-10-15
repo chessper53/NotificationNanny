@@ -19,6 +19,10 @@ final class FocusModeMonitor {
     static let shared = FocusModeMonitor()
 
     private(set) var isActive = false
+    /// Whether the Focus store could be read on the last check: nil before the first one.
+    /// False most often means macOS denied access (it sits behind Full Disk Access on
+    /// recent releases), and then `isActive` is always false whatever the real Focus is.
+    private(set) var storeReadable: Bool?
     private let cacheTTL: TimeInterval = 1.0
     private var refreshTask: Task<Void, Never>?
 
@@ -26,9 +30,12 @@ final class FocusModeMonitor {
         let ttlNanoseconds = UInt64(cacheTTL * 1_000_000_000)
         refreshTask = Task.detached(priority: .utility) { [weak self] in
             while !Task.isCancelled {
-                let value = Self.readActiveState()
+                let (value, readable) = Self.readActiveState()
                 guard let self else { return }
-                await MainActor.run { self.isActive = value }
+                await MainActor.run {
+                    self.isActive = value
+                    self.storeReadable = readable
+                }
                 try? await Task.sleep(nanoseconds: ttlNanoseconds)
             }
         }
@@ -39,16 +46,22 @@ final class FocusModeMonitor {
     // MARK: - Detection
 
     /// Candidate Focus-assertion database locations, newest layout first. The
-    /// first file that exists and parses determines the answer.
+    /// first file that exists and parses determines the answer. NN_FOCUS_ASSERTIONS=<path>
+    /// replaces them with one file, so a scripted run can switch a Focus on and off.
     private nonisolated static var assertionFileCandidates: [URL] {
+        if let path = ProcessInfo.processInfo.environment["NN_FOCUS_ASSERTIONS"] {
+            return [URL(filePath: path)]
+        }
         let home = FileManager.default.homeDirectoryForCurrentUser
         return [
             home.appending(path: "Library/DoNotDisturb/DB/Assertions.json"),
         ]
     }
 
-    private nonisolated static func readActiveState() -> Bool {
-        for url in assertionFileCandidates where FileManager.default.fileExists(atPath: url.path) {
+    /// Whether a Focus is asserted, and whether a store could be read at all.
+    private nonisolated static func readActiveState() -> (active: Bool, readable: Bool) {
+        // `fileExists` is false for a file behind TCC as well, so try the read regardless.
+        for url in assertionFileCandidates {
             guard let data = try? Data(contentsOf: url),
                   let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { continue }
             // Layout: { "data": [ { "storeAssertionRecords": [ … ] } ] }
@@ -56,14 +69,14 @@ final class FocusModeMonitor {
             if let dataArr = root["data"] as? [[String: Any]] {
                 for entry in dataArr {
                     if let records = entry["storeAssertionRecords"] as? [Any], !records.isEmpty {
-                        return true
+                        return (true, true)
                     }
                 }
             }
-            return false
+            return (false, true)
         }
         // No known store found (e.g. macOS Tahoe relocated it). Fail open: treat
         // as "no Focus" so repositioning keeps working rather than silently pausing.
-        return false
+        return (false, false)
     }
 }
