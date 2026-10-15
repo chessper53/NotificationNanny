@@ -126,6 +126,14 @@ if args.first == "--expand" {
     exit(1)
 }
 
+// `watch --wake`: tells a NotificationNanny started with NN_LAB=1 to act as if the Mac
+// had just woken.
+if args.first == "--wake" {
+    DistributedNotificationCenter.default().postNotificationName(
+        Notification.Name("com.notificationnanny.lab.wake"), object: nil, userInfo: nil, deliverImmediately: true)
+    exit(0)
+}
+
 // `watch --close-all`: closes the lab apps' banners, e.g. persistent leftovers.
 // Only theirs: anything else on screen is a real notification and stays.
 // `watch --close-app Bravo`: closes just that lab app's banner, as a user would.
