@@ -72,6 +72,10 @@ final class AXObserverController {
         onEvent = nil
     }
 
+    /// The PID Notification Center runs under right now, or 0 if it isn't running. Differs from
+    /// `ncPid` once NC has been relaunched under us, which macOS does across a long sleep.
+    var currentProcessPid: pid_t { Self.findNotificationProcessPid() }
+
     fileprivate func deliver(element: AXUIElement, notification: String) {
         onEvent?(element, notification)
     }
