@@ -127,7 +127,6 @@ enum Diagnostics {
         let toggles: [(String, Bool)] = [
             ("Protect desktop widgets", settings.protectDesktopWidgets),
             ("Hold while asleep",       settings.holdWhileAsleep),
-            ("Avoid Notification Center panel", settings.avoidNCPanel),
             ("Follow active screen",    settings.followActiveScreen),
             ("Pause while screen-sharing", settings.pauseWhileStreaming),
             ("Pause during Focus",      settings.pauseDuringFocus),
@@ -216,7 +215,6 @@ enum Diagnostics {
             let toggles: [(String, (Bool) -> Void)] = [
                 ("Protect desktop widgets",         { settings.protectDesktopWidgets = $0 }),
                 ("Hold while asleep",               { settings.holdWhileAsleep = $0 }),
-                ("Avoid Notification Center panel", { settings.avoidNCPanel = $0 }),
                 ("Follow active screen",            { settings.followActiveScreen = $0 }),
                 ("Pause while screen-sharing",      { settings.pauseWhileStreaming = $0 }),
                 ("Pause during Focus",              { settings.pauseDuringFocus = $0 }),
