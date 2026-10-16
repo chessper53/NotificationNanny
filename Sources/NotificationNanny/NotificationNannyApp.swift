@@ -204,7 +204,12 @@ final class AppCoordinator: NSObject, ObservableObject, NSApplicationDelegate, N
         // the user saved. Left to its default, the hosting controller resizes the
         // window to the SwiftUI content's preferred size, which for a scrolling tab
         // is its full height, so the window opened as tall as the screen or taller.
-        hosting.sizingOptions = []
+        //
+        // Only the minimum is passed on. With none, the window ignored its own minSize:
+        // the content reported it could shrink to nothing, every tab being flexible or
+        // scrolling, and the window could be dragged so small the sidebar and the tab
+        // were cut off.
+        hosting.sizingOptions = [.minSize]
         let window = NSWindow(contentViewController: hosting)
         window.title = "NotificationNanny Settings"
         // Resizable, with only a floor. It was pinned to exactly 660x640 by
@@ -215,7 +220,7 @@ final class AppCoordinator: NSObject, ObservableObject, NSApplicationDelegate, N
         window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
         // A compact default; every tab scrolls, so it never needs to open tall.
         window.setContentSize(Self.settingsDefaultSize)
-        window.minSize = NSSize(width: 620, height: 440)
+        window.contentMinSize = SettingsView.minimumContentSize
         window.isReleasedWhenClosed = false
         window.center()
         // Keeps whatever size the user settles on across launches. Set after
@@ -226,6 +231,14 @@ final class AppCoordinator: NSObject, ObservableObject, NSApplicationDelegate, N
         // display while a leftover size lock in SettingsView fought the resizing.
         // A new name gives everyone the compact default once.
         window.setFrameAutosaveName("NotificationNannySettings")
+        // A stored frame is restored as is, below the minimum too, and a window once
+        // dragged too small came back cut off on every launch.
+        let content = window.contentLayoutRect.size
+        let minimum = SettingsView.minimumContentSize
+        if content.width < minimum.width || content.height < minimum.height {
+            window.setContentSize(NSSize(width: max(content.width, minimum.width),
+                                         height: max(content.height, minimum.height)))
+        }
         settingsWindow = window
         presentWindow(window, on: screen)
     }

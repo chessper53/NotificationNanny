@@ -18,6 +18,10 @@ package struct SettingsView: View {
 
     package init() {}
 
+    /// The smallest the window's content may get. Below this the sidebar labels and the
+    /// tab content were cut off rather than scrolled. The window takes it from here.
+    package static let minimumContentSize = CGSize(width: 620, height: 412)
+
     package var body: some View {
         VStack(spacing: 0) {
             VStack(spacing: 0) {
@@ -145,7 +149,8 @@ package struct SettingsView: View {
                 .id(activeTab)
             }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .frame(minWidth: Self.minimumContentSize.width, maxWidth: .infinity,
+               minHeight: Self.minimumContentSize.height, maxHeight: .infinity)
         .background(Color.nannyWindow)
         .background(WindowAppearance(appearance: settings.settingsAppearance.nsAppearance))
         .tint(Color.nannyProminent)
