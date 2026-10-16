@@ -678,6 +678,13 @@ package final class NotificationRepositioner: ObservableObject {
         /// Seconds the overlay takes to leave: its outro plus the fade after it.
         var exit: Double
         var leavingUntil: Double?
+        /// Where its pile goes, so a leaving overlay stays in its own pile.
+        var anchor: PileAnchor
+    }
+    /// Where one custom pile goes; see `syncCustomPile`.
+    private struct PileAnchor: Equatable {
+        let screen: NSScreen
+        let placement: ScreenPlacement
     }
     /// Custom overlays per NC window, top to bottom; see `syncCustomPile`.
     private var customPiles: [CFHashCode: [PileSlot]] = [:]
@@ -915,6 +922,15 @@ package final class NotificationRepositioner: ObservableObject {
         let bannerSize: CGSize
     }
 
+    /// The screen a banner goes to: its group's forced display, else the active
+    /// screen when following it, else the global forced display, else `fallback`.
+    private func bannerScreen(forced: NSScreen?, settings: any NotificationSettingsProviding,
+                              fallback: @autoclosure () -> NSScreen?) -> NSScreen? {
+        if let forced { return forced }
+        if settings.followActiveScreen, let active = Self.activeScreen() { return active }
+        return settings.resolvedTargetScreen() ?? fallback()
+    }
+
     private func targetOrigin(for window: AXUIElement, stackIndex: Int = 0) -> RepositionTarget? {
         guard let settings, settings.isActive else {
             log.debug("targetOrigin: skipped — disabled or snoozed")
@@ -947,17 +963,8 @@ package final class NotificationRepositioner: ObservableObject {
             ? settings.resolvedTargetScreen(forGroupID: testGroupID!)
             : settings.resolvedTargetScreen(for: appNameStr)
 
-        let screen: NSScreen
-        if let forced = groupScreen {
-            screen = forced
-        } else if settings.followActiveScreen, let active = Self.activeScreen() {
-            screen = active
-        } else if let forced = settings.resolvedTargetScreen() {
-            screen = forced
-        } else {
-            guard let s = screenContainingAxPoint(oldPos) ?? NSScreen.main else { return nil }
-            screen = s
-        }
+        guard let screen = bannerScreen(forced: groupScreen, settings: settings,
+                                        fallback: screenContainingAxPoint(oldPos) ?? NSScreen.main) else { return nil }
 
         let placement: ScreenPlacement
         if let testGroup = testGroupID {
@@ -1542,8 +1549,9 @@ package final class NotificationRepositioner: ObservableObject {
     /// One custom overlay per banner in the window, laid out the way the native
     /// banners are: placed as one pile (growing upward at bottom positions) and
     /// kept on screen as a whole. The host itself is parked off screen. Each
-    /// overlay takes its own app's look; the pile takes the placement of the
-    /// newest banner, as the native pile does. An overlay goes when its banner
+    /// overlay takes its own app's look, and its own app's placement when every
+    /// banner up is custom; otherwise the pile takes the placement of the newest
+    /// banner, as the native pile does. An overlay goes when its banner
     /// leaves, and dismissing an overlay closes its banner.
     private func syncCustomPile(_ window: AXUIElement, target t: RepositionTarget) {
         guard let settings else { return }
@@ -1596,47 +1604,72 @@ package final class NotificationRepositioner: ObservableObject {
         for item in items where bannerFirstSeen[item.id] == nil { bannerFirstSeen[item.id] = now }
         let arranged = PileOrder.arrange(items.map(\.id), firstSeen: bannerFirstSeen,
                                          newestAtBottom: settings.newestBannerAtBottom)
-        let order = PileOrder.merge(current: arranged, previous: previous.map(\.id), leaving: leaving)
+
+        // When every banner up is custom, each app's banners pile up where that
+        // app goes, so two exception groups can show in two places at once. A
+        // native one among them can't leave the shared host window, so then
+        // they all share the newest banner's placement, as before.
+        let shared = PileAnchor(screen: t.screen, placement: t.placement)
+        let allCustom = items.allSatisfy { item in
+            item.testGroup.map { settings.shouldUseCustomBanner(forGroupID: $0) }
+                ?? settings.shouldUseCustomBanner(for: item.name)
+        }
+        func ownAnchor(_ item: Item) -> PileAnchor {
+            let forced = item.testGroup.map { settings.resolvedTargetScreen(forGroupID: $0) }
+                ?? settings.resolvedTargetScreen(for: item.name)
+            let screen = bannerScreen(forced: forced, settings: settings, fallback: t.screen) ?? t.screen
+            let placement = item.testGroup.map { settings.placement(forGroupID: $0, screen: screen) }
+                ?? settings.placement(for: item.name, screen: screen)
+            return PileAnchor(screen: screen, placement: placement)
+        }
+        let anchors = Dictionary(items.map { ($0.id, allCustom ? ownAnchor($0) : shared) },
+                                 uniquingKeysWith: { a, _ in a })
+        let piles = PileOrder.split(current: arranged, previous: previous.map(\.id), leaving: leaving) {
+            anchors[$0] ?? slots[$0]?.anchor ?? shared
+        }
 
         let live = Dictionary(items.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
         func size(of id: String) -> CGSize {
             if let item = live[id] { return CGSize(width: item.size.width * scale(item), height: item.size.height * scale(item)) }
             return slots[id]?.size ?? .zero
         }
-        let sizes = order.map(size(of:))
         let gap = Self.pileGap
-        let pile = CGSize(width: sizes.map(\.width).max() ?? 0,
-                          height: sizes.map(\.height).reduce(0, +) + gap * CGFloat(max(0, sizes.count - 1)))
-        let origin = t.placement.position.axStackOrigin(
-            stackSize: pile, screen: t.screen,
-            xOffset: CGFloat(t.placement.xOffset), yOffset: CGFloat(t.placement.yOffset))
-
-        var y = origin.y
         var next: [PileSlot] = []
         var arrivals: [(id: String, item: Item, topLeft: CGPoint, size: CGSize)] = []
-        for (id, size) in zip(order, sizes) {
-            let x: CGFloat
-            switch t.placement.position {
-            case .topRight, .middleRight, .bottomRight:    x = origin.x + pile.width - size.width
-            case .topCenter, .middleCenter, .bottomCenter: x = origin.x + (pile.width - size.width) / 2
-            default:                                        x = origin.x
-            }
-            let topLeft = CGPoint(x: x, y: y)
-            y += size.height + gap
+        for (anchor, order) in piles {
+            let sizes = order.map(size(of:))
+            let pile = CGSize(width: sizes.map(\.width).max() ?? 0,
+                              height: sizes.map(\.height).reduce(0, +) + gap * CGFloat(max(0, sizes.count - 1)))
+            let placement = anchor.placement
+            let origin = placement.position.axStackOrigin(
+                stackSize: pile, screen: anchor.screen,
+                xOffset: CGFloat(placement.xOffset), yOffset: CGFloat(placement.yOffset))
 
-            guard let item = live[id] else {
-                if let slot = slots[id] { next.append(slot) }   // leaving: holds its place
-                continue
+            var y = origin.y
+            for (id, size) in zip(order, sizes) {
+                let x: CGFloat
+                switch placement.position {
+                case .topRight, .middleRight, .bottomRight:    x = origin.x + pile.width - size.width
+                case .topCenter, .middleCenter, .bottomCenter: x = origin.x + (pile.width - size.width) / 2
+                default:                                        x = origin.x
+                }
+                let topLeft = CGPoint(x: x, y: y)
+                y += size.height + gap
+
+                guard let item = live[id] else {
+                    if let slot = slots[id] { next.append(slot) }   // leaving: holds its place
+                    continue
+                }
+                let key = overlayKey(id)
+                if customBannerManager.isActive(key: key) {
+                    customBannerManager.move(key: key, axTopLeft: topLeft,
+                                             width: size.width, height: size.height, scale: scale(item),
+                                             glide: !placingFromSettings)
+                } else {
+                    arrivals.append((id, item, topLeft, size))
+                }
+                next.append(PileSlot(id: id, size: size, exit: exit(item), leavingUntil: nil, anchor: anchor))
             }
-            let key = overlayKey(id)
-            if customBannerManager.isActive(key: key) {
-                customBannerManager.move(key: key, axTopLeft: topLeft,
-                                         width: size.width, height: size.height, scale: scale(item),
-                                         glide: !placingFromSettings)
-            } else {
-                arrivals.append((id, item, topLeft, size))
-            }
-            next.append(PileSlot(id: id, size: size, exit: exit(item), leavingUntil: nil))
         }
         customPiles[windowKey] = next
 

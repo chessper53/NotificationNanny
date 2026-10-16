@@ -32,4 +32,21 @@ enum PileOrder {
         }
         return result
     }
+
+    /// One pile per anchor, each ordered as `merge` orders a whole pile. Banners
+    /// from apps placed in different spots then each pile up where their app
+    /// goes, and a leaving overlay holds its slot in its own pile. Piles come in
+    /// the order their anchors first appear in `current`, then in `previous`.
+    static func split<Anchor: Equatable>(current: [String], previous: [String], leaving: Set<String>,
+                                         anchor: (String) -> Anchor) -> [(anchor: Anchor, ids: [String])] {
+        var anchors: [Anchor] = []
+        for id in current + previous.filter(leaving.contains) {
+            let a = anchor(id)
+            if !anchors.contains(a) { anchors.append(a) }
+        }
+        return anchors.map { a in
+            (a, merge(current: current.filter { anchor($0) == a },
+                      previous: previous.filter { anchor($0) == a }, leaving: leaving))
+        }
+    }
 }
