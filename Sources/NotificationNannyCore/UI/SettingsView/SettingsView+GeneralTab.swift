@@ -91,8 +91,6 @@ struct GeneralTabView: View {
             section("Placement & safety") {
                 toggleRow("Send to the screen with the cursor", isOn: $settings.followActiveScreen)
                 Divider().padding(.leading, 14)
-                toggleRow("Don't move Notification Center", isOn: $settings.avoidNCPanel)
-                Divider().padding(.leading, 14)
                 toggleRow("Don't move desktop widgets", isOn: $settings.protectDesktopWidgets)
                 Divider().padding(.leading, 14)
                 toggleRow("Hold banners while display is asleep", isOn: $settings.holdWhileAsleep)

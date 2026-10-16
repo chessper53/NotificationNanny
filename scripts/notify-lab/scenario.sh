@@ -10,6 +10,10 @@
 #                        delay:Script[:title] posts through osascript instead,
 #                        which macOS shows as a Temporary Script Editor banner
 #                        delay:close:App closes that lab app's banner
+#                        delay:panel presses the menu bar clock, opening or
+#                        closing the Notification Center panel
+#                        delay:expand:App expands that lab app's stack in the
+#                        open panel
 #   --position P         bottomRight (default), topRight, middleLeft, ...
 #   --x-offset N         placement offset in points (default 0)
 #   --y-offset N
@@ -22,6 +26,8 @@
 #   --app PATH           the .app to run (default build/NotificationNanny.app)
 #   --oslog              also capture the app's debug log (last-oslog.txt); this
 #                        slows the app down noticeably, so not for timing runs
+#   --display N          send banners to the Nth screen of `watch --screens`
+#                        (default: none, each stays on the screen macOS picks)
 #   --keep-existing      leave banners already on screen instead of closing them
 #                        first, to test a pile that predates the app
 #
@@ -44,7 +50,7 @@ cd "$(dirname "$0")/../.."
 DOMAIN=com.notificationnanny.app
 LAB=build/notify-lab
 APP=build/NotificationNanny.app
-POSITION=bottomRight X=0 Y=0 AUTO=0 CUSTOM=0 SCALE=1 WATCH_SECS=10 KEEP=0 OSLOG=0 NEWEST_BOTTOM=0
+POSITION=bottomRight X=0 Y=0 AUTO=0 CUSTOM=0 SCALE=1 WATCH_SECS=10 KEEP=0 OSLOG=0 NEWEST_BOTTOM=0 DISPLAY_N=0
 POSTS=()
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -59,6 +65,7 @@ while [[ $# -gt 0 ]]; do
         --keep-existing) KEEP=1; shift ;;
         --oslog) OSLOG=1; shift ;;
         --newest-at-bottom) NEWEST_BOTTOM=1; shift ;;
+        --display) DISPLAY_N=$2; shift 2 ;;
         *) POSTS+=("$1"); shift ;;
     esac
 done
@@ -69,7 +76,7 @@ BACKUP=$LAB/defaults-backup.plist
 # `defaults write`: `defaults import` bypasses the preferences cache and a
 # cached copy can win afterwards, which once left a test configuration behind.
 # lastBinaryMtime is stamped by the app itself on every launch.
-KEYS=(placementsByDisplayID targetDisplayID autoDismissSeconds redactBannerContent bannerScale
+KEYS=(placementsByDisplayID targetDisplayID targetDisplayUUID autoDismissSeconds redactBannerContent bannerScale
       hasBannerColor bannerAnimation followActiveScreen holdWhileAsleep pauseWhileStreaming pauseDuringFocus
       lastBinaryMtime newestBannerAtBottom)
 NN_MATCH="\.app/Contents/MacOS/NotificationNanny"
@@ -94,7 +101,8 @@ saved = plistlib.load(open(backup, "rb"))
 def write(key, value):
     if isinstance(value, bool):    args = ["-bool", "YES" if value else "NO"]
     elif isinstance(value, int):   args = ["-int", str(value)]
-    elif isinstance(value, float): args = ["-float", repr(value)]
+    # -float rounds to 32 bits; a plist fragment keeps every digit of the double.
+    elif isinstance(value, float): args = [f"<real>{value!r}</real>"]
     elif isinstance(value, bytes): args = ["-data", value.hex()]
     elif isinstance(value, datetime.datetime):
         args = ["-date", value.strftime("%Y-%m-%d %H:%M:%S +0000")]
@@ -139,7 +147,15 @@ PLACEMENTS=$("$LAB/watch" --screens | awk -v p="$POSITION" -v x="$X" -v y="$Y" '
     { if (NR > 1) printf ","; printf "\"%s\":{\"position\":\"%s\",\"xOffset\":%s,\"yOffset\":%s}", $1, p, x, y }
     END { printf "}" }')
 defaults write "$DOMAIN" placementsByDisplayID -data "$(printf '%s' "$PLACEMENTS" | xxd -p | tr -d '\n')"
-defaults write "$DOMAIN" targetDisplayID -int 0
+if [[ $DISPLAY_N == 0 ]]; then
+    defaults write "$DOMAIN" targetDisplayID -int 0
+    defaults delete "$DOMAIN" targetDisplayUUID 2>/dev/null || true
+else
+    read -r uuid _ did <<< "$("$LAB/watch" --screens | sed -n "${DISPLAY_N}p")"
+    [[ -n "${did:-}" ]] || { echo "no screen $DISPLAY_N" >&2; exit 64; }
+    defaults write "$DOMAIN" targetDisplayID -int "$did"
+    defaults write "$DOMAIN" targetDisplayUUID -string "$uuid"
+fi
 defaults write "$DOMAIN" autoDismissSeconds -float "$AUTO"
 defaults write "$DOMAIN" redactBannerContent -bool NO
 defaults write "$DOMAIN" newestBannerAtBottom -bool $([[ $NEWEST_BOTTOM == 1 ]] && echo YES || echo NO)
@@ -174,6 +190,8 @@ for spec in ${POSTS[@]+"${POSTS[@]}"}; do
     sleep "$delay"
     case $app in
         close)  "$LAB/watch" --close-app "$title" >/dev/null & ;;
+        panel)  "$LAB/watch" --clock ;;
+        expand) "$LAB/watch" --expand "$title" ;;
         Script) osascript -e "display notification \"Body from Script\" with title \"${title:-Script title}\"" & ;;
         *)      "$LAB/Lab $app.app/Contents/MacOS/notifier" "${title:-$app title}" "Body from $app" & ;;
     esac

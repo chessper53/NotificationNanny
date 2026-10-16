@@ -112,6 +112,9 @@ package final class NotificationRepositioner: ObservableObject {
         isObserving = true
         iconCache.prewarm()
         logger.log("Observer started — NC PID \(axController.ncPid)", tag: "AX")
+        // Which panel check applies here; see isNCPanelOpen. Untested releases report it.
+        let panelSignal = ncExpandedState() == .unsupported ? "no AXExpanded, panel found by focus" : "AXExpanded"
+        logger.log("Notification Center panel detection: \(panelSignal)", tag: "AX")
         repositionVisibleWindows()
     }
 
@@ -312,6 +315,11 @@ package final class NotificationRepositioner: ObservableObject {
         guard ProcessInfo.processInfo.systemUptime < followUntil || followMoved, !nativePiles.isEmpty else {
             followTimer?.cancel()
             followTimer = nil
+            return
+        }
+        // The panel opens inside the pile's window; following the pile would drag it along.
+        if isNCExpanded() {
+            nativePiles.removeAll()
             return
         }
         followMoved = false
@@ -844,19 +852,24 @@ package final class NotificationRepositioner: ObservableObject {
             var panelAnswer: Bool?
             func isPanel() -> Bool {
                 if let panelAnswer { return panelAnswer }
-                let answer = isNCFocusedPanel(window)
+                let answer = isNCPanelOpen(window)
                 panelAnswer = answer
                 return answer
             }
-            if settings.avoidNCPanel, isPanel() {
+            // The open panel is never moved: it opens inside this window, and a panel
+            // dragged to a banner position is cut off and won't scroll.
+            if isPanel() {
+                returnPanelHome(window, size: size, from: oldPos)
                 return nil
             }
             var bSz = bannerEl.size() ?? Self.bannerSize
             if bSz.width > Self.maxBannerWidth { bSz.width = Self.bannerSize.width }
             let offsetX = size.width - bSz.width - Self.bannerInsetFromTopRight.x
             var offsetY = Self.bannerInsetFromTopRight.y
-            if let bPos = bannerEl.point() {
-                offsetY = bPos.y - oldPos.y
+            // The pile's top, which is not always its first banner; see pileTop.
+            let pileTopY = isPanel() ? bannerEl.point()?.y : Self.pileTop(above: bannerEl)
+            if let pileTopY {
+                offsetY = pileTopY - oldPos.y
             }
             bannerOffset = CGPoint(x: offsetX, y: offsetY)
             bannerSz = bSz
@@ -868,13 +881,13 @@ package final class NotificationRepositioner: ObservableObject {
             // Notification Center panel lists past notifications with the same
             // subroles, which are not a pile to place.
             stackHeight = bSz.height
-            if !isPanel(), let bPos = bannerEl.point() {
+            if !isPanel(), let top = pileTopY {
                 let banners = banners(in: window)
                 let lowestBottom = banners.compactMap { ref -> CGFloat? in
                     guard let p = ref.element.point(), let s = ref.element.size() else { return nil }
                     return p.y + s.height
-                }.max() ?? bPos.y + bSz.height
-                stackHeight = max(bSz.height, lowestBottom - bPos.y)
+                }.max() ?? top + bSz.height
+                stackHeight = max(bSz.height, lowestBottom - top)
                 if banners.count != lastLoggedHostBannerCount {
                     lastLoggedHostBannerCount = banners.count
                     if banners.count > 1 {
@@ -937,7 +950,7 @@ package final class NotificationRepositioner: ObservableObject {
         // Banners with identifiers (macOS 26 on) get one overlay each, laid out as
         // a pile. The window-keyed overlay below is for banners without one.
         if hasIdentifiedBanners(window) {
-            if shouldKeepCustom, !isNCFocusedPanel(window) {
+            if shouldKeepCustom, !isNCPanelOpen(window) {
                 nativePiles.removeValue(forKey: CFHash(window))
                 syncCustomPile(window, target: t)
                 return
@@ -1068,7 +1081,7 @@ package final class NotificationRepositioner: ObservableObject {
             useCustomBanner = settings.shouldUseCustomBanner(for: name)
             animation = settings.effectiveBannerAnimation(for: name)
         }
-        if isNCFocusedPanel(window) {
+        if isNCPanelOpen(window) {
             useCustomBanner = false
             logger.log("Notification Center panel — forcing native move (no custom overlay)", tag: "Banner")
         }
@@ -1369,7 +1382,7 @@ package final class NotificationRepositioner: ObservableObject {
     /// way) carries over, or a sweep in the middle of a change would hide it.
     private func rememberNativePile(_ window: AXUIElement, target t: RepositionTarget) {
         let key = CFHash(window)
-        guard t.windowSize.width > 700 || t.windowSize.height > 400, !isNCFocusedPanel(window) else {
+        guard t.windowSize.width > 700 || t.windowSize.height > 400, !isNCPanelOpen(window) else {
             nativePiles.removeValue(forKey: key)
             return
         }
@@ -1625,12 +1638,99 @@ package final class NotificationRepositioner: ObservableObject {
         settings?.protectDesktopWidgets == true && findBannerElement(in: window) == nil
     }
 
-    private func isNCFocusedPanel(_ window: AXUIElement) -> Bool {
+    /// Whether the Notification Center panel is open in `window`.
+    ///
+    /// Since macOS 15 the panel opens inside the same fullscreen window that hosts the
+    /// banners, not a window of its own. This used to ask whether `window` was NC's focused
+    /// window, but opening the panel with a banner up focuses the banner host and closing it
+    /// leaves that focus behind (measured on 27.0). Every later banner then counted as the
+    /// panel: with "Don't move Notification Center" on none of them moved, with it off the
+    /// panel itself was dragged to the banner position.
+    ///
+    /// Two signals, either one enough. NC's application element reports `AXExpanded`, but
+    /// it turns true a moment after the panel's list is already in the window, and a sweep
+    /// in that moment placed the list as a pile of banners. The Edit Widgets button is only
+    /// ever in the open panel, which also covers a release without `AXExpanded`. Not the
+    /// panel's `AXNotificationListItems` list: two or more banners on their own sit in one
+    /// too (measured on 27.0).
+    ///
+    /// Only where NC has no `AXExpanded` at all (not confirmed on any release yet, but older
+    /// ones are untested) does the old focused-window guess come back as a last resort, so
+    /// such a release is never worse off than before.
+    private func isNCPanelOpen(_ window: AXUIElement) -> Bool {
+        switch ncExpandedState() {
+        case .open: return true
+        case .closed: return Self.containsPanelContent(window)
+        case .unsupported: return Self.containsPanelContent(window) || isNCFocusedWindow(window)
+        }
+    }
+
+    private enum NCExpandedState { case open, closed, unsupported }
+
+    private func ncExpandedState() -> NCExpandedState {
+        guard let app = ncApp else { return .unsupported }
+        var expanded: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(app, "AXExpanded" as CFString, &expanded) == .success,
+              let value = expanded as? Bool else { return .unsupported }
+        return value ? .open : .closed
+    }
+
+    /// NC's own word on the panel: one call, cheap enough for every follow frame.
+    private func isNCExpanded() -> Bool { ncExpandedState() == .open }
+
+    private func isNCFocusedWindow(_ window: AXUIElement) -> Bool {
         guard let app = ncApp else { return false }
-        var focusRef: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(app, kAXFocusedWindowAttribute as CFString, &focusRef) == .success,
-              let fw = focusRef else { return false }
-        return CFEqual(fw, window)
+        var focused: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(app, kAXFocusedWindowAttribute as CFString, &focused) == .success,
+              let focused else { return false }
+        return CFEqual(focused, window)
+    }
+
+    /// The panel opens inside the banner host, wherever we last moved it to put a banner in
+    /// place, and macOS does not move it back: with banners at the bottom the panel opened
+    /// almost entirely below the screen. Leaving it alone is not enough, so put the host back
+    /// on the screen it fills, which is where macOS keeps it.
+    private func returnPanelHome(_ window: AXUIElement, size: CGSize, from current: CGPoint) {
+        guard let primary = NSScreen.screens.first else { return }
+        let home = NSScreen.screens.first { $0.frame.size == size } ?? primary
+        guard home.frame.size == size else { return }
+        let origin = CGPoint(x: home.frame.minX, y: primary.frame.maxY - home.frame.maxY)
+        nativePiles.removeValue(forKey: CFHash(window))
+        guard hypot(current.x - origin.x, current.y - origin.y) > 1 else { return }
+        setWindowPosition(window, to: origin)
+        lastSelfSetPositions[CFHash(window)] = origin
+        logger.log("Notification Center panel opened — put it back in place", tag: "Banner")
+    }
+
+    /// Where a pile starts. Two or more banners sit in one list, and a stack that was
+    /// expanded in the panel stays expanded there, with a header row (app name, Show Less,
+    /// Clear) above its banners. Measuring from the first banner put that row, and anything
+    /// above it, past the top of the placement: under the menu bar of a second screen.
+    /// So take the highest row of the list, whatever it is.
+    private static func pileTop(above banner: AXUIElement) -> CGFloat? {
+        let own = banner.point()?.y
+        var parentRef: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(banner, kAXParentAttribute as CFString, &parentRef) == .success,
+              let parentRef, CFGetTypeID(parentRef) == AXUIElementGetTypeID() else { return own }
+        let list = parentRef as! AXUIElement
+        guard list.stringAttribute(kAXIdentifierAttribute as String) == "AXNotificationListItems" else { return own }
+        let rows = list.children().compactMap { $0.point()?.y }
+        return rows.min() ?? own
+    }
+
+    private static let panelOnlyIdentifiers: Set<String> = ["widget-editor-button"]
+
+    /// Stops at banners: what marks the panel sits above them, and walking every banner's
+    /// text on each sweep is the cost the sweep work cut out.
+    private static func containsPanelContent(_ el: AXUIElement, depth: Int = 0) -> Bool {
+        guard depth < 7 else { return false }
+        if let id = el.stringAttribute(kAXIdentifierAttribute as String), panelOnlyIdentifiers.contains(id) {
+            return true
+        }
+        if let sub = el.stringAttribute(kAXSubroleAttribute as String), AppNameResolver.bannerSubroles.contains(sub) {
+            return false
+        }
+        return el.children().contains { containsPanelContent($0, depth: depth + 1) }
     }
 
     private func logSkippedOnce(_ window: AXUIElement, reason: String, tag: String, size: CGSize, pos: CGPoint) {

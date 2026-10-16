@@ -26,7 +26,6 @@ struct ApplyReportTests {
         #expect(s.holdWhileAsleep == true)
         #expect(s.followActiveScreen == true)
         #expect(s.protectDesktopWidgets == false)
-        #expect(s.avoidNCPanel == false)
         #expect(s.pauseWhileStreaming == false)
         #expect(s.pauseDuringFocus == false)
         #expect(s.autoDismissSeconds == 9)
