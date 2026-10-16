@@ -17,7 +17,6 @@ package final class AppSettings: ObservableObject {
         static let appGroups            = "appGroups"
         static let knownApps            = "knownAppNames"
         static let pauseWhileStreaming  = "pauseWhileStreaming"
-        static let avoidNCPanel         = "avoidNCPanel"
         static let protectDesktopWidgets = "protectDesktopWidgets"
         static let followActiveScreen   = "followActiveScreen"
         static let pauseDuringFocus     = "pauseDuringFocus"
@@ -92,9 +91,6 @@ package final class AppSettings: ObservableObject {
         didSet { defaults.set(pauseWhileStreaming, forKey: Key.pauseWhileStreaming) }
     }
 
-    @Published package var avoidNCPanel: Bool {
-        didSet { defaults.set(avoidNCPanel, forKey: Key.avoidNCPanel) }
-    }
 
     @Published package var protectDesktopWidgets: Bool {
         didSet { defaults.set(protectDesktopWidgets, forKey: Key.protectDesktopWidgets) }
@@ -344,7 +340,6 @@ package final class AppSettings: ObservableObject {
             self.snoozedUntil = nil
         }
         self.pauseWhileStreaming    = (defaults.object(forKey: Key.pauseWhileStreaming) as? Bool) ?? false
-        self.avoidNCPanel          = (defaults.object(forKey: Key.avoidNCPanel) as? Bool) ?? true
         self.protectDesktopWidgets = (defaults.object(forKey: Key.protectDesktopWidgets) as? Bool) ?? true
         self.followActiveScreen    = (defaults.object(forKey: Key.followActiveScreen) as? Bool) ?? false
         self.pauseDuringFocus      = (defaults.object(forKey: Key.pauseDuringFocus) as? Bool) ?? false
@@ -582,7 +577,10 @@ package final class AppSettings: ObservableObject {
         var autoDismissSeconds: Double
         var bannerScale: Double
         var pauseWhileStreaming: Bool
-        var avoidNCPanel: Bool
+        /// The old "Don't move Notification Center" toggle. The open panel is never moved
+        /// now; the field stays, always true, so a version that still requires it can
+        /// import a newer backup, and is ignored on import.
+        var avoidNCPanel: Bool?
         var protectDesktopWidgets: Bool?
         var followActiveScreen: Bool?
         var pauseDuringFocus: Bool?
@@ -600,7 +598,7 @@ package final class AppSettings: ObservableObject {
             autoDismissSeconds: autoDismissSeconds,
             bannerScale: bannerScale,
             pauseWhileStreaming: pauseWhileStreaming,
-            avoidNCPanel: avoidNCPanel,
+            avoidNCPanel: true,
             protectDesktopWidgets: protectDesktopWidgets,
             followActiveScreen: followActiveScreen,
             pauseDuringFocus: pauseDuringFocus,
@@ -627,7 +625,6 @@ package final class AppSettings: ObservableObject {
         autoDismissSeconds  = imported.autoDismissSeconds
         bannerScale         = imported.bannerScale
         pauseWhileStreaming  = imported.pauseWhileStreaming
-        avoidNCPanel        = imported.avoidNCPanel
         protectDesktopWidgets = imported.protectDesktopWidgets ?? true
         followActiveScreen  = imported.followActiveScreen ?? false
         pauseDuringFocus    = imported.pauseDuringFocus ?? false
