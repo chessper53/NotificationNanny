@@ -24,7 +24,7 @@
 <br />
 
 <p align="center">
-  <img src="docs/assets/readme-banner.png" width="699" alt="A tinted NotificationNanny banner placed at the bottom center of the screen, just above the Dock" />
+  <img src="docs/demo/demo-story-8s.webp" width="720" alt="Dragging the banner in Settings moves the real notification with it, and picking purple tints it" />
 </p>
 
 <br />
