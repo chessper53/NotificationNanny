@@ -51,6 +51,13 @@ package final class NotificationRepositioner: ObservableObject {
             self?.startObserving()
         }
         registerSleepWakeObservers()
+        // NN_LAB=1 (scripts/notify-lab) lets a scripted run fake a system wake, which a
+        // script can't otherwise cause without putting the Mac to sleep.
+        if ProcessInfo.processInfo.environment["NN_LAB"] == "1" {
+            DistributedNotificationCenter.default().addObserver(
+                forName: Notification.Name("com.notificationnanny.lab.wake"), object: nil, queue: .main
+            ) { [weak self] _ in Task { @MainActor [weak self] in self?.handleSystemWake() } }
+        }
         NSWorkspace.shared.notificationCenter.addObserver(
             forName: NSWorkspace.didLaunchApplicationNotification,
             object: nil,
@@ -116,6 +123,81 @@ package final class NotificationRepositioner: ObservableObject {
         let panelSignal = ncExpandedState() == .unsupported ? "no AXExpanded, panel found by focus" : "AXExpanded"
         logger.log("Notification Center panel detection: \(panelSignal)", tag: "AX")
         repositionVisibleWindows()
+        startAttachmentWatchdog()
+    }
+
+    private var attachmentWatchdog: Timer?
+
+    /// NSWorkspace's launch notification is not dependable for Notification Center, an agent
+    /// app. After a long sleep NC can come back under a new PID while the observer still
+    /// listens to the old one, and banners stay native until something else restarts it.
+    /// A PID lookup every second is cheap and catches that. The same tick notices a pause
+    /// lifting; see `checkPauseLifted`.
+    private func startAttachmentWatchdog() {
+        guard attachmentWatchdog == nil else { return }
+        let timer = Timer(timeInterval: 1, repeats: true) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.checkObserverAttachment(reason: "watchdog")
+                self?.checkPauseLifted()
+            }
+        }
+        timer.tolerance = 0.5
+        RunLoop.main.add(timer, forMode: .common)
+        attachmentWatchdog = timer
+    }
+
+    /// Whether a Focus or a screen share currently keeps us from touching banners. Read by
+    /// `targetOrigin` on every placement and by the watchdog once a second.
+    private func isPausedByEnvironment() -> Bool {
+        guard let settings else { return false }
+        if settings.pauseDuringFocus, FocusModeMonitor.shared.isActive { return true }
+        if settings.pauseWhileStreaming, isCapturingThrottled() { return true }
+        return false
+    }
+
+    private var wasPausedByEnvironment = false
+
+    /// While paused, every sweep skips every banner, so whatever arrives stays native. Ending
+    /// a Focus or a screen share raises no AX event, so those banners stayed native until an
+    /// unrelated one (the next notification, an observer restart) swept again. The overnight
+    /// case: a Sleep Focus still asserted when the Mac wakes, then lifting a moment later.
+    private func checkPauseLifted() {
+        logFocusStoreAccess()
+        let paused = isPausedByEnvironment()
+        defer { wasPausedByEnvironment = paused }
+        guard paused != wasPausedByEnvironment else { return }
+        guard !paused else {
+            logger.log("Focus or screen sharing started — leaving banners to macOS", tag: "System")
+            return
+        }
+        logger.log("Focus or screen sharing ended — taking over banners already up", tag: "System")
+        burstReposition()
+    }
+
+    private var loggedFocusStoreReadable: Bool?
+
+    /// "Pause during Focus" can only work if the Focus store is readable; say so in the
+    /// session log, where a bug report will carry it.
+    private func logFocusStoreAccess() {
+        guard let readable = FocusModeMonitor.shared.storeReadable,
+              readable != loggedFocusStoreReadable else { return }
+        loggedFocusStoreReadable = readable
+        if readable {
+            logger.log("Focus store readable — Focus detection works", tag: "System")
+        } else {
+            // Only a warning for someone relying on it; diagnostics flag any warning.
+            let level: LogEntry.Level = settings?.pauseDuringFocus == true ? .warn : .info
+            logger.log("Focus store not readable — Focus always reads as off, so Pause during Focus never applies", level: level, tag: "System")
+        }
+    }
+
+    /// Reattaches if Notification Center is no longer the process the observer is bound to.
+    private func checkObserverAttachment(reason: String) {
+        guard hasAccessibilityPermission else { return }
+        let live = axController.currentProcessPid
+        guard live > 0, live != axController.ncPid else { return }
+        logger.log("NC PID changed (\(axController.ncPid) → \(live)), found by \(reason) — reattaching", level: .warn, tag: "AX")
+        startObserving()
     }
 
     private func teardownObserver() {
@@ -151,6 +233,7 @@ package final class NotificationRepositioner: ObservableObject {
 
     private func handleAXEvent(element: AXUIElement, notification: String) {
         axLog.debug("── AX event: \(notification, privacy: .public)")
+        axEventsSinceWake += 1
 
         if notification == kAXUIElementDestroyedNotification as String {
             let key = CFHash(element)
@@ -443,6 +526,9 @@ package final class NotificationRepositioner: ObservableObject {
         defer {
             let ms = Double(DispatchTime.now().uptimeNanoseconds - started) / 1_000_000
             nnTiming("sweep", ms)
+            if ms > 1000 {
+                logger.log("Notification Center slow to answer — a sweep took \(String(format: "%.1f", ms / 1000))s", level: .warn, tag: "AX")
+            }
         }
         guard let ncApp else {
             log.debug("repositionVisibleWindows: ncApp is nil, skipping")
@@ -628,6 +714,11 @@ package final class NotificationRepositioner: ObservableObject {
             object: nil, queue: .main
         ) { [weak self] _ in Task { @MainActor [weak self] in self?.handleDisplayWake() } }
 
+        NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didWakeNotification,
+            object: nil, queue: .main
+        ) { [weak self] _ in Task { @MainActor [weak self] in self?.handleSystemWake() } }
+
         NotificationCenter.default.addObserver(
             forName: NSApplication.didChangeScreenParametersNotification,
             object: nil, queue: .main
@@ -687,9 +778,53 @@ package final class NotificationRepositioner: ObservableObject {
         logger.log("Display sleep — parked \(parkedBanners) banner(s), left \(skippedWidgets) desktop widget(s) in place", tag: "Widget")
     }
 
+    /// System wake, as opposed to the display waking. Banners that arrived while asleep were
+    /// never announced to us, so reattach if NC moved and sweep whatever is already up.
+    private func handleSystemWake() {
+        lastWakeAt = Date()
+        logger.log("System woke — checking NC attachment", tag: "System")
+        checkObserverAttachment(reason: "system wake")
+        burstReposition()
+        scheduleWakeRestart()
+    }
+
+    private var wakeRestartItem: DispatchWorkItem?
+    private var axEventsSinceWake = 0
+
+    /// After an overnight sleep banners have been seen staying native, with NC on the same
+    /// PID, until the observer was restarted. Whether the observer had gone deaf is unproven, so
+    /// restart it once after every wake and log what it found. Banners arriving after the
+    /// wake without a single AX event points at a deaf observer; no events with nothing new
+    /// is normal. Remove if a deaf observer never shows in a report.
+    private func scheduleWakeRestart() {
+        wakeRestartItem?.cancel()
+        axEventsSinceWake = 0
+        let atWake = bannersUpCount()
+        let item = DispatchWorkItem { [weak self] in
+            guard let self, self.isObserving else { return }
+            let now = self.bannersUpCount()
+            let deaf = now > atWake && self.axEventsSinceWake == 0
+            self.logger.log("Wake restart — banners \(atWake) at wake, \(now) now, \(self.axEventsSinceWake) AX event(s) in between\(deaf ? "; observer looked deaf" : "")",
+                            level: deaf ? .warn : .info, tag: "AX")
+            self.startObserving()
+        }
+        wakeRestartItem = item
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.wakeRestartDelay, execute: item)
+    }
+    private static let wakeRestartDelay: Double = 2
+
+    private func bannersUpCount() -> Int {
+        guard let ncApp else { return 0 }
+        var value: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(ncApp, kAXWindowsAttribute as CFString, &value) == .success,
+              let windows = value as? [AXUIElement] else { return 0 }
+        return windows.reduce(0) { $0 + resolver.findBannerElements(in: $1).count }
+    }
+
     private func handleDisplayWake() {
         lastWakeAt = Date()
         isDisplaySleeping = false
+        checkObserverAttachment(reason: "display wake")
         guard !pendingWakeWindows.isEmpty else { return }
         let queued = pendingWakeWindows
         pendingWakeWindows = []
@@ -790,12 +925,8 @@ package final class NotificationRepositioner: ObservableObject {
             return nil
         }
         let testGroupID = effectiveTestGroup(for: window)
-        if settings.pauseWhileStreaming, isCapturingThrottled() {
-            log.debug("targetOrigin: skipped — capturing")
-            return nil
-        }
-        if settings.pauseDuringFocus, FocusModeMonitor.shared.isActive {
-            log.debug("targetOrigin: skipped — Focus/DND active")
+        if isPausedByEnvironment() {
+            log.debug("targetOrigin: skipped — Focus/DND or screen sharing active")
             return nil
         }
 
