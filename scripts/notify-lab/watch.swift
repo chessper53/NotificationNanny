@@ -86,7 +86,7 @@ if args.first == "--screens" {
     for s in NSScreen.screens {
         guard let n = s.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID,
               let uuid = CGDisplayCreateUUIDFromDisplayID(n)?.takeRetainedValue() else { continue }
-        print("\(CFUUIDCreateString(nil, uuid)!) \(Int(s.frame.width))x\(Int(s.frame.height))")
+        print("\(CFUUIDCreateString(nil, uuid)!) \(Int(s.frame.width))x\(Int(s.frame.height)) \(n)")
     }
     exit(0)
 }
@@ -95,6 +95,36 @@ guard AXIsProcessTrusted(),
       let nc = NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.notificationcenterui").first
 else { print("needs Accessibility, and Notification Center running"); exit(99) }
 let ncApp = AXUIElementCreateApplication(nc.processIdentifier)
+
+// `watch --clock`: presses the menu bar clock, which opens or closes the Notification
+// Center panel. macOS 27 keeps the clock in MenuBarAgent, so hit-test the bar and press
+// only the element that identifies itself as the clock.
+if args.first == "--clock" {
+    let system = AXUIElementCreateSystemWide()
+    let right = Int(NSScreen.screens.first?.frame.maxX ?? 1700)
+    for x in stride(from: right - 1, through: right - 400, by: -6) {
+        var el: AXUIElement?
+        guard AXUIElementCopyElementAtPosition(system, Float(x), 12, &el) == .success, let el,
+              attr(el, kAXIdentifierAttribute) as? String == "com.apple.menuextra.clock" else { continue }
+        exit(AXUIElementPerformAction(el, kAXPressAction as CFString) == .success ? 0 : 1)
+    }
+    print("menu bar clock not found")
+    exit(1)
+}
+
+// `watch --expand Alpha`: expands that lab app's stack, as a click on it in the open
+// Notification Center panel does. Only lab stacks are ever pressed.
+if args.first == "--expand" {
+    let prefix = "Lab \(args.dropFirst().first ?? ""),"
+    for w in (attr(ncApp, kAXWindowsAttribute) as? [AXUIElement] ?? []) {
+        for b in banners(in: w) where label(b).hasPrefix(prefix) {
+            guard (attr(b, kAXSubroleAttribute) as? String)?.hasSuffix("Stack") == true else { continue }
+            exit(AXUIElementPerformAction(b, kAXPressAction as CFString) == .success ? 0 : 1)
+        }
+    }
+    print("no stack from \(prefix)")
+    exit(1)
+}
 
 // `watch --close-all`: closes the lab apps' banners, e.g. persistent leftovers.
 // Only theirs: anything else on screen is a real notification and stays.
