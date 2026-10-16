@@ -69,4 +69,34 @@ struct PileOrderTests {
     @Test func doneLeaving_isDropped() {
         #expect(PileOrder.merge(current: ["a"], previous: ["a", "b"], leaving: []) == ["a"])
     }
+
+    // MARK: - split
+
+    /// Which spot each banner's app goes to.
+    private static let spots = ["s1": "top", "s2": "top", "o1": "bottom", "o2": "bottom"]
+
+    private func split(_ current: [String], previous: [String] = [], leaving: Set<String> = []) -> [[String]] {
+        PileOrder.split(current: current, previous: previous, leaving: leaving) { Self.spots[$0] ?? "?" }
+            .map(\.ids)
+    }
+
+    @Test func oneSpot_isOnePile() {
+        #expect(split(["s2", "s1"]) == [["s2", "s1"]])
+    }
+
+    /// Slack top center and Outlook bottom right, up together.
+    @Test func twoSpots_twoPiles_eachInOrder() {
+        #expect(split(["o2", "s2", "o1", "s1"]) == [["o2", "o1"], ["s2", "s1"]])
+    }
+
+    /// A leaving Outlook banner keeps its slot in Outlook's pile only.
+    @Test func leaving_staysInItsOwnPile() {
+        #expect(split(["s1", "o2"], previous: ["s1", "o1", "o2"], leaving: ["o1"]) == [["s1"], ["o1", "o2"]])
+    }
+
+    /// The last Outlook banner is leaving: its pile lasts until it has gone.
+    @Test func pileOfOnlyLeaving_lastsItsExit() {
+        #expect(split(["s1"], previous: ["s1", "o1"], leaving: ["o1"]) == [["s1"], ["o1"]])
+        #expect(split(["s1"], previous: ["s1", "o1"]) == [["s1"]])
+    }
 }

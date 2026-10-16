@@ -16,6 +16,7 @@
 #                        open panel
 #                        delay:focus:on|off switches the fake Focus (needs --focus)
 #                        delay:wake makes the app act as if the Mac just woke
+#                        delay:shot:name saves a screenshot to build/notify-lab/name.png
 #   --position P         bottomRight (default), topRight, middleLeft, ...
 #   --x-offset N         placement offset in points (default 0)
 #   --y-offset N
@@ -32,6 +33,9 @@
 #                        (default: none, each stays on the screen macOS picks)
 #   --keep-existing      leave banners already on screen instead of closing them
 #                        first, to test a pile that predates the app
+#   --group App:P[:mode] put that lab app in its own exception group at position
+#                        P (repeatable), e.g. --group Alpha:topCenter; mode
+#                        native or custom pins the group's banner mode
 #   --focus              turn Pause during Focus on and start with a fake Focus
 #                        asserted. The app reads a lab file instead of the real
 #                        Focus store (NN_FOCUS_ASSERTIONS), so your own Focus is
@@ -58,6 +62,7 @@ LAB=build/notify-lab
 APP=build/NotificationNanny.app
 POSITION=bottomRight X=0 Y=0 AUTO=0 CUSTOM=0 SCALE=1 WATCH_SECS=10 KEEP=0 OSLOG=0 NEWEST_BOTTOM=0 DISPLAY_N=0 FOCUS=0
 POSTS=()
+LAB_GROUPS=()
 while [[ $# -gt 0 ]]; do
     case $1 in
         --position) POSITION=$2; shift 2 ;;
@@ -73,6 +78,7 @@ while [[ $# -gt 0 ]]; do
         --newest-at-bottom) NEWEST_BOTTOM=1; shift ;;
         --display) DISPLAY_N=$2; shift 2 ;;
         --focus) FOCUS=1; shift ;;
+        --group) LAB_GROUPS+=("$2"); shift 2 ;;
         *) POSTS+=("$1"); shift ;;
     esac
 done
@@ -92,7 +98,7 @@ set_focus() {
 # lastBinaryMtime is stamped by the app itself on every launch.
 KEYS=(placementsByDisplayID targetDisplayID targetDisplayUUID autoDismissSeconds redactBannerContent bannerScale
       hasBannerColor bannerAnimation followActiveScreen holdWhileAsleep pauseWhileStreaming pauseDuringFocus
-      lastBinaryMtime newestBannerAtBottom)
+      lastBinaryMtime newestBannerAtBottom appGroups)
 NN_MATCH="\.app/Contents/MacOS/NotificationNanny"
 NN_PID=""
 # Only the instance this script started is ever stopped.
@@ -179,6 +185,16 @@ defaults write "$DOMAIN" bannerAnimation -string Default
 for key in followActiveScreen holdWhileAsleep pauseWhileStreaming pauseDuringFocus; do
     defaults write "$DOMAIN" "$key" -bool NO
 done
+# Exception groups as AppSettings stores them: JSON, each on every display.
+GROUPS_JSON="["
+for spec in ${LAB_GROUPS[@]+"${LAB_GROUPS[@]}"}; do
+    IFS=: read -r app pos mode <<< "$spec"
+    [[ $GROUPS_JSON == "[" ]] || GROUPS_JSON+=","
+    GROUPS_JSON+="{\"id\":\"$(uuidgen)\",\"name\":\"Lab $app\",\"appNames\":[\"Lab $app\"],"
+    GROUPS_JSON+="\"placement\":{\"position\":\"$pos\",\"xOffset\":0,\"yOffset\":0},\"targetDisplayID\":0${mode:+,\"bannerMode\":\"$mode\"}}"
+done
+GROUPS_JSON+="]"
+defaults write "$DOMAIN" appGroups -data "$(printf '%s' "$GROUPS_JSON" | xxd -p | tr -d '\n')"
 FOCUS_ENV=()
 if [[ $FOCUS == 1 ]]; then
     defaults write "$DOMAIN" pauseDuringFocus -bool YES
@@ -214,6 +230,7 @@ for spec in ${POSTS[@]+"${POSTS[@]}"}; do
         panel)  "$LAB/watch" --clock ;;
         expand) "$LAB/watch" --expand "$title" ;;
         wake)   "$LAB/watch" --wake; echo "$(date +%T) wake" >> "$LAB/last-steps.txt" ;;
+        shot)   screencapture -x "$LAB/$title.png"; echo "$(date +%T) screenshot $title" >> "$LAB/last-steps.txt" ;;
         focus)  set_focus "$title"; echo "$(date +%T) fake Focus $title" >> "$LAB/last-steps.txt" ;;
         Script) osascript -e "display notification \"Body from Script\" with title \"${title:-Script title}\"" & ;;
         *)      "$LAB/Lab $app.app/Contents/MacOS/notifier" "${title:-$app title}" "Body from $app" & ;;
