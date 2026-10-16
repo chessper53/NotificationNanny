@@ -27,6 +27,9 @@ final class AXObserverController {
         kAXUIElementDestroyedNotification, kAXLayoutChangedNotification,
     ]
 
+    /// Seconds an AX call may wait. Healthy calls take milliseconds.
+    static let messagingTimeout: Float = 1
+
     deinit {
         if let observer {
             CFRunLoopRemoveSource(CFRunLoopGetMain(), AXObserverGetRunLoopSource(observer), .defaultMode)
@@ -42,6 +45,12 @@ final class AXObserverController {
 
         let pid = Self.findNotificationProcessPid()
         guard pid > 0 else { return false }
+        // Every call into Notification Center otherwise waits up to the system default of
+        // six seconds. Right after a display wake NC was measured taking about fifteen
+        // seconds to answer; at six seconds per call a sweep stalled the main thread and
+        // banners stayed native meanwhile. Failing fast lets the next sweep catch up the
+        // moment NC answers again. Set on the system-wide element, it covers every element.
+        AXUIElementSetMessagingTimeout(AXUIElementCreateSystemWide(), Self.messagingTimeout)
         let app = AXUIElementCreateApplication(pid)
 
         var newObserver: AXObserver?

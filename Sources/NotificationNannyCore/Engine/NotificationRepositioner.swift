@@ -526,6 +526,9 @@ package final class NotificationRepositioner: ObservableObject {
         defer {
             let ms = Double(DispatchTime.now().uptimeNanoseconds - started) / 1_000_000
             nnTiming("sweep", ms)
+            if ms > 1000 {
+                logger.log("Notification Center slow to answer — a sweep took \(String(format: "%.1f", ms / 1000))s", level: .warn, tag: "AX")
+            }
         }
         guard let ncApp else {
             log.debug("repositionVisibleWindows: ncApp is nil, skipping")
