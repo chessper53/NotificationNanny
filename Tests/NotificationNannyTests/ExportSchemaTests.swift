@@ -22,6 +22,14 @@ struct ExportSchemaTests {
         #expect(decoded.schemaVersion == AppSettings.currentExportSchemaVersion)
     }
 
+    /// The "Don't move Notification Center" toggle is gone, but versions that still have it
+    /// decode it as required: a backup without it would fail to import there.
+    @Test func export_keepsRemovedPanelToggleForOlderVersions() throws {
+        let data = try makeSettings().exportData()
+        let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+        #expect(json?["avoidNCPanel"] as? Bool == true)
+    }
+
     @Test func roundTrip_preservesToggles() throws {
         let s = makeSettings()
         s.bannerScale = 1.8

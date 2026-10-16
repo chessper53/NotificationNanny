@@ -2,7 +2,7 @@
 
 @MainActor
 final class AppNameResolver {
-    private static let bannerSubroles: Set<String> = [
+    static let bannerSubroles: Set<String> = [
         "AXNotificationCenterBanner",
         "AXNotificationCenterBannerStack",
         "AXNotificationCenterAlert",
