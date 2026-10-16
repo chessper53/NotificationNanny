@@ -14,6 +14,8 @@
 #                        closing the Notification Center panel
 #                        delay:expand:App expands that lab app's stack in the
 #                        open panel
+#                        delay:focus:on|off switches the fake Focus (needs --focus)
+#                        delay:wake makes the app act as if the Mac just woke
 #   --position P         bottomRight (default), topRight, middleLeft, ...
 #   --x-offset N         placement offset in points (default 0)
 #   --y-offset N
@@ -30,6 +32,10 @@
 #                        (default: none, each stays on the screen macOS picks)
 #   --keep-existing      leave banners already on screen instead of closing them
 #                        first, to test a pile that predates the app
+#   --focus              turn Pause during Focus on and start with a fake Focus
+#                        asserted. The app reads a lab file instead of the real
+#                        Focus store (NN_FOCUS_ASSERTIONS), so your own Focus is
+#                        never touched; flip it with focus:on / focus:off posts
 #
 # The app is run straight from this shell, so it shares the shell's
 # Accessibility permission and a rebuild doesn't need a new grant. The settings
@@ -50,7 +56,7 @@ cd "$(dirname "$0")/../.."
 DOMAIN=com.notificationnanny.app
 LAB=build/notify-lab
 APP=build/NotificationNanny.app
-POSITION=bottomRight X=0 Y=0 AUTO=0 CUSTOM=0 SCALE=1 WATCH_SECS=10 KEEP=0 OSLOG=0 NEWEST_BOTTOM=0 DISPLAY_N=0
+POSITION=bottomRight X=0 Y=0 AUTO=0 CUSTOM=0 SCALE=1 WATCH_SECS=10 KEEP=0 OSLOG=0 NEWEST_BOTTOM=0 DISPLAY_N=0 FOCUS=0
 POSTS=()
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -66,12 +72,20 @@ while [[ $# -gt 0 ]]; do
         --oslog) OSLOG=1; shift ;;
         --newest-at-bottom) NEWEST_BOTTOM=1; shift ;;
         --display) DISPLAY_N=$2; shift 2 ;;
+        --focus) FOCUS=1; shift ;;
         *) POSTS+=("$1"); shift ;;
     esac
 done
 # No posts is fine: an idle run measures the baseline.
 
 BACKUP=$LAB/defaults-backup.plist
+FOCUS_FILE=$LAB/focus-assertions.json
+# The layout FocusModeMonitor reads: any record at all means a Focus is on.
+set_focus() {
+    if [[ $1 == on ]]; then records='[{"lab": true}]'; else records='[]'; fi
+    printf '{"data":[{"storeAssertionRecords":%s}]}\n' "$records" > "$FOCUS_FILE.tmp"
+    mv "$FOCUS_FILE.tmp" "$FOCUS_FILE"
+}
 # Everything this script writes. Only these are restored, one by one through
 # `defaults write`: `defaults import` bypasses the preferences cache and a
 # cached copy can win afterwards, which once left a test configuration behind.
@@ -165,9 +179,15 @@ defaults write "$DOMAIN" bannerAnimation -string Default
 for key in followActiveScreen holdWhileAsleep pauseWhileStreaming pauseDuringFocus; do
     defaults write "$DOMAIN" "$key" -bool NO
 done
+FOCUS_ENV=()
+if [[ $FOCUS == 1 ]]; then
+    defaults write "$DOMAIN" pauseDuringFocus -bool YES
+    set_focus on
+    FOCUS_ENV=(NN_FOCUS_ASSERTIONS="$FOCUS_FILE")
+fi
 
-echo "==> $POSITION offset ($X,$Y), auto-dismiss ${AUTO}s, $([[ $CUSTOM == 1 ]] && echo "custom, scale ${SCALE}" || echo native)$([[ $NEWEST_BOTTOM == 1 ]] && echo ", newest at the bottom")"
-NN_LOG_STDERR=1 NN_TIMING=1 "$APP/Contents/MacOS/NotificationNanny" > "$LAB/last-app.log" 2>&1 &
+echo "==> $POSITION offset ($X,$Y), auto-dismiss ${AUTO}s, $([[ $CUSTOM == 1 ]] && echo "custom, scale ${SCALE}" || echo native)$([[ $NEWEST_BOTTOM == 1 ]] && echo ", newest at the bottom")$([[ $FOCUS == 1 ]] && echo ", fake Focus on")"
+env ${FOCUS_ENV[@]+"${FOCUS_ENV[@]}"} NN_LAB=1 NN_LOG_STDERR=1 NN_TIMING=1 "$APP/Contents/MacOS/NotificationNanny" > "$LAB/last-app.log" 2>&1 &
 NN_PID=$!
 sleep 3
 
@@ -182,6 +202,7 @@ if [[ $OSLOG == 1 ]]; then
 fi
 CPU0=$(cpu_seconds "$NN_PID"); RSS0=$(rss_mb "$NN_PID"); WIN0=$("$LAB/watch" --windows "$NN_PID")
 
+: > "$LAB/last-steps.txt"
 "$LAB/watch" "$WATCH_SECS" > "$LAB/last-run.txt" 2>&1 &
 WATCH_PID=$!
 sleep 0.3
@@ -192,6 +213,8 @@ for spec in ${POSTS[@]+"${POSTS[@]}"}; do
         close)  "$LAB/watch" --close-app "$title" >/dev/null & ;;
         panel)  "$LAB/watch" --clock ;;
         expand) "$LAB/watch" --expand "$title" ;;
+        wake)   "$LAB/watch" --wake; echo "$(date +%T) wake" >> "$LAB/last-steps.txt" ;;
+        focus)  set_focus "$title"; echo "$(date +%T) fake Focus $title" >> "$LAB/last-steps.txt" ;;
         Script) osascript -e "display notification \"Body from Script\" with title \"${title:-Script title}\"" & ;;
         *)      "$LAB/Lab $app.app/Contents/MacOS/notifier" "${title:-$app title}" "Body from $app" & ;;
     esac
