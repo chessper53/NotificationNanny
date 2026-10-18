@@ -91,6 +91,9 @@ struct GeneralTabView: View {
             section("Placement & safety") {
                 toggleRow("Send to the screen with the cursor", isOn: $settings.followActiveScreen)
                 Divider().padding(.leading, 14)
+                toggleRow("Don't move Notification Center", isOn: $settings.avoidNCPanel,
+                          detail: "When off, Notification Center opens on the screen your banners go to. On a screen smaller than the main display its bottom is cut off: macOS keeps it the size of the main display.")
+                Divider().padding(.leading, 14)
                 toggleRow("Don't move desktop widgets", isOn: $settings.protectDesktopWidgets)
                 Divider().padding(.leading, 14)
                 toggleRow("Hold banners while display is asleep", isOn: $settings.holdWhileAsleep)
@@ -145,9 +148,15 @@ struct GeneralTabView: View {
         }
     }
 
-    private func toggleRow(_ labelKey: String, isOn: Binding<Bool>) -> some View {
+    private func toggleRow(_ labelKey: String, isOn: Binding<Bool>, detail: String? = nil) -> some View {
         HStack {
-            LocalizedText(labelKey).font(.callout)
+            VStack(alignment: .leading, spacing: 2) {
+                LocalizedText(labelKey).font(.callout)
+                if let detail {
+                    LocalizedText(detail).font(.caption).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
             Spacer()
             Toggle("", isOn: isOn).labelsHidden().toggleStyle(.switch).controlSize(.small)
         }
