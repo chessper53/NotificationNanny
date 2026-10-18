@@ -52,10 +52,11 @@
 # built (build.sh) and allowed to notify; set them to Persistent in System
 # Settings > Notifications to get banners that pile up.
 #
-# The app's session log lands in build/notify-lab/last-app.log, the watcher's
-# timeline in last-run.txt, and its debug log (sweep timings among it) in
-# last-oslog.txt with --oslog. The app's CPU time and memory over the watch are
-# printed last.
+# The app's session log lands in build/notify-lab/last-app.log, its log file in
+# build/notify-lab/logs (never the real one in Application Support), the
+# watcher's timeline in last-run.txt, and its debug log (sweep timings among it)
+# in last-oslog.txt with --oslog. The app's CPU time and memory over the watch
+# are printed last.
 #
 # Exit status: the watcher's failed check count.
 set -euo pipefail
@@ -209,7 +210,7 @@ if [[ $FOCUS == 1 ]]; then
 fi
 
 echo "==> $POSITION offset ($X,$Y), auto-dismiss ${AUTO}s, $([[ $CUSTOM == 1 ]] && echo "custom, scale ${SCALE}" || echo native)$([[ $NEWEST_BOTTOM == 1 ]] && echo ", newest at the bottom")$([[ $FOCUS == 1 ]] && echo ", fake Focus on")"
-env ${FOCUS_ENV[@]+"${FOCUS_ENV[@]}"} NN_LAB=1 NN_LOG_STDERR=1 NN_TIMING=1 "$APP/Contents/MacOS/NotificationNanny" > "$LAB/last-app.log" 2>&1 &
+env ${FOCUS_ENV[@]+"${FOCUS_ENV[@]}"} NN_LAB=1 NN_LOG_DIR="$PWD/$LAB/logs" NN_LOG_STDERR=1 NN_TIMING=1 "$APP/Contents/MacOS/NotificationNanny" > "$LAB/last-app.log" 2>&1 &
 NN_PID=$!
 sleep 3
 
