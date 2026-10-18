@@ -25,6 +25,13 @@ final class AppCoordinator: NSObject, ObservableObject, NSApplicationDelegate, N
 
     override init() {
         AppCoordinator.terminateIfAlreadyRunning()
+        // Unbundled builds (swift run, notify-lab) can run next to the installed app and
+        // would push its log aside.
+        if Bundle.main.bundleIdentifier != nil {
+            NannyLogger.shared.startWritingToDisk()
+            let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "unknown"
+            NannyLogger.shared.log("NotificationNanny v\(version) started", tag: "App")
+        }
         settings = AppSettings()
         launchAtLogin = LaunchAtLogin()
         #if !DEBUG

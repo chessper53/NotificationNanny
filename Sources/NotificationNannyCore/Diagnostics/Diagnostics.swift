@@ -172,6 +172,8 @@ enum Diagnostics {
             status: ncRunning ? .ok : .warn
         ))
 
+        r.append(crashItem(CrashReports.latest()))
+
         let allErrors = NannyLogger.shared.entries.filter { $0.level == .error }
         let allWarns  = NannyLogger.shared.entries.filter { $0.level == .warn  }
         if allErrors.isEmpty && allWarns.isEmpty {
@@ -187,6 +189,19 @@ enum Diagnostics {
         return r
     }
 
+    /// macOS keeps crash reports for a while, so an old one alone is no sign of trouble now.
+    static func crashItem(_ crash: CrashSummary?, now: Date = Date()) -> DiagItem {
+        guard let crash else { return DiagItem(label: "Last crash", detail: "None on record", status: .ok) }
+        let f = DateFormatter(); f.dateStyle = .medium; f.timeStyle = .short
+        var detail = f.string(from: crash.date)
+        if let version = crash.appVersion { detail += ", v\(version)" }
+        if let exception = crash.exception { detail += ", \(exception)" }
+        if let message = crash.message { detail += ", \(message)" }
+        if let frame = crash.frame { detail += " in \(frame)" }
+        let recent = now.timeIntervalSince(crash.date) < 7 * 24 * 3600
+        return DiagItem(label: "Last crash", detail: detail, status: recent ? .warn : .info)
+    }
+
     static func reportText(_ items: [DiagItem]) -> String {
         let lines = items.map { "\($0.status.badge)  \($0.label): \($0.detail)" }
         let header = "NotificationNanny Diagnostics — \(Date())"
@@ -196,7 +211,11 @@ enum Diagnostics {
     /// Full text (diagnostics + logs) suitable for the clipboard.
     static func fullReport(_ items: [DiagItem]) -> String {
         let logs = NannyLogger.shared.exportText()
-        return reportText(items) + "\n\n=== Activity log ===\n" + (logs.isEmpty ? "(empty)" : logs)
+        var text = reportText(items)
+        if let before = NannyLogger.shared.logBefore(CrashReports.latest(), maxLines: 300) {
+            text += "\n\n=== Log before the last crash ===\n" + before
+        }
+        return text + "\n\n=== Activity log ===\n" + (logs.isEmpty ? "(empty)" : logs)
     }
 
     /// Developer tool: reads a pasted diagnostics report and applies the settings it describes
@@ -296,7 +315,9 @@ enum Diagnostics {
         let diag = reportText(items)
         // Keep the inline logs to a recent tail so the URL doesn't blow past server limits.
         let allLogs = NannyLogger.shared.exportText()
-        let logCap = 3000
+        // After a crash, the session that crashed tells far more than the one that followed.
+        let crashLog = NannyLogger.shared.logBefore(CrashReports.latest(), maxLines: 300)
+        let logCap = crashLog == nil ? 3000 : 1000
         let logSection: String
         if allLogs.isEmpty {
             logSection = "(no log entries)"
@@ -307,7 +328,7 @@ enum Diagnostics {
             logSection = allLogs
         }
 
-        let body = """
+        var body = """
         ## Describe the bug
         <!-- What happened? What did you expect? Steps to reproduce. -->
 
@@ -322,6 +343,16 @@ enum Diagnostics {
         \(logSection)
         ```
         """
+        if let crashLog {
+            body += """
+
+
+            ## Log before the last crash
+            ```
+            \(String(crashLog.suffix(2500)))
+            ```
+            """
+        }
 
         var comps = URLComponents(string: "\(repoURL)/issues/new")
         comps?.queryItems = [
