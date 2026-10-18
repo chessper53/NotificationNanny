@@ -29,6 +29,8 @@
 #   --app PATH           the .app to run (default build/NotificationNanny.app)
 #   --oslog              also capture the app's debug log (last-oslog.txt); this
 #                        slows the app down noticeably, so not for timing runs
+#   --nc-follow          turn "Don't move Notification Center" off, so the open
+#                        panel follows the banners to their screen
 #   --display N          send banners to the Nth screen of `watch --screens`
 #                        (default: none, each stays on the screen macOS picks)
 #   --keep-existing      leave banners already on screen instead of closing them
@@ -60,7 +62,7 @@ cd "$(dirname "$0")/../.."
 DOMAIN=com.notificationnanny.app
 LAB=build/notify-lab
 APP=build/NotificationNanny.app
-POSITION=bottomRight X=0 Y=0 AUTO=0 CUSTOM=0 SCALE=1 WATCH_SECS=10 KEEP=0 OSLOG=0 NEWEST_BOTTOM=0 DISPLAY_N=0 FOCUS=0
+POSITION=bottomRight X=0 Y=0 AUTO=0 CUSTOM=0 SCALE=1 WATCH_SECS=10 KEEP=0 OSLOG=0 NEWEST_BOTTOM=0 DISPLAY_N=0 NC_FOLLOW=0 FOCUS=0
 POSTS=()
 LAB_GROUPS=()
 while [[ $# -gt 0 ]]; do
@@ -77,6 +79,7 @@ while [[ $# -gt 0 ]]; do
         --oslog) OSLOG=1; shift ;;
         --newest-at-bottom) NEWEST_BOTTOM=1; shift ;;
         --display) DISPLAY_N=$2; shift 2 ;;
+        --nc-follow) NC_FOLLOW=1; shift ;;
         --focus) FOCUS=1; shift ;;
         --group) LAB_GROUPS+=("$2"); shift 2 ;;
         *) POSTS+=("$1"); shift ;;
@@ -98,7 +101,7 @@ set_focus() {
 # lastBinaryMtime is stamped by the app itself on every launch.
 KEYS=(placementsByDisplayID targetDisplayID targetDisplayUUID autoDismissSeconds redactBannerContent bannerScale
       hasBannerColor bannerAnimation followActiveScreen holdWhileAsleep pauseWhileStreaming pauseDuringFocus
-      lastBinaryMtime newestBannerAtBottom appGroups)
+      lastBinaryMtime newestBannerAtBottom appGroups avoidNCPanel)
 NN_MATCH="\.app/Contents/MacOS/NotificationNanny"
 NN_PID=""
 # Only the instance this script started is ever stopped.
@@ -185,6 +188,7 @@ defaults write "$DOMAIN" bannerAnimation -string Default
 for key in followActiveScreen holdWhileAsleep pauseWhileStreaming pauseDuringFocus; do
     defaults write "$DOMAIN" "$key" -bool NO
 done
+defaults write "$DOMAIN" avoidNCPanel -bool $([[ $NC_FOLLOW == 1 ]] && echo NO || echo YES)
 # Exception groups as AppSettings stores them: JSON, each on every display.
 GROUPS_JSON="["
 for spec in ${LAB_GROUPS[@]+"${LAB_GROUPS[@]}"}; do
