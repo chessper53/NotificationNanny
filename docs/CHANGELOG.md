@@ -5,6 +5,20 @@ All notable changes to NotificationNanny are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [8.1.0] — 2026-10-25
+
+### Added
+- **Custom banners from different exception groups pile up in their own spots.** When every banner on screen uses the custom banner, each one goes where its group puts it, so one app can show top center while another shows bottom right at the same time. If any of them is a native banner, they all share one pile as before, since macOS keeps native banners in one window.
+- **Crash details in Diagnostics.** The session log is now also written to disk, and each launch keeps the previous session's file, so a bug report after NotificationNanny quit on its own still has the log from before it. Diagnostics shows the last crash macOS recorded: its date, version, exception and where in NotificationNanny it happened.
+
+### Fixed
+- **Banners stayed on the main display after Notification Center had been opened.** Whether the panel was open was guessed from Notification Center's focused window, and opening and closing it left that focus behind, so every later banner was treated as the panel and left where macOS put it. The panel is now detected reliably.
+- **"Don't move Notification Center" is back, and both settings work.** On, Notification Center opens on the screen whose menu bar clock you click and is left there; it used to be pulled over to the main display. Off, it moves to the screen your banners go to and is left alone while open, where it used to be dragged to the banner position, cut off and unscrollable. macOS sizes the panel for the screen it opens on and doesn't let apps resize it, so moved to a smaller screen its bottom is still cut off. Backups carry the setting again.
+- **Stacks in Notification Center slid up past the top of the screen when expanded.** Following a bottom pile of banners kept pulling the panel with it. Following now stops while the panel is open.
+- **NotificationNanny was slow to take over after the Mac woke.** Right after a wake Notification Center can take several seconds to answer, and NotificationNanny waited on every call, so banners stayed in the macOS style until it recovered. Calls now give up after a second and the next pass catches up. Banners that arrived during a Focus or a screen share are taken over as soon as it ends, and after a wake NotificationNanny reconnects to Notification Center if needed.
+- **On macOS in a language other than English, banners weren't closed.** Banners are closed through their Close or Clear All button, and those names were only looked for in English. Auto-dismiss never closed a banner, and closing a custom banner left the real one behind it. The names are now read from Notification Center's own translations, in every language it ships.
+- **The Settings window could be shrunk until its content was cut off,** and that size came back on every launch. It now stops at a size where everything fits, and a smaller saved size is enlarged.
+
 ## [8.0.3] — 2026-10-04
 
 ### Added
