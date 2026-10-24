@@ -112,6 +112,34 @@ if args.first == "--clock" {
     exit(1)
 }
 
+// `watch --click-clock N`: a real mouse click on the clock of the Nth screen (the order of
+// `--screens`), the way a person opens Notification Center there; the pointer goes back
+// afterwards. An accessibility press always opens it on the main display.
+if args.first == "--click-clock", let n = args.dropFirst().first.flatMap({ Int($0) }),
+   n >= 1, n <= NSScreen.screens.count {
+    let screen = NSScreen.screens[n - 1]
+    let primaryTop = NSScreen.screens[0].frame.maxY
+    let top = primaryTop - screen.frame.maxY
+    let system = AXUIElementCreateSystemWide()
+    for x in stride(from: Int(screen.frame.maxX) - 1, through: Int(screen.frame.maxX) - 500, by: -6) {
+        var el: AXUIElement?
+        guard AXUIElementCopyElementAtPosition(system, Float(x), Float(top) + 12, &el) == .success, let el,
+              attr(el, kAXIdentifierAttribute) as? String == "com.apple.menuextra.clock" else { continue }
+        let point = CGPoint(x: CGFloat(x), y: top + 12)
+        let back = CGEvent(source: nil)!.location
+        for type in [CGEventType.mouseMoved, .leftMouseDown, .leftMouseUp] {
+            CGEvent(mouseEventSource: nil, mouseType: type, mouseCursorPosition: point, mouseButton: .left)!
+                .post(tap: .cghidEventTap)
+            usleep(60_000)
+        }
+        CGEvent(mouseEventSource: nil, mouseType: .mouseMoved, mouseCursorPosition: back, mouseButton: .left)!
+            .post(tap: .cghidEventTap)
+        exit(0)
+    }
+    print("no clock on screen \(n)")
+    exit(1)
+}
+
 // `watch --expand Alpha`: expands that lab app's stack, as a click on it in the open
 // Notification Center panel does. Only lab stacks are ever pressed.
 if args.first == "--expand" {
