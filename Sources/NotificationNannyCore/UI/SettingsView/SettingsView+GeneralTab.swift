@@ -92,7 +92,7 @@ struct GeneralTabView: View {
                 toggleRow("Send to the screen with the cursor", isOn: $settings.followActiveScreen)
                 Divider().padding(.leading, 14)
                 toggleRow("Don't move Notification Center", isOn: $settings.avoidNCPanel,
-                          detail: "When off, Notification Center opens on the screen your banners go to. On a screen smaller than the main display its bottom is cut off: macOS keeps it the size of the main display.")
+                          detail: "When on, Notification Center opens on the screen whose clock you click. When off, it always moves to the screen your banners go to, and on a smaller screen than the one it opened on, its bottom is cut off.")
                 Divider().padding(.leading, 14)
                 toggleRow("Don't move desktop widgets", isOn: $settings.protectDesktopWidgets)
                 Divider().padding(.leading, 14)
