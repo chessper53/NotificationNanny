@@ -12,6 +12,8 @@
 #                        delay:close:App closes that lab app's banner
 #                        delay:panel presses the menu bar clock, opening or
 #                        closing the Notification Center panel
+#                        delay:clock:N really clicks screen N's clock (the order
+#                        of `watch --screens`), moving the pointer for a moment
 #                        delay:expand:App expands that lab app's stack in the
 #                        open panel
 #                        delay:focus:on|off switches the fake Focus (needs --focus)
@@ -232,6 +234,7 @@ for spec in ${POSTS[@]+"${POSTS[@]}"}; do
     case $app in
         close)  "$LAB/watch" --close-app "$title" >/dev/null & ;;
         panel)  "$LAB/watch" --clock ;;
+        clock)  "$LAB/watch" --click-clock "$title" ;;
         expand) "$LAB/watch" --expand "$title" ;;
         wake)   "$LAB/watch" --wake; echo "$(date +%T) wake" >> "$LAB/last-steps.txt" ;;
         shot)   screencapture -x "$LAB/$title.png"; echo "$(date +%T) screenshot $title" >> "$LAB/last-steps.txt" ;;
