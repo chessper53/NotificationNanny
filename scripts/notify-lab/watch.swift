@@ -139,6 +139,15 @@ if args.first == "--wake" {
 // `watch --close-app Bravo`: closes just that lab app's banner, as a user would.
 if args.first == "--close-all" || args.first == "--close-app" {
     let prefix = args.first == "--close-app" ? "Lab \(args.dropFirst().first ?? "")," : "Lab "
+    // Close and Clear All in every language Notification Center ships, as the app does.
+    var closeNames: Set<String> = ["Close", "Clear All"]
+    let table = URL(fileURLWithPath: "/System/Library/CoreServices/NotificationCenter.app/Contents/Resources/Localizable.loctable")
+    if let data = try? Data(contentsOf: table),
+       let langs = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any] {
+        for case let strings as [String: Any] in langs.values {
+            for key in ["Close", "Clear All"] { if let s = strings[key] as? String { closeNames.insert(s) } }
+        }
+    }
     var closed = 0
     for w in (attr(ncApp, kAXWindowsAttribute) as? [AXUIElement] ?? []) {
         for b in banners(in: w) where label(b).hasPrefix(prefix) {
@@ -146,11 +155,28 @@ if args.first == "--close-all" || args.first == "--close-app" {
             AXUIElementCopyActionNames(b, &names)
             // Several notifications from one app merge into a stack, which offers
             // Clear All instead of Close.
-            if let close = (names as? [String])?.first(where: { $0.hasPrefix("Name:Close\n") || $0.hasPrefix("Name:Clear All\n") }),
+            if let close = (names as? [String])?.first(where: { action in
+                   closeNames.contains { action.hasPrefix("Name:\($0)\n") } }),
                AXUIElementPerformAction(b, close as CFString) == .success { closed += 1 }
         }
     }
     print("closed \(closed) banner(s)")
+    exit(0)
+}
+
+// `watch --actions`: each lab banner's subrole and the names of its actions, which
+// macOS translates into Notification Center's language.
+if args.first == "--actions" {
+    for w in (attr(ncApp, kAXWindowsAttribute) as? [AXUIElement] ?? []) {
+        for b in banners(in: w) where label(b).hasPrefix("Lab ") {
+            var names: CFArray?
+            AXUIElementCopyActionNames(b, &names)
+            let shown = (names as? [String] ?? []).map {
+                $0.hasPrefix("Name:") ? String($0.dropFirst(5).prefix { $0 != "\n" }) : $0
+            }
+            print("\(label(b)) [\(attr(b, kAXSubroleAttribute) as? String ?? "?")]: \(shown.joined(separator: " | "))")
+        }
+    }
     exit(0)
 }
 
