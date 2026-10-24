@@ -1850,29 +1850,35 @@ package final class NotificationRepositioner: ObservableObject {
         return CFEqual(focused, window)
     }
 
-    /// The panel opens inside the banner host, wherever we last moved it to put a banner in
-    /// place, and macOS does not move it back: with banners at the bottom the panel opened
-    /// almost entirely below the screen. So it is always placed, once, and then left alone.
+    /// Where the open panel goes. macOS opens it on the screen whose menu bar clock was
+    /// clicked, sized for that screen, and nothing needs undoing: the pile following that
+    /// once dragged it off screen stops while the panel is open.
     ///
-    /// With "Don't move Notification Center" on it goes back to the screen it fills, where
-    /// macOS keeps it. Off, it goes to the screen the banners go to, at the same spot under
-    /// that screen's menu bar. It used to be moved to the banner position itself, offset by
-    /// it and dragged along as the panel changed, which cut it off and slid stacks up past
-    /// the top. The window keeps the main display's size whatever we do (its AXSize is read
-    /// only, measured on 27.0), so on a smaller screen its bottom is still cut off.
+    /// So with "Don't move Notification Center" on, the panel is left exactly where macOS
+    /// put it. This used to move it back to "its own screen", picked by the window's size;
+    /// caught mid-opening, while the window still had the main display's size, that sent a
+    /// panel opened from a second screen's clock over to the main display.
+    ///
+    /// Off, it goes to the screen the banners go to, under that screen's menu bar, unless
+    /// it is already there. macOS puts the window's top left at its screen's, which tells
+    /// which screen it is on; a window caught mid-opening is put right by the next sweep.
+    /// Moved to a smaller screen than its own, its bottom is cut off: its size can't be set.
     private func placePanel(_ window: AXUIElement, size: CGSize, from current: CGPoint, bannerScreen: NSScreen) {
-        guard let primary = NSScreen.screens.first else { return }
-        let home = NSScreen.screens.first { $0.frame.size == size } ?? primary
-        guard home.frame.size == size else { return }
-        let target = settings?.avoidNCPanel == false ? bannerScreen : home
-        // The panel sits at the window's top right; line that corner up with the target's.
-        let origin = CGPoint(x: target.frame.maxX - size.width, y: primary.frame.maxY - target.frame.maxY)
+        guard settings?.avoidNCPanel == false, let primary = NSScreen.screens.first else { return }
         nativePiles.removeValue(forKey: CFHash(window))
-        guard hypot(current.x - origin.x, current.y - origin.y) > 1 else { return }
+        func axTopLeft(_ screen: NSScreen) -> CGPoint {
+            CGPoint(x: screen.frame.minX, y: primary.frame.maxY - screen.frame.maxY)
+        }
+        let target = axTopLeft(bannerScreen)
+        // Already on the banners' screen: opened from its clock, or moved there before.
+        let onTarget = hypot(current.x - target.x, current.y - target.y) <= 1
+            || hypot(current.x + size.width - bannerScreen.frame.maxX, current.y - target.y) <= 1
+        guard !onTarget else { return }
+        // The panel sits at the window's top right; line that corner up with the screen's.
+        let origin = CGPoint(x: bannerScreen.frame.maxX - size.width, y: target.y)
         setWindowPosition(window, to: origin)
         lastSelfSetPositions[CFHash(window)] = origin
-        logger.log(target === home ? "Notification Center panel opened — put it back in place"
-                                   : "Notification Center panel opened — moved to the banners' screen", tag: "Banner")
+        logger.log("Notification Center panel opened — moved to the banners' screen", tag: "Banner")
     }
 
     /// Where a pile starts. Two or more banners sit in one list, and a stack that was
