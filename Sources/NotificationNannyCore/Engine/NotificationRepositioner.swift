@@ -1482,9 +1482,10 @@ package final class NotificationRepositioner: ObservableObject {
         for window in windows {
             for banner in resolver.findBannerElements(in: window) where banner.identifier == id {
                 // Several notifications from one app merge into a stack, which
-                // offers Clear All instead of Close.
-                let closed = banner.performCustomAction(named: "Close")
-                    || banner.performCustomAction(named: "Clear All")
+                // offers Clear All instead of Close. Both names are in the system's
+                // language, so every translation of them is accepted.
+                let closed = banner.performCustomAction(namedAnyOf: NCActionNames.close)
+                    || banner.performCustomAction(namedAnyOf: NCActionNames.clearAll)
                 if closed { closedBannerIDs.insert(id) }
                 logger.log("\(reason) — \(closed ? "closed the banner" : "banner has no Close action")",
                            level: closed ? .info : .warn, tag: "Banner")
