@@ -42,15 +42,16 @@ extension AXUIElement {
     /// that stays the same for as long as that banner is up.
     var identifier: String? { stringAttribute(kAXIdentifierAttribute as String) }
 
-    /// Performs a custom action by its display name. Custom actions are reported as
+    /// Performs a custom action by its display name, which may be any of `names` (one per
+    /// language, see NCActionNames). Custom actions are reported as
     /// "Name:Close\nTarget:0x0\nSelector:(null)", so match on the name line.
     /// Returns false when the element offers no such action.
     @discardableResult
-    func performCustomAction(named name: String) -> Bool {
+    func performCustomAction(namedAnyOf names: Set<String>) -> Bool {
         var ref: CFArray?
         guard AXUIElementCopyActionNames(self, &ref) == .success,
-              let names = ref as? [String],
-              let action = names.first(where: { $0 == name || $0.hasPrefix("Name:\(name)\n") })
+              let actions = ref as? [String],
+              let action = actions.first(where: { names.contains(customActionName($0)) })
         else { return false }
         return AXUIElementPerformAction(self, action as CFString) == .success
     }
@@ -98,4 +99,11 @@ func cleanAXString(_ s: String) -> String {
         .filter { !$0.properties.isDefaultIgnorableCodePoint }
         .reduce(into: "") { $0.append(Character($1)) }
         .trimmingCharacters(in: .whitespaces)
+}
+
+/// The display name of an AX action: the "Name:" line of a custom action, or the action
+/// itself for a standard one.
+func customActionName(_ action: String) -> String {
+    guard action.hasPrefix("Name:") else { return action }
+    return String(action.dropFirst(5).prefix { $0 != "\n" })
 }
