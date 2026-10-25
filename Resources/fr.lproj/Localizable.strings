@@ -112,6 +112,8 @@
 "Placement & safety" = "Placement et sécurité";
 "Send to the screen with the cursor" = "Envoyer vers l'écran contenant le curseur";
 "Don't move Notification Center" = "Ne pas déplacer le Centre de notifications";
+"Custom Notification Center (experimental)" = "Centre de notifications personnalisé (expérimental)";
+"Clicking the clock opens NotificationNanny's own list of your notifications instead of Notification Center. Widgets aren't shown in it." = "Un clic sur l'horloge ouvre la liste de vos notifications de NotificationNanny à la place du Centre de notifications. Les widgets n'y sont pas affichés.";
 "Don't move desktop widgets" = "Ne pas déplacer les widgets du bureau";
 "Hold banners while display is asleep" = "Conserver les bannières pendant la veille de l'écran";
 "Reset All Settings" = "Réinitialiser tous les réglages";
@@ -181,3 +183,10 @@
 "Newest on top" = "Les plus récentes en haut";
 "Newest at the bottom" = "Les plus récentes en bas";
 "Order of notifications that are up together. Custom banner only: macOS stacks its own banner newest on top." = "Ordre des notifications affichées en même temps. Bannière personnalisée uniquement : macOS empile sa propre bannière avec la plus récente en haut.";
+
+/* Custom Notification Center */
+"Notifications" = "Notifications";
+"No notifications" = "Aucune notification";
+"All" = "Toutes";
+"Clear All" = "Tout effacer";
+"Show less" = "Afficher moins";

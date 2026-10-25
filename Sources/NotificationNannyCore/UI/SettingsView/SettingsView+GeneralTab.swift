@@ -94,6 +94,9 @@ struct GeneralTabView: View {
                 toggleRow("Don't move Notification Center", isOn: $settings.avoidNCPanel,
                           detail: "When on, Notification Center opens on the screen whose clock you click. When off, it always moves to the screen your banners go to, and on a smaller screen than the one it opened on, its bottom is cut off.")
                 Divider().padding(.leading, 14)
+                toggleRow("Custom Notification Center (experimental)", isOn: $settings.customNotificationCenter,
+                          detail: "Clicking the clock opens NotificationNanny's own list of your notifications instead of Notification Center. Widgets aren't shown in it.")
+                Divider().padding(.leading, 14)
                 toggleRow("Don't move desktop widgets", isOn: $settings.protectDesktopWidgets)
                 Divider().padding(.leading, 14)
                 toggleRow("Hold banners while display is asleep", isOn: $settings.holdWhileAsleep)
