@@ -363,6 +363,39 @@ private struct RowView: View {
         }
     }
 
+    /// What is typed in Notification Center's reply field, which has the focus: the
+    /// keystrokes go there, and this shows them.
+    private func replyMirror(_ text: String) -> some View {
+        HStack(spacing: 0) {
+            Text(text.isEmpty ? row.replyPlaceholder : text)
+                .font(.callout)
+                .foregroundStyle(text.isEmpty ? Color.secondary : Color.nannyStrong)
+                .lineLimit(4)
+            Rectangle().fill(Color.nannyAccent).frame(width: 1.5, height: 14).padding(.leading, 1)
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 8).padding(.vertical, 6)
+        .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(Color.nannyRaised(0.06)))
+        .overlay(RoundedRectangle(cornerRadius: 7, style: .continuous).strokeBorder(Color.nannyAccent.opacity(0.7)))
+        .padding(.top, 6)
+    }
+
+    /// The app's own buttons, as Notification Center offers them.
+    private var actionButtons: some View {
+        HStack(spacing: 6) {
+            ForEach(row.actions, id: \.self) { name in
+                Button { takeover.perform(name, on: row) } label: {
+                    Text(name).font(.caption.weight(.medium)).lineLimit(1)
+                        .padding(.horizontal, 10).padding(.vertical, 4)
+                        .background(Capsule().fill(Color.nannyRaised(0.1)))
+                        .foregroundStyle(Color.nannyStrong)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(.top, 6)
+    }
+
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
             if showsIcon { AppIcon(appName: row.appName, size: compact ? 22 : 32) }
@@ -389,6 +422,8 @@ private struct RowView: View {
                 if !row.body.isEmpty {
                     Text(row.body).font(.callout).foregroundStyle(.secondary).lineLimit(hovering ? 8 : (compact ? 1 : 2))
                 }
+                if let reply = row.reply { replyMirror(reply) }
+                if !row.actions.isEmpty, hovering || row.reply != nil { actionButtons }
             }
             Spacer(minLength: 0)
             Button { takeover.close(row) } label: {
@@ -402,6 +437,6 @@ private struct RowView: View {
         .padding(.horizontal, 10).padding(.vertical, compact ? 5 : 9)
         .contentShape(Rectangle())
         .onTapGesture { takeover.activate(row) }
-        .onHover { hovering = $0 }
+        .activeHover { hovering = $0 }
     }
 }

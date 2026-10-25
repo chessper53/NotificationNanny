@@ -21,6 +21,7 @@
 
 import AppKit
 import ApplicationServices
+import SwiftUI
 @preconcurrency import ScreenCaptureKit
 
 func attr(_ e: AXUIElement, _ key: String) -> CFTypeRef? {
@@ -43,6 +44,10 @@ func frame(_ e: AXUIElement) -> CGRect? {
 func setPoint(_ e: AXUIElement, _ p: CGPoint) -> AXError {
     var p = p
     return AXUIElementSetAttributeValue(e, kAXPositionAttribute as CFString, AXValueCreate(.cgPoint, &p)!)
+}
+func settable(_ e: AXUIElement, _ key: String) -> Bool {
+    var b: DarwinBoolean = false
+    return AXUIElementIsAttributeSettable(e, key as CFString, &b) == .success && b.boolValue
 }
 func children(_ e: AXUIElement) -> [AXUIElement] { attr(e, kAXChildrenAttribute) as? [AXUIElement] ?? [] }
 func actionNames(_ e: AXUIElement) -> [String] {
@@ -645,16 +650,204 @@ case "shut":
     if isOpen() { _ = pressClock(); _ = waitFor(3) { !isOpen() } }
     print("panel \(isOpen() ? "still open" : "closed")")
 
+case "act":
+    // Triggers an action by name on the first Lab notification (banner or panel row),
+    // then shows what is in Notification Center afterwards around it: whether a text
+    // field appeared, and which buttons. Only Lab notifications are touched.
+    let name = args.dropFirst().joined(separator: " ")
+    guard let row = labRows().first(where: { r in actionNames(r).contains { displayName($0) == name } }) else {
+        print("no Lab notification offers \(name)"); exit(1)
+    }
+    let err = perform(row, named: name)
+    print("\(name) → \(err?.rawValue ?? -1)")
+    spin(1.0)
+    func dumpAround(_ e: AXUIElement, _ d: Int) {
+        guard d < 8 else { return }
+        let role = str(e, kAXRoleAttribute) ?? "?"
+        let lab = label(e).hasPrefix("Lab ")
+        let interesting = ["AXTextField", "AXTextArea", "AXButton"].contains(role) || lab
+        if interesting {
+            let text = [kAXValueAttribute, kAXDescriptionAttribute, kAXTitleAttribute, kAXPlaceholderValueAttribute]
+                .compactMap { str(e, $0) }.filter { !$0.isEmpty }
+            print(String(repeating: "  ", count: d) + "\(role)/\(str(e, kAXSubroleAttribute) ?? "") #\(str(e, kAXIdentifierAttribute) ?? "") \(frame(e).map { "(\(Int($0.minX)),\(Int($0.minY)) \(Int($0.width))x\(Int($0.height)))" } ?? "") \(text.map { "\"\($0.prefix(40))\"" }.joined(separator: " ")) [\(actionNames(e).map(displayName).joined(separator: ", "))] valueSettable=\(settable(e, kAXValueAttribute))")
+        }
+        for c in children(e) { dumpAround(c, d + 1) }
+    }
+    for w in windows() { dumpAround(w, 0) }
+
+case "reply-send":
+    // Types into the reply field Notification Center showed for a Lab notification, and
+    // sends it: by the field's own confirm action, or the Send button.
+    let text = args.dropFirst().joined(separator: " ")
+    var field: AXUIElement?
+    for w in windows() {
+        field = find(w) { ["AXTextField", "AXTextArea"].contains(str($0, kAXRoleAttribute) ?? "") }
+        if field != nil { break }
+    }
+    guard let field else { print("no text field"); exit(1) }
+    let set = AXUIElementSetAttributeValue(field, kAXValueAttribute as CFString, text as CFString)
+    print("set value → \(set.rawValue), now \"\(str(field, kAXValueAttribute) ?? "")\"; field actions [\(actionNames(field).map(displayName).joined(separator: ", "))]")
+    spin(0.3)
+    if actionNames(field).contains("AXConfirm") {
+        print("AXConfirm → \(AXUIElementPerformAction(field, "AXConfirm" as CFString).rawValue)")
+    } else {
+        var send: AXUIElement?
+        for w in windows() {
+            send = find(w) { str($0, kAXRoleAttribute) == "AXButton" && ["Send", "Senden"].contains(str($0, kAXDescriptionAttribute) ?? str($0, kAXTitleAttribute) ?? "") }
+            if send != nil { break }
+        }
+        if let send { print("Send → \(AXUIElementPerformAction(send, kAXPressAction as CFString).rawValue)") } else { print("no Send button") }
+    }
+    spin(1.5)
+
+case "type":
+    // Focuses Notification Center's reply field for a Lab notification and types into it
+    // with real keystrokes, but only once the system says that field has the keyboard
+    // focus: otherwise the keys would land in whatever app is in front.
+    let text = args.dropFirst().joined(separator: " ")
+    var field: AXUIElement?
+    for w in windows() {
+        field = find(w) { ["AXTextField", "AXTextArea"].contains(str($0, kAXRoleAttribute) ?? "") }
+        if field != nil { break }
+    }
+    guard let field else { print("no text field"); exit(1) }
+    let focusErr = AXUIElementSetAttributeValue(field, kAXFocusedAttribute as CFString, kCFBooleanTrue)
+    spin(0.4)
+    var focused: CFTypeRef?
+    AXUIElementCopyAttributeValue(AXUIElementCreateSystemWide(), kAXFocusedUIElementAttribute as CFString, &focused)
+    let isOurs = focused.map { CFGetTypeID($0) == AXUIElementGetTypeID() && CFEqual($0, field) } ?? false
+    var focusedApp: CFTypeRef?
+    AXUIElementCopyAttributeValue(AXUIElementCreateSystemWide(), kAXFocusedApplicationAttribute as CFString, &focusedApp)
+    var appPid: pid_t = 0
+    if let fa = focusedApp, CFGetTypeID(fa) == AXUIElementGetTypeID() { AXUIElementGetPid(fa as! AXUIElement, &appPid) }
+    print("set focus → \(focusErr.rawValue); system focus is the reply field: \(isOurs); focused app pid \(appPid) (NC \(nc.processIdentifier)); frontmost \(NSWorkspace.shared.frontmostApplication?.localizedName ?? "?")")
+    guard isOurs else { print("not typing: the keys would go elsewhere"); exit(2) }
+    for ch in text.utf16 {
+        var c = ch
+        for down in [true, false] {
+            let e = CGEvent(keyboardEventSource: nil, virtualKey: 0, keyDown: down)!
+            e.keyboardSetUnicodeString(stringLength: 1, unicodeString: &c)
+            e.post(tap: .cghidEventTap)
+        }
+        usleep(15_000)
+    }
+    spin(0.4)
+    print("field now \"\(str(field, kAXValueAttribute) ?? "")\"")
+
+case "panel-reply":
+    // The whole reply, in the open panel parked off screen: Reply on a Lab row, focus its
+    // field, type with real keystrokes (only if the field has the focus), press Send.
+    let text = args.dropFirst().joined(separator: " ")
+    guard pressClock(), waitFor(3, { isOpen() }) != nil, let h = host(), let home = frame(h)?.origin else {
+        print("panel did not open"); restore(); exit(1)
+    }
+    hostHome = home
+    _ = setPoint(h, CGPoint(x: home.x, y: -9999))
+    spin(0.6)
+    guard let row = labRows().first(where: { r in actionNames(r).contains { displayName($0) == "Reply" } }) else {
+        print("no Lab row with Reply"); restore(); exit(1)
+    }
+    _ = perform(row, named: "Reply")
+    spin(0.8)
+    guard let field = find(h, { ["AXTextField", "AXTextArea"].contains(str($0, kAXRoleAttribute) ?? "") }) else {
+        print("no reply field; panel \(isOpen() ? "open" : "CLOSED")"); restore(); exit(1)
+    }
+    AXUIElementSetAttributeValue(field, kAXFocusedAttribute as CFString, kCFBooleanTrue)
+    spin(0.4)
+    var focused: CFTypeRef?
+    AXUIElementCopyAttributeValue(AXUIElementCreateSystemWide(), kAXFocusedUIElementAttribute as CFString, &focused)
+    let isOurs = focused.map { CFGetTypeID($0) == AXUIElementGetTypeID() && CFEqual($0, field) } ?? false
+    print("reply field focused: \(isOurs); panel \(isOpen() ? "open" : "CLOSED")")
+    guard isOurs else { restore(); exit(2) }
+    for ch in text.utf16 {
+        var c = ch
+        for down in [true, false] {
+            let e = CGEvent(keyboardEventSource: nil, virtualKey: 0, keyDown: down)!
+            e.keyboardSetUnicodeString(stringLength: 1, unicodeString: &c)
+            e.post(tap: .cghidEventTap)
+        }
+        usleep(15_000)
+    }
+    spin(0.4)
+    print("field \"\(str(field, kAXValueAttribute) ?? "")\"; panel \(isOpen() ? "open" : "CLOSED")")
+    if let send = find(h, { str($0, kAXRoleAttribute) == "AXButton" && str($0, kAXDescriptionAttribute) == "Send" }) {
+        print("Send → \(AXUIElementPerformAction(send, kAXPressAction as CFString).rawValue)")
+    }
+    spin(1.0)
+    print("after sending: panel \(isOpen() ? "open" : "closed")")
+    restore()
+
+case "unpark":
+    // Puts Notification Center's window back on the main screen if something left it
+    // parked: a NotificationNanny stopped by a script doesn't get to, and with nothing
+    // running, banners would then arrive off screen.
+    guard let h = host(), let p = frame(h)?.origin else { print("no window to unpark"); exit(0) }
+    if p.y < -1000 || p.x < -1000 {
+        let err = setPoint(h, .zero)
+        print("unparked from (\(Int(p.x)),\(Int(p.y))) → \(err.rawValue)")
+    } else {
+        print("not parked (\(Int(p.x)),\(Int(p.y)))")
+    }
+
+case "hover-test":
+    // Does hover reach a window of an app that isn't active, with a synthetic pointer
+    // move? An AppKit tracking area (always active) against SwiftUI's onHover.
+    final class Tracker: NSView {
+        var entered = 0
+        override func updateTrackingAreas() {
+            super.updateTrackingAreas()
+            trackingAreas.forEach(removeTrackingArea)
+            addTrackingArea(NSTrackingArea(rect: .zero, options: [.activeAlways, .mouseEnteredAndExited, .inVisibleRect], owner: self, userInfo: nil))
+        }
+        override func mouseEntered(with event: NSEvent) { entered += 1 }
+    }
+    final class Box { var swiftUI = 0 }
+    let box = Box()
+    let screen = NSScreen.screens[0].frame
+    let rect = NSRect(x: screen.midX - 150, y: screen.midY - 50, width: 300, height: 100)
+    let panel = NSPanel(contentRect: rect, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+    panel.level = .statusBar
+    let host = NSHostingView(rootView: Color.gray.onHover { if $0 { box.swiftUI += 1 } })
+    host.frame = NSRect(origin: .zero, size: rect.size)
+    let tracker = Tracker(frame: NSRect(origin: .zero, size: rect.size))
+    let container = NSView(frame: NSRect(origin: .zero, size: rect.size))
+    container.addSubview(host)
+    container.addSubview(tracker)
+    panel.contentView = container
+    panel.acceptsMouseMovedEvents = args.contains("--moved")
+    panel.orderFrontRegardless()
+    spin(0.4)
+    var polledInside = false
+    let poll = Timer(timeInterval: 0.03, repeats: true) { _ in
+        if rect.contains(NSEvent.mouseLocation) { polledInside = true }
+    }
+    RunLoop.main.add(poll, forMode: .common)
+    let back = CGEvent(source: nil)!.location
+    let inside = CGPoint(x: rect.midX, y: screen.maxY - rect.midY)
+    for p in [CGPoint(x: inside.x, y: inside.y - 200), CGPoint(x: inside.x, y: inside.y - 10), inside] {
+        CGEvent(mouseEventSource: nil, mouseType: .mouseMoved, mouseCursorPosition: p, mouseButton: .left)!.post(tap: .cghidEventTap)
+        spin(0.15)
+    }
+    spin(0.4)
+    CGEvent(mouseEventSource: nil, mouseType: .mouseMoved, mouseCursorPosition: back, mouseButton: .left)!.post(tap: .cghidEventTap)
+    poll.invalidate()
+    print("tracking area entered: \(tracker.entered), SwiftUI onHover: \(box.swiftUI), polled pointer inside: \(polledInside), acceptsMouseMoved \(panel.acceptsMouseMovedEvents)")
+    panel.orderOut(nil)
+
 case "clock":
     exit(pressClock() ? 0 : 1)
 
 // The ui-* commands drive NotificationNanny's own panel (pid as the second argument)
 // through its accessibility tree, with real clicks.
-case "ui-state", "ui-click", "ui-close", "ui-button", "ui-winid", "ui-scroll", "ui-count", "ui-widget":
+case "ui-state", "ui-click", "ui-close", "ui-button", "ui-winid", "ui-scroll", "ui-count", "ui-widget", "ui-hover":
     guard args.count >= 2, let pid = pid_t(args[1]) else { print("usage: lab \(args[0]) <pid> [text]"); exit(64) }
     let nn = AXUIElementCreateApplication(pid)
     AXUIElementSetMessagingTimeout(nn, 2)
-    let nnWindows = attr(nn, kAXWindowsAttribute) as? [AXUIElement] ?? []
+    // Only the panel: custom banner overlays are windows of the app too, and can show
+    // the same text. The panel is the largest.
+    let nnWindows = (attr(nn, kAXWindowsAttribute) as? [AXUIElement] ?? [])
+        .max { (frame($0).map { $0.width * $0.height } ?? 0) < (frame($1).map { $0.width * $0.height } ?? 0) }
+        .map { [$0] } ?? []
     func all(_ e: AXUIElement, depth: Int = 0) -> [AXUIElement] {
         guard depth < 30 else { return [] }
         return [e] + children(e).flatMap { all($0, depth: depth + 1) }
@@ -670,7 +863,11 @@ case "ui-state", "ui-click", "ui-close", "ui-button", "ui-winid", "ui-scroll", "
     case "ui-winid":
         let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID) as? [[String: Any]] ?? []
         let mine = list.filter { $0[kCGWindowOwnerPID as String] as? pid_t == pid && ($0[kCGWindowLayer as String] as? Int ?? 0) > 0 }
-        guard let id = mine.first?[kCGWindowNumber as String] as? Int else { print("none"); exit(1) }
+        func area(_ w: [String: Any]) -> CGFloat {
+            (w[kCGWindowBounds as String] as? NSDictionary).flatMap { CGRect(dictionaryRepresentation: $0 as CFDictionary) }
+                .map { $0.width * $0.height } ?? 0
+        }
+        guard let id = mine.max(by: { area($0) < area($1) })?[kCGWindowNumber as String] as? Int else { print("none"); exit(1) }
         print(id)
     case "ui-state":
         let panelFrame = nnWindows.compactMap(frame).max { $0.height < $1.height }
@@ -679,6 +876,14 @@ case "ui-state", "ui-click", "ui-close", "ui-button", "ui-winid", "ui-scroll", "
         print("our buttons: \(elements.filter { role($0) == "AXButton" }.map(text).joined(separator: " | "))")
         print("NC panel open: \(isOpen()), NC window y: \(host().flatMap(frame).map { "\(Int($0.minY))" } ?? "none")")
         print("NC Lab rows: \(labRows().map { "\(str($0, kAXSubroleAttribute)?.replacingOccurrences(of: "AXNotificationCenter", with: "") ?? "?"):\(label($0).split(separator: ",").dropFirst().first.map { $0.trimmingCharacters(in: .whitespaces) } ?? "?")" }.joined(separator: " | "))")
+    case "ui-hover":
+        // Rests the pointer on the text in our panel, and leaves it there.
+        let want = args.dropFirst(2).joined(separator: " ")
+        guard let t = texts.first(where: { text($0) == want }), let f = frame(t) else { print("no text \(want)"); exit(1) }
+        CGEvent(mouseEventSource: nil, mouseType: .mouseMoved, mouseCursorPosition: CGPoint(x: f.midX, y: f.midY), mouseButton: .left)!
+            .post(tap: .cghidEventTap)
+        // An event posted right before the process exits can be dropped.
+        usleep(150_000)
     case "ui-widget":
         // Clicks the middle of the first widget picture in our panel.
         guard let img = elements.filter({ role($0) == "AXImage" }).compactMap({ e in frame(e).map { (e, $0) } })

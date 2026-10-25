@@ -106,9 +106,17 @@ struct BannerContent: Equatable {
     var subtitle: String = ""
     let body: String
     let appIcon: NSImage?
+    /// The app's own buttons on the real banner (Reply, Archive…); see NotificationActions.
+    var actions: [String] = []
+    /// The real banner shows its buttons ("Show Details" was used).
+    var expanded = false
+    /// What is typed in the real banner's open reply field; nil while none is open.
+    var reply: String? = nil
+    var replyPlaceholder = ""
 
     static func == (l: BannerContent, r: BannerContent) -> Bool {
         l.appName == r.appName && l.title == r.title && l.subtitle == r.subtitle && l.body == r.body
+            && l.actions == r.actions && l.expanded == r.expanded && l.reply == r.reply
     }
 }
 
@@ -119,7 +127,8 @@ final class BannerAnimationController {
 }
 
 struct CustomBannerView: View {
-    let content: BannerContent
+    /// Mutable so the overlay follows the real banner as it opens its buttons or a reply.
+    var content: BannerContent
     /// Mutable so a scale change while the banner is on screen re-renders it at
     /// the new size rather than stretching what is already drawn.
     var scale: CGFloat
@@ -130,6 +139,8 @@ struct CustomBannerView: View {
     let controller: BannerAnimationController
     let onDismiss: () -> Void
     let onOpen: () -> Void
+    let onAction: (String) -> Void
+    let onDetails: () -> Void
 
     @State private var animX: CGFloat
     @State private var animY: CGFloat
@@ -142,7 +153,8 @@ struct CustomBannerView: View {
 
     init(content: BannerContent, scale: CGFloat, animation: BannerAnimation, tint: Color,
          textColor: Color?, redactContent: Bool = false, controller: BannerAnimationController,
-         onDismiss: @escaping () -> Void, onOpen: @escaping () -> Void) {
+         onDismiss: @escaping () -> Void, onOpen: @escaping () -> Void,
+         onAction: @escaping (String) -> Void = { _ in }, onDetails: @escaping () -> Void = {}) {
         self.content = content
         self.scale = scale
         self.animation = animation
@@ -152,6 +164,8 @@ struct CustomBannerView: View {
         self.controller = controller
         self.onDismiss = onDismiss
         self.onOpen = onOpen
+        self.onAction = onAction
+        self.onDetails = onDetails
         let h = animation.hidden
         _animX = State(initialValue: h.x)
         _animY = State(initialValue: h.y)
@@ -204,6 +218,10 @@ struct CustomBannerView: View {
                 withAnimation(.easeInOut(duration: 0.15)) { isHovered = hovering }
                 setCursorPushed(hovering)
             }
+            // onHover only reports while the app is active, which it never is here.
+            .activeHover { hovering in
+                withAnimation(.easeInOut(duration: 0.15)) { isHovered = hovering }
+            }
             .onDisappear { setCursorPushed(false) }
             .opacity(animOpacity)
             .scaleEffect(animScale)
@@ -218,7 +236,87 @@ struct CustomBannerView: View {
 
     private var banner: some View {
         let shape = RoundedRectangle(cornerRadius: Metrics.cornerRadius * scale, style: .continuous)
-        return HStack(alignment: .center, spacing: Metrics.iconTextSpacing * scale) {
+        return VStack(spacing: 0) {
+            summary
+            if content.expanded { expandedButtons }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .background {
+            ZStack {
+                BannerBackground(cornerRadius: Metrics.cornerRadius * scale)
+                // Untinted means "look like the system banner". The glass alone
+                // comes out slightly dark, so it gets the measured wash; a user
+                // tint replaces the wash rather than stacking on top of it.
+                if tint != .clear {
+                    tint.opacity(0.45)
+                } else if BannerBackground.isGlass {
+                    Color.white.opacity(Metrics.wash)
+                }
+            }
+            .clipShape(shape)
+        }
+        .overlay {
+            // Glass draws its own edge. The pre-26 material needs the hairline.
+            if !BannerBackground.isGlass {
+                shape.strokeBorder(Color.primary.opacity(0.08), lineWidth: 0.5)
+            }
+        }
+        .overlay(alignment: .topTrailing) {
+            // The real banner's chevron: shows or hides the app's buttons.
+            if isHovered, !content.actions.isEmpty {
+                Button(action: onDetails) {
+                    Image(systemName: content.expanded ? "chevron.up" : "chevron.down")
+                        .font(.system(size: 10 * scale, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 22 * scale, height: 22 * scale)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .padding(.top, 6 * scale).padding(.trailing, 6 * scale)
+                .transition(.opacity)
+            }
+        }
+        .contentShape(shape)
+        .onTapGesture { onOpen() }
+    }
+
+    /// The app's buttons and an open reply, laid out as the real banner does when it
+    /// shows its details: full-width rows under the text.
+    private var expandedButtons: some View {
+        VStack(spacing: 4 * scale) {
+            if let reply = content.reply {
+                HStack(spacing: 0) {
+                    Text(reply.isEmpty ? content.replyPlaceholder : reply)
+                        .font(.system(size: Metrics.fontSize * scale))
+                        .foregroundStyle(reply.isEmpty ? AnyShapeStyle(.secondary) : bodyStyle)
+                        .lineLimit(3)
+                    Rectangle().fill(Color.nannyAccent).frame(width: 1.5 * scale, height: 14 * scale)
+                        .padding(.leading, 1)
+                    Spacer(minLength: 0)
+                }
+                .padding(.horizontal, 8 * scale).padding(.vertical, 5 * scale)
+                .background(RoundedRectangle(cornerRadius: 8 * scale, style: .continuous).fill(Color.primary.opacity(0.06)))
+            }
+            ForEach(content.actions, id: \.self) { name in
+                Button { onAction(name) } label: {
+                    Text(name)
+                        .font(.system(size: Metrics.fontSize * scale, weight: .medium))
+                        .foregroundStyle(titleStyle)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 26 * scale)
+                        .background(RoundedRectangle(cornerRadius: 8 * scale, style: .continuous)
+                            .fill(Color.primary.opacity(0.08)))
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(.horizontal, 10 * scale)
+        .padding(.bottom, 10 * scale)
+    }
+
+    private var summary: some View {
+        HStack(alignment: .center, spacing: Metrics.iconTextSpacing * scale) {
             iconView
             VStack(alignment: .leading, spacing: Metrics.lineSpacing * scale) {
                 // The system banner shows the app name in the title slot when a
@@ -253,29 +351,9 @@ struct CustomBannerView: View {
         }
         .padding(.leading, Metrics.iconLeading * scale)
         .padding(.trailing, Metrics.textTrailing * scale)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background {
-            ZStack {
-                BannerBackground(cornerRadius: Metrics.cornerRadius * scale)
-                // Untinted means "look like the system banner". The glass alone
-                // comes out slightly dark, so it gets the measured wash; a user
-                // tint replaces the wash rather than stacking on top of it.
-                if tint != .clear {
-                    tint.opacity(0.45)
-                } else if BannerBackground.isGlass {
-                    Color.white.opacity(Metrics.wash)
-                }
-            }
-            .clipShape(shape)
-        }
-        .overlay {
-            // Glass draws its own edge. The pre-26 material needs the hairline.
-            if !BannerBackground.isGlass {
-                shape.strokeBorder(Color.primary.opacity(0.08), lineWidth: 0.5)
-            }
-        }
-        .contentShape(shape)
-        .onTapGesture { onOpen() }
+        // Collapsed it fills the banner and stays centred, as before; expanded it sits
+        // at the top with the buttons under it.
+        .frame(maxWidth: .infinity, maxHeight: content.expanded ? nil : .infinity)
     }
 
     private var closeButton: some View {
@@ -441,6 +519,8 @@ final class CustomBannerManager {
         animation: BannerAnimation = .default,
         onOpen: @escaping () -> Void,
         onUnderlyingDismiss: (() -> Void)? = nil,
+        onAction: @escaping (String) -> Void = { _ in },
+        onDetails: @escaping () -> Void = {},
         key: CFHashCode
     ) {
         dismiss(key: key)
@@ -456,7 +536,8 @@ final class CustomBannerManager {
         let bannerView = CustomBannerView(
             content: content, scale: s, animation: animation, tint: backgroundColor,
             textColor: textColor, redactContent: redactContent,
-            controller: controller, onDismiss: onDismissAction, onOpen: onOpenAction)
+            controller: controller, onDismiss: onDismissAction, onOpen: onOpenAction,
+            onAction: onAction, onDetails: onDetails)
         let hosting = NSHostingView(rootView: bannerView)
         // The panel's size comes from the real banner, never from SwiftUI. Left
         // to its default, the hosting view grows the panel to its own minimum
@@ -512,6 +593,19 @@ final class CustomBannerManager {
     }
 
     func isActive(key: CFHashCode) -> Bool { active[key] != nil }
+
+    /// Shows the real banner's state again: its buttons opened, a reply typed.
+    func update(key: CFHashCode, content: BannerContent) {
+        guard let entry = active[key], entry.hosting.rootView.content != content else { return }
+        entry.hosting.rootView.content = content
+    }
+
+    /// Someone is using the banner's buttons or replying: it stays until they are done,
+    /// whatever auto-dismiss says. The real banner still decides when it goes.
+    func holdOpen(key: CFHashCode) {
+        active[key]?.dismissTimer?.cancel()
+        active[key]?.dismissTimer = nil
+    }
     /// When the overlay's glide ends (system uptime); in the past when it isn't gliding.
     func glideEnd(key: CFHashCode) -> Double { active[key]?.glideEnds ?? 0 }
     var hasActive: Bool { !active.isEmpty }

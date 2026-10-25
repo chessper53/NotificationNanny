@@ -68,6 +68,27 @@ needs Screen Recording; off, widgets are left out). Measured in the app:
 | What went wrong first? | The panel slides in when it opens, and a widget's frame read at the start of a capture no longer matched by its end: the picture showed the wrong part. A capture now counts only if the widgets didn't move meanwhile, and tries again shortly otherwise. |
 | Can a click reach the real widget? | Sent to Notification Center with `postToPid`, no. As a real click at the real widget's place, with our panel and the click router letting it through for that one click, yes: Weather opened, and Notification Center closed its panel as it does after a widget click. The pointer jumps there and back. |
 
+## The app's own buttons: Reply, Archive, Snooze
+
+A notification can carry buttons of its app's own. macOS shows them when the banner is
+hovered and expanded, and on alerts. Notification Center lists them as custom actions of
+the notification's element, beside its own (Close, Show Details, Clear All). Measured on
+27.0 with a Lab app posting Reply (with a text field), Archive and Snooze, and logging what
+reached it (`scripts/notify-lab/notifier.swift`, `responses.log`):
+
+| Question | Answer |
+|---|---|
+| Does performing one reach the app? | Yes. Archive through Accessibility arrived as `action=archive` for the right notification, on a banner and on a parked panel row. |
+| What does Reply do? | Notification Center expands the notification and shows its own text field (`AXTextArea`, writable), the app's placeholder, and a Send button; Reply is replaced by Send in the actions. Performing Reply reports an error code while doing all of that. |
+| Can the reply be filled and sent? | Writing the field's value and pressing Send arrived as `action=reply text=…`. |
+| Can a person type into it, with the real one off screen? | Yes. Given the focus through Accessibility, Notification Center takes the keyboard while the frontmost app stays frontmost, and real keystrokes land in the field, on a parked banner and in the parked panel, which stays open. The lab only types once the system says that field has the focus. |
+| Hover | SwiftUI's `onHover` and AppKit tracking areas, even always-active ones, never reported in a window of an app that isn't active (`hover-test`); NotificationNanny never is. Reading the pointer position does work. |
+
+So both the custom banner and the custom panel can mirror the real notification: our
+buttons perform the app's actions on the real one, and a reply is typed into Notification
+Center's own field, which has the focus, while ours shows what it holds. Send needs no name:
+it is the action that appears when the reply opens. Built, not yet checked live.
+
 ## What was built
 
 Behind the experimental setting "Custom Notification Center" (General, off by default):
