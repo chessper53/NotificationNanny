@@ -23,6 +23,7 @@
 #   type:Text             type into Notification Center's open reply field, real keys,
 #                         only if that field has the keyboard focus
 #   responses:N           the last N responses the Lab apps received
+#   bhover, bbutton, bstate   hover, button and state in custom banner overlays
 #   wait:seconds
 #
 # PANEL_FILTER= (empty) lists every app, the user's own too; use count, not state or shot.
@@ -130,6 +131,10 @@ for step in "$@"; do
         click)  "$OUT/lab" ui-click "$NN_PID" "$arg" || echo "   click failed" ;;
         close)  "$OUT/lab" ui-close "$NN_PID" "$arg" || echo "   close failed" ;;
         button) "$OUT/lab" ui-button "$NN_PID" "$arg" || echo "   button failed" ;;
+        # The same, in a custom banner overlay instead of the panel.
+        bhover)  NN_LAB_TARGET=banners "$OUT/lab" ui-hover "$NN_PID" "$arg" ;;
+        bbutton) NN_LAB_TARGET=banners "$OUT/lab" ui-button "$NN_PID" "$arg" || echo "   button failed" ;;
+        bstate)  NN_LAB_TARGET=banners "$OUT/lab" ui-state "$NN_PID" ;;
         wait)   sleep "$arg" ;;
         *)      echo "   unknown step" ;;
     esac

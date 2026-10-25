@@ -272,6 +272,7 @@ struct CustomBannerView: View {
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel(LocalizationManager.shared.string("Options"))
                 .padding(.top, 6 * scale).padding(.trailing, 6 * scale)
                 .transition(.opacity)
             }

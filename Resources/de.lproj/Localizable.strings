@@ -204,3 +204,4 @@
 "Screen Recording isn't allowed yet" = "Bildschirmaufnahme ist noch nicht erlaubt";
 "Allow NotificationNanny in System Settings. If you just did, quit and reopen NotificationNanny: macOS only applies it after a restart." = "Erlaube NotificationNanny in den Systemeinstellungen. Falls du das gerade getan hast, beende NotificationNanny und öffne es erneut: macOS übernimmt es erst nach einem Neustart.";
 "Open System Settings" = "Systemeinstellungen öffnen";
+"Options" = "Optionen";

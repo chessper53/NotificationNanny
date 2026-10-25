@@ -844,10 +844,12 @@ case "ui-state", "ui-click", "ui-close", "ui-button", "ui-winid", "ui-scroll", "
     let nn = AXUIElementCreateApplication(pid)
     AXUIElementSetMessagingTimeout(nn, 2)
     // Only the panel: custom banner overlays are windows of the app too, and can show
-    // the same text. The panel is the largest.
-    let nnWindows = (attr(nn, kAXWindowsAttribute) as? [AXUIElement] ?? [])
-        .max { (frame($0).map { $0.width * $0.height } ?? 0) < (frame($1).map { $0.width * $0.height } ?? 0) }
-        .map { [$0] } ?? []
+    // the same text. The panel is the largest. NN_LAB_TARGET=banners looks at the
+    // banner overlays instead.
+    let allNN = attr(nn, kAXWindowsAttribute) as? [AXUIElement] ?? []
+    let nnWindows = ProcessInfo.processInfo.environment["NN_LAB_TARGET"] == "banners" ? allNN
+        : allNN.max { (frame($0).map { $0.width * $0.height } ?? 0) < (frame($1).map { $0.width * $0.height } ?? 0) }
+            .map { [$0] } ?? []
     func all(_ e: AXUIElement, depth: Int = 0) -> [AXUIElement] {
         guard depth < 30 else { return [] }
         return [e] + children(e).flatMap { all($0, depth: depth + 1) }
