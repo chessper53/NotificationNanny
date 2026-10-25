@@ -124,7 +124,10 @@ final class NCPanelTakeover: ObservableObject {
         var value: CFTypeRef?
         guard AXUIElementCopyAttributeValue(ncApp, kAXWindowsAttribute as CFString, &value) == .success,
               let windows = value as? [AXUIElement] else { return nil }
-        return windows.max { ($0.size()?.width ?? 0) < ($1.size()?.width ?? 0) }
+        // Only the fullscreen dialog the panel opens in. Each desktop widget is a window of
+        // Notification Center's too, and parking one would take it off the desktop.
+        return windows.filter { $0.stringAttribute(kAXSubroleAttribute as String) == "AXSystemDialog" }
+            .max { ($0.size()?.width ?? 0) < ($1.size()?.width ?? 0) }
     }
 
     // MARK: - Lifecycle

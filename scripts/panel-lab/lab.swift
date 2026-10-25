@@ -82,7 +82,13 @@ let ncApp = AXUIElementCreateApplication(nc.processIdentifier)
 AXUIElementSetMessagingTimeout(ncApp, 2)
 
 func windows() -> [AXUIElement] { attr(ncApp, kAXWindowsAttribute) as? [AXUIElement] ?? [] }
-func host() -> AXUIElement? { windows().max { (frame($0)?.width ?? 0) < (frame($1)?.width ?? 0) } }
+/// The fullscreen window the banners and the panel live in. Never just the widest window:
+/// each desktop widget is a Notification Center window too, and with the panel closed it
+/// can be the only one, which once got a widget moved to the panel's place.
+func host() -> AXUIElement? {
+    windows().filter { str($0, kAXSubroleAttribute) == "AXSystemDialog" }
+        .max { (frame($0)?.width ?? 0) < (frame($1)?.width ?? 0) }
+}
 func isOpen() -> Bool {
     if attr(ncApp, "AXExpanded") as? Bool == true { return true }
     return windows().contains { find($0) { str($0, kAXIdentifierAttribute) == "widget-editor-button" } != nil }
@@ -419,6 +425,144 @@ case "ids":
         print("  row \(id.prefix(8)) \(label(r)) [\(str(r, kAXSubroleAttribute) ?? "?")] \(was.map { "seen as banner at \(String(format: "%.2f", $0.1))s" } ?? "NEVER seen as banner")")
     }
     print("rows seen as banners: \(matched) of \(rows.count)")
+    restore()
+
+case "widgets":
+    // Where widgets live: every NC window with the panel closed, then the open panel
+    // (parked) outside its notification list. Text shows as its length only.
+    func dumpTree(_ e: AXUIElement, depth: Int, maxDepth: Int, skipList: Bool, inWidget: Bool = false) {
+        guard depth <= maxDepth else { return }
+        let id = str(e, kAXIdentifierAttribute)
+        if skipList, id == "AXNotificationListItems" {
+            print(String(repeating: "  ", count: depth) + "[notification list, skipped]")
+            return
+        }
+        let role = str(e, kAXRoleAttribute) ?? "?"
+        let sub = str(e, kAXSubroleAttribute).map { "/\($0)" } ?? ""
+        // --text shows widget text in full (widgets only; notifications are skipped anyway).
+        let full = args.contains("--text") && (inWidget || (id ?? "").hasPrefix("widget-local:"))
+        let texts = Array(Set([kAXTitleAttribute, kAXDescriptionAttribute, kAXValueAttribute, "AXAttributedDescription"]
+            .compactMap { str(e, $0) }.filter { !$0.isEmpty })).map { full ? "\"\($0)\"" : "<\($0.count)>" }
+        let acts = actionNames(e).map(displayName).filter { $0 != "AXShowMenu" }
+        let f = frame(e).map { "(\(Int($0.minX)),\(Int($0.minY)) \(Int($0.width))x\(Int($0.height)))" } ?? ""
+        print(String(repeating: "  ", count: depth) + "\(role)\(sub)\(id.map { " #\($0.count == 36 ? "uuid" : $0)" } ?? "") \(f) \(texts.joined(separator: " ")) \(acts.isEmpty ? "" : "[\(acts.joined(separator: ", "))]")")
+        let nowInWidget = inWidget || (id ?? "").hasPrefix("widget-local:")
+        for c in children(e) { dumpTree(c, depth: depth + 1, maxDepth: maxDepth, skipList: skipList, inWidget: nowInWidget) }
+    }
+    print("== panel closed: \(windows().count) NC window(s)")
+    for w in windows() { dumpTree(w, depth: 0, maxDepth: 9, skipList: true) }
+    let cg = CGWindowListCopyWindowInfo([.optionAll], kCGNullWindowID) as? [[String: Any]] ?? []
+    let ncWins = cg.filter { $0[kCGWindowOwnerPID as String] as? pid_t == nc.processIdentifier }
+    print("== CGWindowList for NC: \(ncWins.count) window(s)")
+    for w in ncWins {
+        let b = (w[kCGWindowBounds as String] as? NSDictionary).flatMap { CGRect(dictionaryRepresentation: $0 as CFDictionary) } ?? .zero
+        print("  #\(w[kCGWindowNumber as String] ?? "?") layer=\(w[kCGWindowLayer as String] ?? "?") onscreen=\(w[kCGWindowIsOnscreen as String] ?? false) (\(Int(b.minX)),\(Int(b.minY)) \(Int(b.width))x\(Int(b.height)))")
+    }
+    let before = Set(windows().map { CFHash($0) })
+    guard pressClock() else { print("no clock"); exit(1) }
+    // Park the moment it opens, as the app does.
+    guard waitFor(3, { isOpen() }) != nil, let h = host(), let home = frame(h)?.origin else { print("panel did not open"); restore(); exit(1) }
+    hostHome = home
+    _ = setPoint(h, CGPoint(x: home.x, y: -9999))
+    spin(0.8)
+    print("== panel open (parked): \(windows().count) NC window(s), \(windows().filter { !before.contains(CFHash($0)) }.count) new")
+    for w in windows() { dumpTree(w, depth: 0, maxDepth: 12, skipList: true) }
+    restore()
+
+case "widget-shot":
+    // Can the parked panel's window be captured? Saves only the widgets' part of it to
+    // <out>.png, cropped by their frames, so notifications never end up in the file.
+    let out = args.dropFirst().first ?? "build/panel-lab/widget"
+    guard pressClock(), waitFor(3, { isOpen() }) != nil, let h = host(), let home = frame(h)?.origin else {
+        print("panel did not open"); restore(); exit(1)
+    }
+    hostHome = home
+    _ = setPoint(h, CGPoint(x: home.x, y: -9999))
+    spin(1.0)
+    guard let hf = frame(h),
+          let widget = find(h, { (str($0, kAXIdentifierAttribute) ?? "").hasPrefix("widget-local:") }), let wf = frame(widget)
+    else { print("no widget in the panel"); restore(); exit(1) }
+    let list = CGWindowListCopyWindowInfo([.optionAll], kCGNullWindowID) as? [[String: Any]] ?? []
+    let wid = list.first { info in
+        guard info[kCGWindowOwnerPID as String] as? pid_t == nc.processIdentifier,
+              let b = info[kCGWindowBounds as String] as? NSDictionary,
+              let r = CGRect(dictionaryRepresentation: b as CFDictionary) else { return false }
+        return abs(r.width - hf.width) < 2 && abs(r.height - hf.height) < 2
+    }?[kCGWindowNumber as String] as? Int
+    guard let wid else { print("no window number for the host"); restore(); exit(1) }
+    let full = out + "-full.png"
+    let p = Process()
+    p.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
+    p.arguments = ["-x", "-o", "-l", "\(wid)", full]
+    try? p.run(); p.waitUntilExit()
+    // Crop to the widget, in points relative to the window; the image may be @2x.
+    let rel = CGRect(x: wf.minX - hf.minX, y: wf.minY - hf.minY, width: wf.width, height: wf.height)
+    print("window \(wid) at y \(Int(hf.minY)), widget at \(Int(rel.minX)),\(Int(rel.minY)) \(Int(rel.width))x\(Int(rel.height)) in it, capture exit \(p.terminationStatus)")
+    if let img = NSImage(contentsOfFile: full), let cg = img.cgImage(forProposedRect: nil, context: nil, hints: nil) {
+        let scale = CGFloat(cg.width) / hf.width
+        let crop = CGRect(x: rel.minX * scale, y: rel.minY * scale, width: rel.width * scale, height: rel.height * scale)
+        print("captured \(cg.width)x\(cg.height) (scale \(scale))")
+        if let part = cg.cropping(to: crop) {
+            let rep = NSBitmapImageRep(cgImage: part)
+            try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: out + ".png"))
+            print("widget saved to \(out).png")
+        }
+    } else {
+        print("nothing captured")
+    }
+    try? FileManager.default.removeItem(atPath: full)
+    restore()
+
+case "widget-cover":
+    // The real panel left on screen under an opaque window of ours: can its widgets be
+    // captured then, and does it stay hidden? Saves only the widgets' crop.
+    let out = args.dropFirst().first ?? "build/panel-lab/widget-covered"
+    guard let screen = NSScreen.screens.first else { exit(1) }
+    // Below the menu bar: over it, the cover would hide the clock from the hit test.
+    let coverRect = NSRect(x: screen.frame.maxX - 800, y: screen.visibleFrame.minY, width: 800, height: screen.visibleFrame.height)
+    let cover = NSPanel(contentRect: coverRect, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+    cover.level = .statusBar
+    cover.backgroundColor = NSColor(calibratedWhite: 0.18, alpha: 1)
+    cover.orderFrontRegardless()
+    spin(0.4)
+    guard pressClock(), waitFor(3, { isOpen() }) != nil, let h = host(), let hf = frame(h) else {
+        print("panel did not open"); cover.orderOut(nil); restore(); exit(1)
+    }
+    hostHome = hf.origin
+    spin(1.0)
+    let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID) as? [[String: Any]] ?? []
+    let ncHost = list.first { info in
+        guard info[kCGWindowOwnerPID as String] as? pid_t == nc.processIdentifier,
+              let b = info[kCGWindowBounds as String] as? NSDictionary,
+              let r = CGRect(dictionaryRepresentation: b as CFDictionary) else { return false }
+        return abs(r.width - hf.width) < 2
+    }
+    let ours = list.first { $0[kCGWindowOwnerPID as String] as? pid_t == getpid() }
+    print("layers: NC host \(ncHost?[kCGWindowLayer as String] ?? "?"), our cover \(ours?[kCGWindowLayer as String] ?? "?"); front-to-back NC host is \(list.firstIndex { ($0[kCGWindowNumber as String] as? Int) == (ncHost?[kCGWindowNumber as String] as? Int) } ?? -1), ours \(list.firstIndex { $0[kCGWindowOwnerPID as String] as? pid_t == getpid() } ?? -1)")
+    if let wid = ncHost?[kCGWindowNumber as String] as? Int,
+       let widget = find(h, { (str($0, kAXIdentifierAttribute) ?? "").hasPrefix("widget-local:") }), let wf = frame(widget) {
+        let full = out + "-full.png"
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
+        p.arguments = ["-x", "-o", "-l", "\(wid)", full]
+        try? p.run(); p.waitUntilExit()
+        if let img = NSImage(contentsOfFile: full), let cg = img.cgImage(forProposedRect: nil, context: nil, hints: nil) {
+            let scale = CGFloat(cg.width) / hf.width
+            let rel = CGRect(x: wf.minX - hf.minX, y: wf.minY - hf.minY, width: wf.width, height: wf.height)
+            if let part = cg.cropping(to: CGRect(x: rel.minX * scale, y: rel.minY * scale, width: rel.width * scale, height: rel.height * scale)) {
+                try? NSBitmapImageRep(cgImage: part).representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: out + ".png"))
+                print("widget captured under the cover → \(out).png")
+            }
+        } else {
+            print("capture failed (exit \(p.terminationStatus))")
+        }
+        try? FileManager.default.removeItem(atPath: full)
+    } else {
+        print("no host window number or no widget")
+    }
+    closePanel()
+    spin(0.3)
+    cover.orderOut(nil)
     restore()
 
 case "clock":
