@@ -220,3 +220,11 @@
 "As macOS: in from the edge of the screen." = "As macOS: in from the edge of the screen.";
 "How it comes in when you click the clock, and goes when it closes." = "How it comes in when you click the clock, and goes when it closes.";
 "Not part of macOS's Notification Center, so off unless you turn them on. Times are noted when each banner appears; notifications that came in while NotificationNanny wasn't running have none." = "Not part of macOS's Notification Center, so off unless you turn them on. Times are noted when each banner appears; notifications that came in while NotificationNanny wasn't running have none.";
+"Same as banners" = "Same as banners";
+"As macOS. Drag it on the preview to either side, and down from the top." = "As macOS. Drag it on the preview to either side, and down from the top.";
+"Drag it on the preview to either side, and down from the top." = "Drag it on the preview to either side, and down from the top.";
+"Same as your banners, and per app where your exceptions set one." = "Same as your banners, and per app where your exceptions set one.";
+"No tint: the system's look." = "No tint: the system's look.";
+"One tint for every row." = "One tint for every row.";
+"Same as your banners." = "Same as your banners.";
+"Custom text color active." = "Custom text color active.";
