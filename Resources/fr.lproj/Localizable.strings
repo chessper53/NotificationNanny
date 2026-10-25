@@ -196,7 +196,6 @@
 "List" = "Liste";
 "Filter by app" = "Filtrer par app";
 "A row of apps above the list; click one to see only its notifications." = "Une rangée d'apps au-dessus de la liste ; cliquez sur l'une pour ne voir que ses notifications.";
-"Compact rows" = "Lignes compactes";
 "Widgets" = "Widgets";
 "Widgets are drawn by their own apps, so NotificationNanny can only show them as live pictures of the real ones. That needs Screen Recording. Leave this off and widgets are simply left out." = "Les widgets sont dessinés par leurs propres apps, NotificationNanny ne peut donc les montrer que comme des images en direct des vrais. Cela demande l'enregistrement de l'écran. Laissez ceci désactivé et les widgets sont simplement omis.";
 "Show widgets" = "Afficher les widgets";
@@ -205,3 +204,5 @@
 "Allow NotificationNanny in System Settings. If you just did, quit and reopen NotificationNanny: macOS only applies it after a restart." = "Autorisez NotificationNanny dans les Réglages Système. Si vous venez de le faire, quittez puis rouvrez NotificationNanny : macOS ne l'applique qu'après un redémarrage.";
 "Open System Settings" = "Ouvrir les Réglages Système";
 "Options" = "Options";
+"Look" = "Apparence";
+"Rows look like your banners: their colour, text colour and privacy blur come from the Banner tab and your exceptions." = "Les lignes ressemblent à vos bannières : leur couleur, la couleur du texte et le flou viennent de l'onglet Bannière et de vos exceptions.";

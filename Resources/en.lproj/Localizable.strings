@@ -196,7 +196,6 @@
 "List" = "List";
 "Filter by app" = "Filter by app";
 "A row of apps above the list; click one to see only its notifications." = "A row of apps above the list; click one to see only its notifications.";
-"Compact rows" = "Compact rows";
 "Widgets" = "Widgets";
 "Widgets are drawn by their own apps, so NotificationNanny can only show them as live pictures of the real ones. That needs Screen Recording. Leave this off and widgets are simply left out." = "Widgets are drawn by their own apps, so NotificationNanny can only show them as live pictures of the real ones. That needs Screen Recording. Leave this off and widgets are simply left out.";
 "Show widgets" = "Show widgets";
@@ -205,3 +204,5 @@
 "Allow NotificationNanny in System Settings. If you just did, quit and reopen NotificationNanny: macOS only applies it after a restart." = "Allow NotificationNanny in System Settings. If you just did, quit and reopen NotificationNanny: macOS only applies it after a restart.";
 "Open System Settings" = "Open System Settings";
 "Options" = "Options";
+"Look" = "Look";
+"Rows look like your banners: their colour, text colour and privacy blur come from the Banner tab and your exceptions." = "Rows look like your banners: their colour, text colour and privacy blur come from the Banner tab and your exceptions.";

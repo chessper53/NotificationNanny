@@ -22,7 +22,7 @@ package final class AppSettings: ObservableObject {
         static let customNotificationCenterTimes = "customNotificationCenterTimes"
         static let customNotificationCenterWidgets = "customNotificationCenterWidgets"
         static let customNotificationCenterAppFilter = "customNotificationCenterAppFilter"
-        static let customNotificationCenterCompact = "customNotificationCenterCompact"
+        static let customNotificationCenterAnimation = "customNotificationCenterAnimation"
         static let protectDesktopWidgets = "protectDesktopWidgets"
         static let followActiveScreen   = "followActiveScreen"
         static let pauseDuringFocus     = "pauseDuringFocus"
@@ -125,9 +125,10 @@ package final class AppSettings: ObservableObject {
         didSet { defaults.set(customNotificationCenterAppFilter, forKey: Key.customNotificationCenterAppFilter) }
     }
 
-    /// Denser rows in the custom Notification Center: smaller icons, one line of body.
-    @Published package var customNotificationCenterCompact: Bool {
-        didSet { defaults.set(customNotificationCenterCompact, forKey: Key.customNotificationCenterCompact) }
+    /// How the custom Notification Center opens and closes, from the banners' choices.
+    /// Default is the system's: in from the right edge of the screen.
+    @Published package var customNotificationCenterAnimation: BannerAnimation {
+        didSet { defaults.set(customNotificationCenterAnimation.rawValue, forKey: Key.customNotificationCenterAnimation) }
     }
 
 
@@ -388,7 +389,8 @@ package final class AppSettings: ObservableObject {
         self.customNotificationCenterTimes = (defaults.object(forKey: Key.customNotificationCenterTimes) as? Bool) ?? true
         self.customNotificationCenterWidgets = (defaults.object(forKey: Key.customNotificationCenterWidgets) as? Bool) ?? false
         self.customNotificationCenterAppFilter = (defaults.object(forKey: Key.customNotificationCenterAppFilter) as? Bool) ?? false
-        self.customNotificationCenterCompact = (defaults.object(forKey: Key.customNotificationCenterCompact) as? Bool) ?? false
+        self.customNotificationCenterAnimation = defaults.string(forKey: Key.customNotificationCenterAnimation)
+            .flatMap(BannerAnimation.init(rawValue:)) ?? .default
         self.protectDesktopWidgets = (defaults.object(forKey: Key.protectDesktopWidgets) as? Bool) ?? true
         self.followActiveScreen    = (defaults.object(forKey: Key.followActiveScreen) as? Bool) ?? false
         self.pauseDuringFocus      = (defaults.object(forKey: Key.pauseDuringFocus) as? Bool) ?? false
@@ -633,7 +635,7 @@ package final class AppSettings: ObservableObject {
         var customNotificationCenterTimes: Bool?
         var customNotificationCenterWidgets: Bool?
         var customNotificationCenterAppFilter: Bool?
-        var customNotificationCenterCompact: Bool?
+        var customNotificationCenterAnimation: BannerAnimation?
         var protectDesktopWidgets: Bool?
         var followActiveScreen: Bool?
         var pauseDuringFocus: Bool?
@@ -656,7 +658,7 @@ package final class AppSettings: ObservableObject {
             customNotificationCenterTimes: customNotificationCenterTimes,
             customNotificationCenterWidgets: customNotificationCenterWidgets,
             customNotificationCenterAppFilter: customNotificationCenterAppFilter,
-            customNotificationCenterCompact: customNotificationCenterCompact,
+            customNotificationCenterAnimation: customNotificationCenterAnimation,
             protectDesktopWidgets: protectDesktopWidgets,
             followActiveScreen: followActiveScreen,
             pauseDuringFocus: pauseDuringFocus,
@@ -688,7 +690,7 @@ package final class AppSettings: ObservableObject {
         customNotificationCenterTimes = imported.customNotificationCenterTimes ?? true
         customNotificationCenterWidgets = imported.customNotificationCenterWidgets ?? false
         customNotificationCenterAppFilter = imported.customNotificationCenterAppFilter ?? false
-        customNotificationCenterCompact = imported.customNotificationCenterCompact ?? false
+        customNotificationCenterAnimation = imported.customNotificationCenterAnimation ?? .default
         protectDesktopWidgets = imported.protectDesktopWidgets ?? true
         followActiveScreen  = imported.followActiveScreen ?? false
         pauseDuringFocus    = imported.pauseDuringFocus ?? false
