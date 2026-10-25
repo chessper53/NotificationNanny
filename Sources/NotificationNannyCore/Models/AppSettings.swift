@@ -20,6 +20,9 @@ package final class AppSettings: ObservableObject {
         static let avoidNCPanel         = "avoidNCPanel"
         static let customNotificationCenter = "customNotificationCenter"
         static let customNotificationCenterTimes = "customNotificationCenterTimes"
+        static let customNotificationCenterWidgets = "customNotificationCenterWidgets"
+        static let customNotificationCenterAppFilter = "customNotificationCenterAppFilter"
+        static let customNotificationCenterCompact = "customNotificationCenterCompact"
         static let protectDesktopWidgets = "protectDesktopWidgets"
         static let followActiveScreen   = "followActiveScreen"
         static let pauseDuringFocus     = "pauseDuringFocus"
@@ -109,6 +112,22 @@ package final class AppSettings: ObservableObject {
     /// Times on the custom Notification Center's rows, noted when each banner arrived.
     @Published package var customNotificationCenterTimes: Bool {
         didSet { defaults.set(customNotificationCenterTimes, forKey: Key.customNotificationCenterTimes) }
+    }
+
+    /// Pictures of the real widgets in the custom Notification Center. Needs Screen
+    /// Recording, so it is off unless asked for; off, widgets are left out.
+    @Published package var customNotificationCenterWidgets: Bool {
+        didSet { defaults.set(customNotificationCenterWidgets, forKey: Key.customNotificationCenterWidgets) }
+    }
+
+    /// The row of app chips that filters the custom Notification Center's list.
+    @Published package var customNotificationCenterAppFilter: Bool {
+        didSet { defaults.set(customNotificationCenterAppFilter, forKey: Key.customNotificationCenterAppFilter) }
+    }
+
+    /// Denser rows in the custom Notification Center: smaller icons, one line of body.
+    @Published package var customNotificationCenterCompact: Bool {
+        didSet { defaults.set(customNotificationCenterCompact, forKey: Key.customNotificationCenterCompact) }
     }
 
 
@@ -367,6 +386,9 @@ package final class AppSettings: ObservableObject {
         self.avoidNCPanel           = (defaults.object(forKey: Key.avoidNCPanel) as? Bool) ?? true
         self.customNotificationCenter = (defaults.object(forKey: Key.customNotificationCenter) as? Bool) ?? false
         self.customNotificationCenterTimes = (defaults.object(forKey: Key.customNotificationCenterTimes) as? Bool) ?? true
+        self.customNotificationCenterWidgets = (defaults.object(forKey: Key.customNotificationCenterWidgets) as? Bool) ?? false
+        self.customNotificationCenterAppFilter = (defaults.object(forKey: Key.customNotificationCenterAppFilter) as? Bool) ?? true
+        self.customNotificationCenterCompact = (defaults.object(forKey: Key.customNotificationCenterCompact) as? Bool) ?? false
         self.protectDesktopWidgets = (defaults.object(forKey: Key.protectDesktopWidgets) as? Bool) ?? true
         self.followActiveScreen    = (defaults.object(forKey: Key.followActiveScreen) as? Bool) ?? false
         self.pauseDuringFocus      = (defaults.object(forKey: Key.pauseDuringFocus) as? Bool) ?? false
@@ -609,6 +631,9 @@ package final class AppSettings: ObservableObject {
         var avoidNCPanel: Bool?
         var customNotificationCenter: Bool?
         var customNotificationCenterTimes: Bool?
+        var customNotificationCenterWidgets: Bool?
+        var customNotificationCenterAppFilter: Bool?
+        var customNotificationCenterCompact: Bool?
         var protectDesktopWidgets: Bool?
         var followActiveScreen: Bool?
         var pauseDuringFocus: Bool?
@@ -629,6 +654,9 @@ package final class AppSettings: ObservableObject {
             avoidNCPanel: avoidNCPanel,
             customNotificationCenter: customNotificationCenter,
             customNotificationCenterTimes: customNotificationCenterTimes,
+            customNotificationCenterWidgets: customNotificationCenterWidgets,
+            customNotificationCenterAppFilter: customNotificationCenterAppFilter,
+            customNotificationCenterCompact: customNotificationCenterCompact,
             protectDesktopWidgets: protectDesktopWidgets,
             followActiveScreen: followActiveScreen,
             pauseDuringFocus: pauseDuringFocus,
@@ -658,6 +686,9 @@ package final class AppSettings: ObservableObject {
         avoidNCPanel        = imported.avoidNCPanel ?? true
         customNotificationCenter = imported.customNotificationCenter ?? false
         customNotificationCenterTimes = imported.customNotificationCenterTimes ?? true
+        customNotificationCenterWidgets = imported.customNotificationCenterWidgets ?? false
+        customNotificationCenterAppFilter = imported.customNotificationCenterAppFilter ?? true
+        customNotificationCenterCompact = imported.customNotificationCenterCompact ?? false
         protectDesktopWidgets = imported.protectDesktopWidgets ?? true
         followActiveScreen  = imported.followActiveScreen ?? false
         pauseDuringFocus    = imported.pauseDuringFocus ?? false

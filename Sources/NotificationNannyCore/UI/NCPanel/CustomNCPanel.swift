@@ -92,6 +92,36 @@ final class CustomNCPanelController {
     }
 }
 
+/// An opaque window between Notification Center's panel and ours, while the real panel
+/// sits under ours to have its widgets captured. Ours covers it almost always; this
+/// covers what ours doesn't, so no part of the real panel ever shows.
+@MainActor
+final class NCPanelCover {
+    private let window: NSPanel
+
+    init() {
+        window = NSPanel(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: true)
+        // Notification Center's window is at 21, ours at the status bar's 25.
+        window.level = NSWindow.Level(rawValue: 22)
+        window.isOpaque = false
+        window.backgroundColor = .clear
+        window.hasShadow = false
+        window.ignoresMouseEvents = true
+        window.collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle, .fullScreenAuxiliary]
+        let fill = NSHostingView(rootView: RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Color.nannyWindow))
+        window.contentView = fill
+    }
+
+    func show(axRect: CGRect, below ours: NSWindow) {
+        guard let primary = NSScreen.screens.first else { return }
+        let frame = NSRect(x: axRect.minX, y: primary.frame.maxY - axRect.maxY, width: axRect.width, height: axRect.height)
+        window.setFrame(frame, display: true)
+        window.order(.below, relativeTo: ours.windowNumber)
+    }
+
+    func hide() { window.orderOut(nil) }
+}
+
 // MARK: - View
 
 private struct ContentHeightKey: PreferenceKey {
@@ -124,7 +154,8 @@ struct CustomNCPanelView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             header
-            if apps.count > 1 { appFilter }
+            if takeover.options.appFilter, apps.count > 1 { appFilter }
+            if !takeover.widgets.isEmpty { widgetSection }
             if takeover.snapshot.isEmpty {
                 LocalizedText("No notifications")
                     .font(.callout).foregroundStyle(.secondary)
@@ -166,6 +197,12 @@ struct CustomNCPanelView: View {
         HStack(spacing: 8) {
             LocalizedText("Notifications").font(.headline).foregroundStyle(Color.nannyStrong)
             Spacer()
+        }
+    }
+
+    private var widgetSection: some View {
+        VStack(spacing: 8) {
+            ForEach(takeover.widgets) { widget in WidgetView(widget: widget, takeover: takeover) }
         }
     }
 
@@ -223,6 +260,33 @@ private func textButton(_ key: String, action: @escaping () -> Void) -> some Vie
     .buttonStyle(.plain)
 }
 
+/// A picture of a real widget, sized as Notification Center draws it. A click goes to the
+/// real one, at the same spot.
+private struct WidgetView: View {
+    let widget: NCWidget
+    @ObservedObject var takeover: NCPanelTakeover
+
+    var body: some View {
+        let size = widget.frameInWindow.size
+        Group {
+            if let image = widget.image {
+                Image(nsImage: image).resizable().interpolation(.high)
+            } else {
+                RoundedRectangle(cornerRadius: 18, style: .continuous).fill(Color.nannyRaised(0.06))
+            }
+        }
+        .frame(width: size.width, height: size.height)
+        // The capture's corners hold whatever was behind the widget's rounded ones.
+        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .frame(maxWidth: .infinity)
+        .contentShape(Rectangle())
+        .onTapGesture(coordinateSpace: .local) { location in
+            let x = (location.x - (CustomNCPanelController.width - 24 - size.width) / 2) / size.width
+            takeover.click(widget, at: CGPoint(x: min(max(x, 0), 1), y: min(max(location.y / size.height, 0), 1)))
+        }
+    }
+}
+
 private struct AppIcon: View {
     let appName: String
     let size: CGFloat
@@ -259,7 +323,7 @@ private struct GroupCard: View {
             }
             ForEach(Array(group.rows.enumerated()), id: \.element.id) { index, row in
                 if index > 0 { Divider().padding(.leading, group.expanded ? 10 : 52) }
-                RowView(row: row, showsIcon: !group.expanded, takeover: takeover)
+                RowView(row: row, showsIcon: !group.expanded, compact: takeover.options.compact, takeover: takeover)
             }
         }
         .background(RoundedRectangle(cornerRadius: 11, style: .continuous).fill(Color.nannyCard))
@@ -283,6 +347,7 @@ private struct GroupCard: View {
 private struct RowView: View {
     let row: NCPanelRow
     let showsIcon: Bool
+    let compact: Bool
     @ObservedObject var takeover: NCPanelTakeover
     @State private var hovering = false
     @ObservedObject private var loc = LocalizationManager.shared
@@ -300,7 +365,7 @@ private struct RowView: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
-            if showsIcon { AppIcon(appName: row.appName, size: 32) }
+            if showsIcon { AppIcon(appName: row.appName, size: compact ? 22 : 32) }
             VStack(alignment: .leading, spacing: 1) {
                 if showsIcon {
                     HStack(spacing: 6) {
@@ -322,7 +387,7 @@ private struct RowView: View {
                     Text(row.subtitle).font(.callout).lineLimit(1)
                 }
                 if !row.body.isEmpty {
-                    Text(row.body).font(.callout).foregroundStyle(.secondary).lineLimit(hovering ? 8 : 2)
+                    Text(row.body).font(.callout).foregroundStyle(.secondary).lineLimit(hovering ? 8 : (compact ? 1 : 2))
                 }
             }
             Spacer(minLength: 0)
@@ -334,7 +399,7 @@ private struct RowView: View {
             }
             .buttonStyle(.plain)
         }
-        .padding(.horizontal, 10).padding(.vertical, 9)
+        .padding(.horizontal, 10).padding(.vertical, compact ? 5 : 9)
         .contentShape(Rectangle())
         .onTapGesture { takeover.activate(row) }
         .onHover { hovering = $0 }

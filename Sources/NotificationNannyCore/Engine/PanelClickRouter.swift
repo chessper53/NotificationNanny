@@ -20,6 +20,8 @@ final class PanelClickRouter {
     /// Set from mouse down to mouse up: the drag and release of a click that started in our
     /// panel go to it too, wherever they happen.
     private var routing = false
+    /// Lets every click through, for one passed on to a window under ours on purpose.
+    var passThrough = false
 
     private static let mouseTypes: [CGEventType] = [
         .leftMouseDown, .leftMouseUp, .leftMouseDragged,
@@ -63,7 +65,7 @@ final class PanelClickRouter {
 
     /// Whether to swallow `event`; if so it has been handed to our window.
     fileprivate func route(_ type: CGEventType, _ event: CGEvent) -> Bool {
-        guard let window, window.isVisible else { return false }
+        guard !passThrough, let window, window.isVisible else { return false }
         let point = Self.appKitPoint(event.location)
         let isDown = type == .leftMouseDown || type == .rightMouseDown || type == .otherMouseDown
         let isUp = type == .leftMouseUp || type == .rightMouseUp || type == .otherMouseUp

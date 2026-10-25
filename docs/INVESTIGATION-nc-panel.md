@@ -57,9 +57,16 @@ notifications. Either way a widget's element has an identifier
 | Can it be captured as a picture? | Not while parked: a window wholly off screen isn't drawn, and `screencapture -l` fails. On screen, yes, even covered by a window of ours above it (level 25 over Notification Center's 21): the real Weather widget came out pixel for pixel. That needs Screen Recording. |
 | A trap for anything that moves windows | With the panel closed, a desktop widget can be Notification Center's only window. A lab cleanup that took the widest window for the panel's moved a desktop widget to (0,0). Only the `AXSystemDialog` window is the panel's. |
 
-So widgets could be shown in the custom panel two ways: as text cards, which need nothing
-more, or as pictures of the real ones, which needs the real panel kept on screen under
-ours instead of parked, and Screen Recording.
+Shown as pictures of the real ones, behind the "Show widgets" setting (off by default,
+needs Screen Recording; off, widgets are left out). Measured in the app:
+
+| Question | Answer |
+|---|---|
+| How does the real panel get under ours without showing? | It is parked as usual when it opens. Once ours is up, an opaque cover goes where the real panel will land, between the two (level 22), and then the real panel moves there. |
+| Does that, or capturing, close the real panel? | No. Held under a cover for 6 s it stayed open with no capture, with `screencapture` and with ScreenCaptureKit every 2 s. One run that closed was a click by the user. |
+| How long does a capture take? | About 150 ms with ScreenCaptureKit, 500 ms for the first. |
+| What went wrong first? | The panel slides in when it opens, and a widget's frame read at the start of a capture no longer matched by its end: the picture showed the wrong part. A capture now counts only if the widgets didn't move meanwhile, and tries again shortly otherwise. |
+| Can a click reach the real widget? | Sent to Notification Center with `postToPid`, no. As a real click at the real widget's place, with our panel and the click router letting it through for that one click, yes: Weather opened, and Notification Center closed its panel as it does after a widget click. The pointer jumps there and back. |
 
 ## What was built
 
@@ -93,7 +100,7 @@ and open throughout, and settings were restored and checked after every run.
 
 ## Still open
 
-- Widgets are not shown yet; see Widgets above for the two ways they could be.
+- Widgets: only one widget, Weather, tested. The pointer visibly jumps for a widget click.
 - Times are unit tested but not yet seen live: the screen locked during that run.
 - Keyboard: Escape and arrow keys are untested. Our panel never takes focus.
 - App actions such as Reply are not offered yet; Reply needs a text field, which would

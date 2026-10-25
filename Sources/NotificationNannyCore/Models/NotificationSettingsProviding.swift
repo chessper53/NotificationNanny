@@ -10,6 +10,9 @@ package protocol NotificationSettingsProviding: AnyObject {
     var avoidNCPanel: Bool { get }
     var customNotificationCenter: Bool { get }
     var customNotificationCenterTimes: Bool { get }
+    var customNotificationCenterWidgets: Bool { get }
+    var customNotificationCenterAppFilter: Bool { get }
+    var customNotificationCenterCompact: Bool { get }
     var protectDesktopWidgets: Bool { get }
     var followActiveScreen: Bool { get }
     var pauseDuringFocus: Bool { get }

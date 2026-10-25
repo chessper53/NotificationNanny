@@ -112,8 +112,6 @@
 "Placement & safety" = "Ubicación y seguridad";
 "Send to the screen with the cursor" = "Enviar a la pantalla donde está el cursor";
 "Don't move Notification Center" = "No mover el Centro de notificaciones";
-"Custom Notification Center (experimental)" = "Centro de notificaciones propio (experimental)";
-"Clicking the clock opens NotificationNanny's own list of your notifications instead of Notification Center. Widgets aren't shown in it." = "Al hacer clic en el reloj se abre la lista de notificaciones de NotificationNanny en lugar del Centro de notificaciones. Los widgets no se muestran en ella.";
 "Don't move desktop widgets" = "No mover los widgets del escritorio";
 "Hold banners while display is asleep" = "Retener banners mientras la pantalla está en reposo";
 "Reset All Settings" = "Restablecer todos los ajustes";
@@ -192,3 +190,17 @@
 "Show less" = "Mostrar menos";
 "Show when notifications arrived" = "Mostrar cuándo llegaron las notificaciones";
 "Notification Center doesn't share its times, so NotificationNanny notes when each banner appears. Notifications that came in while it wasn't running have no time." = "El Centro de notificaciones no comparte sus horas, así que NotificationNanny anota cuándo aparece cada aviso. Las notificaciones que llegaron mientras no se ejecutaba no tienen hora.";
+"NotificationNanny can show its own list when you click the clock, in place of the Notification Center panel. Your notifications stay in Notification Center: this is another view of them, and everything you do in it goes back there." = "NotificationNanny puede mostrar su propia lista al hacer clic en el reloj, en lugar del Centro de notificaciones. Tus notificaciones siguen en el Centro de notificaciones: esto es otra vista de ellas, y todo lo que hagas aquí se envía allí.";
+"Notification Center" = "Centro de notificaciones";
+"Use NotificationNanny's Notification Center (experimental)" = "Usar el Centro de notificaciones de NotificationNanny (experimental)";
+"List" = "Lista";
+"Filter by app" = "Filtrar por app";
+"A row of apps above the list; click one to see only its notifications." = "Una fila de apps sobre la lista; haz clic en una para ver solo sus notificaciones.";
+"Compact rows" = "Filas compactas";
+"Widgets" = "Widgets";
+"Widgets are drawn by their own apps, so NotificationNanny can only show them as live pictures of the real ones. That needs Screen Recording. Leave this off and widgets are simply left out." = "Los widgets los dibujan sus propias apps, así que NotificationNanny solo puede mostrarlos como imágenes en vivo de los reales. Eso necesita Grabación de pantalla. Déjalo desactivado y los widgets simplemente se omiten.";
+"Show widgets" = "Mostrar widgets";
+"Screen Recording is allowed" = "La grabación de pantalla está permitida";
+"Screen Recording isn't allowed yet" = "La grabación de pantalla aún no está permitida";
+"Allow NotificationNanny in System Settings. If you just did, quit and reopen NotificationNanny: macOS only applies it after a restart." = "Permite NotificationNanny en Ajustes del Sistema. Si acabas de hacerlo, cierra y vuelve a abrir NotificationNanny: macOS solo lo aplica tras reiniciarlo.";
+"Open System Settings" = "Abrir Ajustes del Sistema";
