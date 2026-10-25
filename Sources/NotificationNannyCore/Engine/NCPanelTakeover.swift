@@ -26,7 +26,8 @@ import SwiftUI
 /// banners look, which the panel's rows follow.
 struct NCPanelOptions: Equatable {
     var appFilter = false
-    var compact = false
+    /// How the panel opens and closes.
+    var animation: BannerAnimation = .default
     /// Pictures of the real widgets; only acted on with Screen Recording allowed.
     var widgets = false
     /// The banners' text colour, nil for the system's.
@@ -226,7 +227,7 @@ final class NCPanelTakeover: ObservableObject {
 
     private func end(reason: String) {
         router.stop()
-        panel.hide()
+        panel.hide(after: options.animation.outroDuration)
         stopWidgets()
         replyTimer?.invalidate()
         replyTimer = nil
@@ -475,7 +476,10 @@ final class NCPanelTakeover: ObservableObject {
         guard let primary = NSScreen.screens.first else { return }
         // Ours in AX coordinates (top left origin).
         let oursTop = primary.frame.maxY - ours.maxY
-        let target = CGPoint(x: ours.maxX - 14 - content.maxX, y: oursTop + 8 - content.minY)
+        // Under our rows: they end the right inset short of the window's edge, and start
+        // the close button's room below its top.
+        let target = CGPoint(x: ours.maxX - CustomNCPanelController.rightInset - content.maxX,
+                             y: oursTop + CustomNCPanelController.chrome - content.minY)
         let landed = content.offsetBy(dx: target.x, dy: target.y)
         cover.show(axRect: landed.insetBy(dx: -4, dy: -4), below: panel.window)
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in

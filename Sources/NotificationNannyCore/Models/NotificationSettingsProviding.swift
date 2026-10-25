@@ -12,7 +12,7 @@ package protocol NotificationSettingsProviding: AnyObject {
     var customNotificationCenterTimes: Bool { get }
     var customNotificationCenterWidgets: Bool { get }
     var customNotificationCenterAppFilter: Bool { get }
-    var customNotificationCenterCompact: Bool { get }
+    var customNotificationCenterAnimation: BannerAnimation { get }
     var protectDesktopWidgets: Bool { get }
     var followActiveScreen: Bool { get }
     var pauseDuringFocus: Bool { get }

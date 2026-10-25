@@ -53,7 +53,7 @@ package final class NotificationRepositioner: ObservableObject {
         takeover.readOptions = { [weak self] in
             guard let s = self?.settings else { return NCPanelOptions() }
             return NCPanelOptions(appFilter: s.customNotificationCenterAppFilter,
-                                  compact: s.customNotificationCenterCompact,
+                                  animation: s.customNotificationCenterAnimation,
                                   widgets: s.customNotificationCenterWidgets,
                                   textColor: s.effectiveBannerTextColor,
                                   redact: s.redactBannerContent)

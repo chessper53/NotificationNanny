@@ -29,7 +29,11 @@ final class CustomNCPanelController {
     static let topInset: CGFloat = 46
     /// Room around the rows for what overhangs them: a row's close button.
     static let chrome: CGFloat = CustomBannerView.Metrics.chromeInset
-    static var width: CGFloat { rowWidth + chrome * 2 }
+    /// To the screen's right edge, so the panel slides in from beyond it as the system's.
+    static var width: CGFloat { chrome + rowWidth + rightInset }
+
+    /// Whether the panel is in or out, which its animation follows.
+    let presentation = PanelPresentation()
 
     init(takeover: NCPanelTakeover) {
         self.takeover = takeover
@@ -49,29 +53,30 @@ final class CustomNCPanelController {
         case "dark": window.appearance = NSAppearance(named: .darkAqua)
         default: break
         }
-        let view = CustomNCPanelView(takeover: takeover) { [weak self] height in self?.contentHeightChanged(height) }
+        let view = CustomNCPanelView(takeover: takeover, presentation: presentation) { [weak self] height in
+            self?.contentHeightChanged(height)
+        }
         window.contentView = FirstMouseHostingView(rootView: view)
     }
 
     func show(on screen: NSScreen) {
         self.screen = screen
         layout()
-        window.alphaValue = 0
+        window.alphaValue = 1
         window.orderFrontRegardless()
-        NSAnimationContext.runAnimationGroup { ctx in
-            ctx.duration = 0.15
-            window.animator().alphaValue = 1
-        }
+        // Out first, then in on the next pass, so the animation has somewhere to start.
+        presentation.shown = false
+        DispatchQueue.main.async { [presentation] in presentation.shown = true }
     }
 
-    func hide() {
+    /// Plays the panel's way out, then takes the window away.
+    func hide(after outro: Double) {
         guard window.isVisible else { return }
-        NSAnimationContext.runAnimationGroup({ ctx in
-            ctx.duration = 0.12
-            window.animator().alphaValue = 0
-        }, completionHandler: { [weak window] in
-            MainActor.assumeIsolated { window?.orderOut(nil) }
-        })
+        presentation.shown = false
+        DispatchQueue.main.asyncAfter(deadline: .now() + outro + 0.05) { [weak self] in
+            guard let self, !self.presentation.shown else { return }
+            self.window.orderOut(nil)
+        }
     }
 
     /// The tallest the panel can be on its screen.
@@ -92,8 +97,7 @@ final class CustomNCPanelController {
         guard let screen else { return }
         let height = min(contentHeight, maxHeight)
         let top = screen.frame.maxY - Self.topInset + Self.chrome
-        let frame = NSRect(x: screen.frame.maxX - Self.rightInset - Self.rowWidth - Self.chrome, y: top - height,
-                           width: Self.width, height: height)
+        let frame = NSRect(x: screen.frame.maxX - Self.width, y: top - height, width: Self.width, height: height)
         window.setFrame(frame, display: true)
     }
 }
@@ -128,6 +132,12 @@ final class NCPanelCover {
     func hide() { window.orderOut(nil) }
 }
 
+/// In or out: the panel's animation, chosen in Settings, plays between the two.
+@MainActor
+final class PanelPresentation: ObservableObject {
+    @Published var shown = false
+}
+
 // MARK: - View
 
 private struct ContentHeightKey: PreferenceKey {
@@ -153,6 +163,7 @@ enum NCPanelMetrics {
 
 struct CustomNCPanelView: View {
     @ObservedObject var takeover: NCPanelTakeover
+    @ObservedObject var presentation: PanelPresentation
     let onHeight: (CGFloat) -> Void
     @State private var filter: String?
 
@@ -194,13 +205,15 @@ struct CustomNCPanelView: View {
                     ForEach(section.groups) { group in GroupView(group: group, takeover: takeover) }
                 }
             }
-            .padding(CustomNCPanelController.chrome)
+            .padding([.leading, .top, .bottom], CustomNCPanelController.chrome)
+            .padding(.trailing, CustomNCPanelController.rightInset)
             .frame(width: CustomNCPanelController.width, alignment: .topLeading)
             .background(GeometryReader { g in
                 Color.clear.preference(key: ContentHeightKey.self, value: g.size.height)
             })
         }
         .frame(width: CustomNCPanelController.width, height: listHeight)
+        .modifier(PanelMotion(shown: presentation.shown, animation: takeover.options.animation))
         .onPreferenceChange(ContentHeightKey.self) { h in
             contentHeight = h
             onHeight(min(h, maxHeight))
@@ -239,6 +252,22 @@ struct CustomNCPanelView: View {
                 .foregroundStyle(Color.primary)
         }
         .buttonStyle(.plain)
+    }
+}
+
+/// The panel's way in and out: the banners' animations, applied to the whole list.
+private struct PanelMotion: ViewModifier {
+    let shown: Bool
+    let animation: BannerAnimation
+
+    func body(content: Content) -> some View {
+        let t = shown ? BannerAnimation.Transform() : animation.hidden
+        content
+            .opacity(t.opacity)
+            .scaleEffect(t.scale, anchor: .topTrailing)
+            .rotationEffect(.degrees(t.rotation))
+            .offset(x: t.x, y: t.y)
+            .animation(shown ? animation.intro : animation.outro, value: shown)
     }
 }
 

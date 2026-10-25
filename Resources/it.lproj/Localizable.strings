@@ -196,7 +196,6 @@
 "List" = "Elenco";
 "Filter by app" = "Filtra per app";
 "A row of apps above the list; click one to see only its notifications." = "Una riga di app sopra l'elenco; fai clic su una per vedere solo le sue notifiche.";
-"Compact rows" = "Righe compatte";
 "Widgets" = "Widget";
 "Widgets are drawn by their own apps, so NotificationNanny can only show them as live pictures of the real ones. That needs Screen Recording. Leave this off and widgets are simply left out." = "I widget sono disegnati dalle loro app, quindi NotificationNanny può mostrarli solo come immagini dal vivo di quelli reali. Serve la Registrazione schermo. Lascialo disattivato e i widget vengono semplicemente omessi.";
 "Show widgets" = "Mostra i widget";
@@ -205,3 +204,5 @@
 "Allow NotificationNanny in System Settings. If you just did, quit and reopen NotificationNanny: macOS only applies it after a restart." = "Consenti NotificationNanny nelle Impostazioni di Sistema. Se l'hai appena fatto, esci e riapri NotificationNanny: macOS lo applica solo dopo un riavvio.";
 "Open System Settings" = "Apri Impostazioni di Sistema";
 "Options" = "Opzioni";
+"Look" = "Aspetto";
+"Rows look like your banners: their colour, text colour and privacy blur come from the Banner tab and your exceptions." = "Le righe sembrano i tuoi banner: colore, colore del testo e sfocatura vengono dalla scheda Banner e dalle tue eccezioni.";

@@ -25,8 +25,19 @@ struct NotificationCenterTabView: View {
                     Divider().padding(.leading, 14)
                     toggleRow("Filter by app", isOn: $settings.customNotificationCenterAppFilter,
                               detail: "A row of apps above the list; click one to see only its notifications.")
-                    Divider().padding(.leading, 14)
-                    toggleRow("Compact rows", isOn: $settings.customNotificationCenterCompact)
+                }
+
+                section("Look") {
+                    VStack(alignment: .leading, spacing: 10) {
+                        LocalizedText("Rows look like your banners: their colour, text colour and privacy blur come from the Banner tab and your exceptions.")
+                            .font(.caption).foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                        LocalizedText("Animation").font(.caption.weight(.medium)).foregroundStyle(.secondary)
+                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 94), spacing: 8)], spacing: 8) {
+                            ForEach(BannerAnimation.allCases, id: \.self) { animationChip($0) }
+                        }
+                    }
+                    .padding(.horizontal, 14).padding(.vertical, 10)
                 }
 
                 section("Widgets") {
@@ -75,6 +86,25 @@ struct NotificationCenterTabView: View {
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
+    }
+
+    private func animationChip(_ anim: BannerAnimation) -> some View {
+        let selected = settings.customNotificationCenterAnimation == anim
+        return Button {
+            settings.customNotificationCenterAnimation = anim
+        } label: {
+            HStack(spacing: 5) {
+                Image(systemName: anim.iconName).font(.system(size: 10))
+                Text(anim.label).font(.caption)
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 10).padding(.vertical, 7)
+            .frame(maxWidth: .infinity)
+            .background(selected ? Color.nannyProminent.opacity(0.9) : Color.nannyRaised(0.06),
+                        in: RoundedRectangle(cornerRadius: 8))
+            .foregroundStyle(selected ? Color.white : Color.secondary)
+        }
+        .buttonStyle(.plain)
     }
 
     @ViewBuilder
