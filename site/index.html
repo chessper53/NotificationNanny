@@ -69,7 +69,8 @@
       <h1>Don't let macOS decide where your notifications go.</h1>
       <p class="lede">
         A small menu bar app that positions, scales, tints, and animates notification banners,
-        globally or per app, on whichever display you want.
+        globally or per app, on whichever display you want. It can even give you a Notification
+        Center of its own.
       </p>
       <div class="actions">
         <a class="button" href="https://github.com/chessper53/NotificationNanny/releases/latest">Download for macOS</a>
@@ -118,6 +119,18 @@
           <h3>Auto dismiss</h3>
           <p>Close banners on a timer from 1 to 300 seconds, or leave them until you are ready.</p>
         </li>
+        <li>
+          <h3>Your own Notification Center</h3>
+          <p>Click the clock and get a Notification Center that takes your colours, size and side, and shows when each notification arrived. Experimental.</p>
+        </li>
+        <li>
+          <h3>Answer from the banner</h3>
+          <p>Custom banners keep the app's own buttons, Reply included, so you can type your answer right where it came in.</p>
+        </li>
+        <li>
+          <h3>Looks like macOS</h3>
+          <p>Custom banners and the custom Notification Center are measured against the real ones, in Light and Dark Mode.</p>
+        </li>
       </ul>
     </section>
 
@@ -149,14 +162,17 @@ brew install --cask notificationnanny</code></pre>
         <h2>Privacy</h2>
         <p>
           No data is collected, transmitted, or stored outside your Mac. Accessibility permission is
-          used only to observe and move notification windows on your own machine.
+          used only to observe and move notification windows on your own machine. Screen Recording
+          is only asked for if you turn on widgets in the custom Notification Center, and only used
+          to show the real widgets there.
         </p>
       </div>
       <div>
         <h2>How it works</h2>
         <p>
           NotificationNanny watches Notification Center through the Accessibility API and moves or
-          replaces each banner according to your rules. It relies on private macOS internals, so an OS
+          replaces each banner according to your rules. Its own Notification Center reads the real one
+          the same way and hands every click and reply back to it. It relies on private macOS internals, so an OS
           update can change its behaviour. If something breaks,
           <a href="https://github.com/chessper53/NotificationNanny/issues">open an issue</a>.
         </p>
