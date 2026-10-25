@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// The window our Notification Center list is drawn in.
 ///
@@ -159,6 +160,16 @@ enum NCPanelMetrics {
     static let headingFont: CGFloat = 15
     static let showLessWidth: CGFloat = 73
     static let roundButton: CGFloat = 20
+    /// Notification Center darkens what is behind its list, in both appearances alike:
+    /// the whole column by 12% (fading in over the first 40 points from 7%), and behind
+    /// the rows themselves by 10% more. Measured against the same gray backdrop under the
+    /// real panel and ours (scripts/panel-lab/compare.sh); the rows' glass shows it, which
+    /// is why they look darker in the panel than as banners.
+    static let columnDim: Double = 0.12
+    static let columnDimTop: Double = 0.07
+    static let columnFade: CGFloat = 40
+    static let rowsDim: Double = 0.10
+    static let stackLayerDim: Double = 0.09
 }
 
 struct CustomNCPanelView: View {
@@ -205,6 +216,7 @@ struct CustomNCPanelView: View {
                     ForEach(section.groups) { group in GroupView(group: group, takeover: takeover) }
                 }
             }
+            .background(Color.black.opacity(NCPanelMetrics.rowsDim))
             .padding([.leading, .top, .bottom], CustomNCPanelController.chrome)
             .padding(.trailing, CustomNCPanelController.rightInset)
             .frame(width: CustomNCPanelController.width, alignment: .topLeading)
@@ -213,6 +225,7 @@ struct CustomNCPanelView: View {
             })
         }
         .frame(width: CustomNCPanelController.width, height: listHeight)
+        .background(alignment: .top) { ColumnDim() }
         .modifier(PanelMotion(shown: presentation.shown, animation: takeover.options.animation))
         .onPreferenceChange(ContentHeightKey.self) { h in
             contentHeight = h
@@ -255,6 +268,18 @@ struct CustomNCPanelView: View {
     }
 }
 
+/// What Notification Center lays over the desktop behind its list; see NCPanelMetrics.
+private struct ColumnDim: View {
+    var body: some View {
+        VStack(spacing: 0) {
+            LinearGradient(colors: [.black.opacity(NCPanelMetrics.columnDimTop), .black.opacity(NCPanelMetrics.columnDim)],
+                           startPoint: .top, endPoint: .bottom)
+                .frame(height: NCPanelMetrics.columnFade)
+            Color.black.opacity(NCPanelMetrics.columnDim)
+        }
+    }
+}
+
 /// The panel's way in and out: the banners' animations, applied to the whole list.
 private struct PanelMotion: ViewModifier {
     let shown: Bool
@@ -280,9 +305,11 @@ private struct Heading<Buttons: View>: View {
 
     var body: some View {
         HStack(spacing: 8) {
+            // White in both appearances: it stands on the desktop, as the system's does.
             Text(title)
-                .font(.system(size: NCPanelMetrics.headingFont, weight: .bold))
-                .foregroundStyle(.primary)
+                .font(.system(size: NCPanelMetrics.headingFont, weight: .semibold))
+                .foregroundStyle(.white)
+                .shadow(color: .black.opacity(0.25), radius: 1, y: 0.5)
                 .lineLimit(1)
                 .padding(.leading, 1)
             Spacer(minLength: 0)
@@ -304,7 +331,7 @@ private struct RoundButton: View {
                 .font(.system(size: 8, weight: .bold))
                 .foregroundStyle(.secondary)
                 .frame(width: NCPanelMetrics.roundButton, height: NCPanelMetrics.roundButton)
-                .background(Circle().fill(Color.primary.opacity(0.12)))
+                .background(BannerGlass(shape: Circle(), cornerRadius: NCPanelMetrics.roundButton / 2))
                 .contentShape(Circle())
         }
         .buttonStyle(.plain)
@@ -318,10 +345,10 @@ private struct PillButton: View {
     var body: some View {
         Button(action: action) {
             Text(title)
-                .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(.primary)
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
                 .frame(width: NCPanelMetrics.showLessWidth, height: NCPanelMetrics.roundButton)
-                .background(Capsule().fill(Color.primary.opacity(0.12)))
+                .background(BannerGlass(shape: Capsule(), cornerRadius: NCPanelMetrics.roundButton / 2))
                 .contentShape(Capsule())
         }
         .buttonStyle(.plain)
@@ -346,7 +373,9 @@ private struct GroupView: View {
             ForEach(group.rows) { row in
                 RowView(row: row, takeover: takeover)
                 // A collapsed stack: the edges of the cards behind it, under its own.
-                if row.isStack { StackEdges().padding(.top, -NCPanelMetrics.rowGap) }
+                if row.isStack {
+                    StackEdges(tint: takeover.tint(row.appName)).padding(.top, -NCPanelMetrics.rowGap)
+                }
             }
         }
         .padding(.bottom, NCPanelMetrics.rowGap + (group.expanded ? NCPanelMetrics.stackPeek : 0))
@@ -401,20 +430,32 @@ private struct RowView: View {
     }
 }
 
-/// The two cards a collapsed stack shows under its own, each narrower and fainter: only
-/// their bottoms, in the strip below the front card, since the cards are glass and
-/// anything behind one shows through it.
+/// The two cards a collapsed stack shows under its own, glass like it and each narrower,
+/// one 8 point strip each. Each shows only its own strip: on the system's, the nearer
+/// card hides the one behind it, where two layers of glass would come out twice as bright.
+/// Measured: each as bright as the card, ending in its bright edge (compare.sh).
 private struct StackEdges: View {
+    let tint: Color
     var body: some View {
-        let peek = NCPanelMetrics.stackPeek
-        ZStack(alignment: .top) {
-            RoundedRectangle(cornerRadius: 18, style: .continuous).fill(Color.primary.opacity(0.07))
-                .frame(height: 40).padding(.horizontal, 16).offset(y: peek - 40)
-            RoundedRectangle(cornerRadius: 19, style: .continuous).fill(Color.primary.opacity(0.11))
-                .frame(height: 40).padding(.horizontal, 8).offset(y: peek / 2 - 40)
+        VStack(spacing: 0) {
+            layer(inset: 8)
+            layer(inset: 16)
         }
-        .frame(width: CustomNCPanelController.rowWidth, height: peek, alignment: .top)
-        .clipped()
+        .frame(width: CustomNCPanelController.rowWidth, height: NCPanelMetrics.stackPeek)
+    }
+
+    private func layer(inset: CGFloat) -> some View {
+        let radius = CustomBannerView.Metrics.cornerRadius
+        let shape = RoundedRectangle(cornerRadius: radius, style: .continuous)
+        // Glass this thin, right under a card, comes out brighter than a card: it takes
+        // in the card above it. The system's are as bright as the card; 9% less brings
+        // them there in both appearances (compare.sh).
+        return BannerGlass(shape: shape, cornerRadius: radius, tint: tint)
+            .overlay(shape.fill(Color.black.opacity(NCPanelMetrics.stackLayerDim)))
+            .frame(height: 40)
+            .padding(.horizontal, inset)
+            .frame(height: NCPanelMetrics.stackPeek / 2, alignment: .bottom)
+            .clipped()
     }
 }
 
@@ -427,7 +468,7 @@ private struct CloseButton: View {
                 .font(.system(size: 8, weight: .bold))
                 .foregroundStyle(.secondary)
                 .frame(width: CustomBannerView.Metrics.closeDiameter, height: CustomBannerView.Metrics.closeDiameter)
-                .background(Circle().fill(.regularMaterial))
+                .background(BannerGlass(shape: Circle(), cornerRadius: CustomBannerView.Metrics.closeDiameter / 2))
                 .clipShape(Circle())
                 .contentShape(Circle())
         }
@@ -465,11 +506,8 @@ private struct AppIcon: View {
     let appName: String
     let size: CGFloat
     var body: some View {
-        if let icon = AppIconCache.shared.icon(for: appName) {
-            Image(nsImage: icon).resizable().interpolation(.high).frame(width: size, height: size)
-        } else {
-            Image(systemName: "bell.fill").font(.system(size: size * 0.6))
-                .frame(width: size, height: size).foregroundStyle(.secondary)
-        }
+        // Without an icon of its own, the generic app icon, as the system shows.
+        Image(nsImage: AppIconCache.shared.icon(for: appName) ?? NSWorkspace.shared.icon(for: .applicationBundle))
+            .resizable().interpolation(.high).frame(width: size, height: size)
     }
 }

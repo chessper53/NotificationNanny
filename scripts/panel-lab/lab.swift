@@ -894,18 +894,99 @@ case "backdrop":
     // capture of the panel shows nothing of what is behind it on the user's screen.
     let parts = (args.dropFirst().first ?? "").split(separator: ",").compactMap { Double($0) }
     let seconds = Double(args.dropFirst(2).first ?? "3") ?? 3
+    // Optional window level: just under ours by default; under Notification Center's (21)
+    // to put it behind the real panel.
+    let level = Int(args.dropFirst(3).first ?? "") ?? (NSWindow.Level.statusBar.rawValue - 1)
     guard parts.count == 4, let primary = NSScreen.screens.first else { print("usage: lab backdrop x,y,w,h seconds"); exit(64) }
     let pad = 40.0
     let rect = NSRect(x: parts[0] - pad, y: primary.frame.maxY - parts[1] - parts[3] - pad,
                       width: parts[2] + pad * 2, height: parts[3] + pad * 2)
     // A non-activating panel: a plain window showing up closes Notification Center's panel.
     let w = NSPanel(contentRect: rect, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
-    w.level = NSWindow.Level(rawValue: NSWindow.Level.statusBar.rawValue - 1)
+    w.level = NSWindow.Level(rawValue: level)
     w.backgroundColor = NSColor(calibratedWhite: 0.42, alpha: 1)
     w.hasShadow = false
     w.ignoresMouseEvents = true
     w.orderFrontRegardless()
     spin(seconds)
+
+case "app-actions":
+    // Which buttons the notifications in Notification Center offer, per app: app names
+    // and action names only, never what a notification says. The panel opens parked.
+    guard pressClock(), waitFor(3, { isOpen() }) != nil, let h = host(), let home = frame(h)?.origin else {
+        print("panel did not open"); restore(); exit(1)
+    }
+    hostHome = home
+    _ = setPoint(h, CGPoint(x: home.x, y: -9999))
+    spin(0.8)
+    var seen: [String: Set<String>] = [:]
+    for r in windows().flatMap({ rows(in: $0) }) {
+        let app = label(r).components(separatedBy: ", ").first ?? "?"
+        let acts = actionNames(r).map(displayName).filter { !["AXPress", "AXShowMenu", "AXScrollToVisible"].contains($0) }
+        seen[app, default: []].formUnion(acts)
+    }
+    for (app, acts) in seen.sorted(by: { $0.key < $1.key }) { print("\(app): \(acts.sorted().joined(separator: ", "))") }
+    restore()
+
+case "lab-rect":
+    // The area of the open panel holding the Lab rows, from its top to below the last,
+    // as screencapture -R wants it; the width of ours (its window). Nothing below the
+    // Lab rows, where the user's own notifications are, is in it.
+    guard let primary = NSScreen.screens.first else { exit(1) }
+    let frames = labRows().compactMap(frame)
+    guard let bottom = frames.map(\.maxY).max() else { print("no Lab rows"); exit(1) }
+    let width = 8.0 + 344 + 16
+    let x = primary.frame.maxX - width
+    let top = 46.0 - 8
+    print("\(Int(x)),\(Int(top)),\(Int(width)),\(Int(bottom + 16 + 8 - top))")
+
+case "scrim-test":
+    // Does Notification Center darken the screen while its panel is open, and where?
+    // Gray patches just under its window, measured with the panel closed and open.
+    guard let primary = NSScreen.screens.first else { exit(1) }
+    let f = primary.frame
+    let spots: [(String, CGRect)] = [
+        ("left", CGRect(x: 60, y: f.height / 2, width: 120, height: 80)),
+        ("middle", CGRect(x: f.width / 2 - 60, y: f.height / 2, width: 120, height: 80)),
+        ("beside panel", CGRect(x: f.width - 520, y: 200, width: 120, height: 80)),
+        ("bottom right", CGRect(x: f.width - 300, y: f.height - 160, width: 120, height: 80)),
+    ]
+    var patches: [NSPanel] = []
+    for (_, r) in spots {
+        let w = NSPanel(contentRect: NSRect(x: r.minX, y: f.maxY - r.maxY, width: r.width, height: r.height),
+                        styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+        w.level = NSWindow.Level(rawValue: 20)
+        w.backgroundColor = NSColor(calibratedWhite: 0.42, alpha: 1)
+        w.ignoresMouseEvents = true
+        w.orderFrontRegardless()
+        patches.append(w)
+    }
+    spin(0.6)
+    func measure() -> [Double] {
+        spots.map { _, r in
+            let path = "build/panel-lab/scrim.png"
+            let p = Process()
+            p.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
+            p.arguments = ["-x", "-R\(Int(r.minX) + 20),\(Int(r.minY) + 20),20,20", path]
+            try? p.run(); p.waitUntilExit()
+            defer { try? FileManager.default.removeItem(atPath: path) }
+            guard let rep = NSImage(contentsOfFile: path).flatMap({ $0.tiffRepresentation }).flatMap(NSBitmapImageRep.init) else { return -1 }
+            var t = 0.0, n = 0.0
+            for x in 0..<rep.pixelsWide { for y in 0..<rep.pixelsHigh {
+                if let c = rep.colorAt(x: x, y: y)?.usingColorSpace(.sRGB) { t += (c.redComponent + c.greenComponent + c.blueComponent) / 3; n += 1 }
+            } }
+            return t / max(n, 1) * 255
+        }
+    }
+    let closed = measure()
+    guard pressClock(), waitFor(3, { isOpen() }) != nil else { print("panel did not open"); exit(1) }
+    spin(1.0)
+    let open = measure()
+    closePanel()
+    for (i, (name, _)) in spots.enumerated() {
+        print(String(format: "%-13@ closed %5.1f  open %5.1f  (x%.3f)", name as NSString, closed[i], open[i], open[i] / max(closed[i], 1)))
+    }
+    patches.forEach { $0.orderOut(nil) }
 
 case "clock":
     exit(pressClock() ? 0 : 1)
