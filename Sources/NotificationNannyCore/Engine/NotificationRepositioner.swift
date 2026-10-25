@@ -50,6 +50,12 @@ package final class NotificationRepositioner: ObservableObject {
     private lazy var panelTakeover: NCPanelTakeover = {
         let takeover = NCPanelTakeover(logger: logger, times: notificationTimes)
         takeover.showTimes = { [weak self] in self?.settings?.customNotificationCenterTimes == true }
+        takeover.readOptions = { [weak self] in
+            guard let s = self?.settings else { return NCPanelOptions() }
+            return NCPanelOptions(appFilter: s.customNotificationCenterAppFilter,
+                                  compact: s.customNotificationCenterCompact,
+                                  widgets: s.customNotificationCenterWidgets)
+        }
         // Banners that came in while the panel was open go where they belong.
         takeover.onEnd = { [weak self] in self?.trackLayoutChange() }
         // Alerts still up move into the panel, as they do in Notification Center's own,

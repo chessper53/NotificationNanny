@@ -112,8 +112,6 @@
 "Placement & safety" = "Placement & safety";
 "Send to the screen with the cursor" = "Send to the screen with the cursor";
 "Don't move Notification Center" = "Don't move Notification Center";
-"Custom Notification Center (experimental)" = "Custom Notification Center (experimental)";
-"Clicking the clock opens NotificationNanny's own list of your notifications instead of Notification Center. Widgets aren't shown in it." = "Clicking the clock opens NotificationNanny's own list of your notifications instead of Notification Center. Widgets aren't shown in it.";
 "Don't move desktop widgets" = "Don't move desktop widgets";
 "Hold banners while display is asleep" = "Hold banners while display is asleep";
 "Reset All Settings" = "Reset All Settings";
@@ -192,3 +190,17 @@
 "Show less" = "Show less";
 "Show when notifications arrived" = "Show when notifications arrived";
 "Notification Center doesn't share its times, so NotificationNanny notes when each banner appears. Notifications that came in while it wasn't running have no time." = "Notification Center doesn't share its times, so NotificationNanny notes when each banner appears. Notifications that came in while it wasn't running have no time.";
+"NotificationNanny can show its own list when you click the clock, in place of the Notification Center panel. Your notifications stay in Notification Center: this is another view of them, and everything you do in it goes back there." = "NotificationNanny can show its own list when you click the clock, in place of the Notification Center panel. Your notifications stay in Notification Center: this is another view of them, and everything you do in it goes back there.";
+"Notification Center" = "Notification Center";
+"Use NotificationNanny's Notification Center (experimental)" = "Use NotificationNanny's Notification Center (experimental)";
+"List" = "List";
+"Filter by app" = "Filter by app";
+"A row of apps above the list; click one to see only its notifications." = "A row of apps above the list; click one to see only its notifications.";
+"Compact rows" = "Compact rows";
+"Widgets" = "Widgets";
+"Widgets are drawn by their own apps, so NotificationNanny can only show them as live pictures of the real ones. That needs Screen Recording. Leave this off and widgets are simply left out." = "Widgets are drawn by their own apps, so NotificationNanny can only show them as live pictures of the real ones. That needs Screen Recording. Leave this off and widgets are simply left out.";
+"Show widgets" = "Show widgets";
+"Screen Recording is allowed" = "Screen Recording is allowed";
+"Screen Recording isn't allowed yet" = "Screen Recording isn't allowed yet";
+"Allow NotificationNanny in System Settings. If you just did, quit and reopen NotificationNanny: macOS only applies it after a restart." = "Allow NotificationNanny in System Settings. If you just did, quit and reopen NotificationNanny: macOS only applies it after a restart.";
+"Open System Settings" = "Open System Settings";

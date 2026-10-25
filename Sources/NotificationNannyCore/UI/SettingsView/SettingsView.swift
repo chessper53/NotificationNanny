@@ -8,7 +8,7 @@ package struct SettingsView: View {
     @EnvironmentObject var launchAtLogin: LaunchAtLogin
     @ObservedObject private var loc = LocalizationManager.shared
 
-    enum NavTab: Hashable { case position, exceptions, presets, general, banner, help, debug }
+    enum NavTab: Hashable { case position, exceptions, presets, general, banner, notificationCenter, help, debug }
 
     @State private var activeTab: NavTab = .position
     @State private var newerVersion: String? = nil
@@ -61,6 +61,7 @@ package struct SettingsView: View {
                     // appearance it overrides.
                     sidebarItem("Position",   systemImage: "rectangle.inset.topright.filled", tab: .position)
                     sidebarItem("Banner",     systemImage: "paintpalette",            tab: .banner)
+                    sidebarItem("Notification Center", systemImage: "list.bullet.rectangle", tab: .notificationCenter)
                     sidebarItem("Exceptions", systemImage: "app.badge.checkmark",     tab: .exceptions)
                     sidebarItem("Presets",    systemImage: "rectangle.stack",         tab: .presets)
                     sidebarItem("General",    systemImage: "gearshape",               tab: .general)
@@ -137,6 +138,7 @@ package struct SettingsView: View {
                         switch activeTab {
                         case .position:   PositionTabView()
                         case .banner:     BannerTabView()
+                        case .notificationCenter: NotificationCenterTabView()
                         case .exceptions: ExceptionsTabView()
                         case .presets:    PresetsTabView()
                         case .general:    GeneralTabView()

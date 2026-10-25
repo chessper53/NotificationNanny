@@ -22,10 +22,38 @@ import SwiftUI
 ///
 /// Widgets are left out: they are drawn by their own processes and Accessibility
 /// doesn't describe them.
+/// What the user chose for the custom panel, in the Notification Center tab.
+struct NCPanelOptions: Equatable {
+    var appFilter = true
+    var compact = false
+    /// Pictures of the real widgets; only acted on with Screen Recording allowed.
+    var widgets = false
+}
+
+/// A widget in Notification Center's panel, as a picture of the real one.
+struct NCWidget: Identifiable {
+    /// Its `AXIdentifier`, `widget-local:<app>:<kind>:<container>`.
+    let id: String
+    /// Where it is in Notification Center's window, in points from the window's top left.
+    var frameInWindow: CGRect
+    var image: NSImage?
+
+    /// The bundle ID of the app the widget belongs to.
+    var appBundleID: String? {
+        let parts = id.split(separator: ":")
+        return parts.count > 1 ? String(parts[1]) : nil
+    }
+}
+
 @MainActor
 final class NCPanelTakeover: ObservableObject {
     @Published private(set) var snapshot: NCPanelSnapshot = .empty
+    @Published private(set) var options = NCPanelOptions()
+    @Published private(set) var widgets: [NCWidget] = []
     private(set) var isActive = false
+
+    /// The options as set now; read when the panel opens and when settings change.
+    var readOptions: () -> NCPanelOptions = { NCPanelOptions() }
 
     /// Called when the panel opens, before ours shows.
     var onBegin: (() -> Void)?
@@ -58,6 +86,13 @@ final class NCPanelTakeover: ObservableObject {
     private var sectionButtons: [Int: AXUIElement] = [:]
     private var watchdog: Timer?
     private var pendingRefresh: DispatchWorkItem?
+    /// Where the real panel's window belongs while ours is up: parked off screen, or with
+    /// widgets shown, right under ours, where it is drawn and so can be captured.
+    private var desiredOrigin: CGPoint?
+    private var widgetElements: [String: AXUIElement] = [:]
+    private let widgetCapture = WidgetCapture()
+    private var widgetTimer: Timer?
+    private lazy var cover = NCPanelCover()
 
     /// NN_LAB_PANEL_FILTER=prefix (scripts/panel-lab) lists only apps whose name starts with
     /// it, so a lab run's screenshots never show the user's own notifications.
@@ -90,7 +125,7 @@ final class NCPanelTakeover: ObservableObject {
             return false
         }
         self.ncApp = ncApp
-        evaluate()
+        evaluate(trigger: notification)
         guard isActive else { return false }
         // The repositioner still forgets destroyed elements it was tracking.
         return notification != kAXUIElementDestroyedNotification as String
@@ -99,14 +134,16 @@ final class NCPanelTakeover: ObservableObject {
     /// Settings changed: stop if the feature was turned off while the panel is open.
     func settingsChanged(enabled: Bool) {
         if !enabled, isActive { end(reason: "turned off") }
+        let next = readOptions()
+        if next != options { options = next }
     }
 
-    private func evaluate() {
+    private func evaluate(trigger: String) {
         let open = isPanelOpen()
         switch (open, isActive) {
         case (true, false): begin()
-        case (true, true): keepParked(); scheduleRefresh()
-        case (false, true): end(reason: "closed")
+        case (true, true): keepInPlace(); scheduleRefresh()
+        case (false, true): end(reason: "closed, seen on \(trigger)")
         case (false, false): break
         }
     }
@@ -140,7 +177,9 @@ final class NCPanelTakeover: ObservableObject {
         openedAt = ProcessInfo.processInfo.systemUptime
         listedBaselineTaken = false
         // First, before anything else: every millisecond here is a frame of the real panel.
-        park(host)
+        desiredOrigin = CGPoint(x: origin.x, y: Self.parkedY)
+        keepInPlace()
+        options = readOptions()
         let screen = Self.screen(atAXPoint: origin) ?? NSScreen.main ?? NSScreen.screens[0]
         onBegin?()
         refresh()
@@ -152,7 +191,7 @@ final class NCPanelTakeover: ObservableObject {
             return
         }
         let timer = Timer(timeInterval: 0.25, repeats: true) { [weak self] _ in
-            MainActor.assumeIsolated { self?.evaluate() }
+            MainActor.assumeIsolated { self?.evaluate(trigger: "watchdog") }
         }
         RunLoop.main.add(timer, forMode: .common)
         watchdog = timer
@@ -174,11 +213,13 @@ final class NCPanelTakeover: ObservableObject {
         panel.show(on: screen)
         logger.log("Notification Center opened — showing NotificationNanny's list (\(snapshot.rowCount) notification(s))",
                    tag: "Panel")
+        startWidgets()
     }
 
     private func end(reason: String) {
         router.stop()
         panel.hide()
+        stopWidgets()
         watchdog?.invalidate()
         watchdog = nil
         pendingRefresh?.cancel()
@@ -186,6 +227,7 @@ final class NCPanelTakeover: ObservableObject {
         isActive = false
         window = nil
         home = nil
+        desiredOrigin = nil
         rowElements = [:]
         groupButtons = [:]
         sectionButtons = [:]
@@ -194,15 +236,10 @@ final class NCPanelTakeover: ObservableObject {
         onEnd?()
     }
 
-    private func park(_ host: AXUIElement) {
-        guard let x = home?.x ?? host.point()?.x else { return }
-        _ = setPosition(host, CGPoint(x: x, y: Self.parkedY))
-    }
-
     /// Notification Center moves its window back when the panel opens, and may again.
-    private func keepParked() {
-        guard let window, let p = window.point() else { return }
-        if abs(p.y - Self.parkedY) > 1 { park(window) }
+    private func keepInPlace() {
+        guard let window, let target = desiredOrigin, let p = window.point() else { return }
+        if hypot(p.x - target.x, p.y - target.y) > 1 { setPosition(window, target) }
     }
 
     @discardableResult
@@ -228,6 +265,7 @@ final class NCPanelTakeover: ObservableObject {
     }
 
     private func refresh() {
+        readWidgets()
         guard let window, let list = Self.findList(in: window) else {
             if snapshot != .empty { snapshot = .empty }
             return
@@ -347,6 +385,166 @@ final class NCPanelTakeover: ObservableObject {
         let lines = el.identifiedTextValues()
         return NCPanelRow(id: id, appName: appName, title: lines["title"] ?? "", subtitle: lines["subtitle"] ?? "",
                           body: lines["body"] ?? "", isStack: subrole.hasSuffix("Stack"))
+    }
+
+    // MARK: - Widgets
+
+    private var showsWidgets: Bool {
+        options.widgets && ScreenRecordingPermission.shared.isGranted
+    }
+
+    private func readWidgets() {
+        guard showsWidgets, let window, let origin = window.point() else {
+            if !widgets.isEmpty { widgets = [] }
+            return
+        }
+        var found: [(String, AXUIElement)] = []
+        Self.collectWidgets(in: window, into: &found)
+        let previous = Dictionary(widgets.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+        var next: [NCWidget] = []
+        for (id, el) in found {
+            guard let p = el.point(), let size = el.size() else { continue }
+            let frame = CGRect(x: p.x - origin.x, y: p.y - origin.y, width: size.width, height: size.height)
+            next.append(NCWidget(id: id, frameInWindow: frame, image: previous[id]?.image))
+        }
+        widgetElements = Dictionary(found, uniquingKeysWith: { a, _ in a })
+        if next.map(\.id) != widgets.map(\.id) || next.map(\.frameInWindow) != widgets.map(\.frameInWindow) {
+            widgets = next
+        }
+    }
+
+    /// Panel widgets sit above the list; desktop widgets are windows of their own and are
+    /// never in this window.
+    private static func collectWidgets(in el: AXUIElement, into found: inout [(String, AXUIElement)], depth: Int = 0) {
+        guard depth < 10 else { return }
+        if let id = el.identifier, id.hasPrefix("widget-local:") {
+            found.append((id, el))
+            return
+        }
+        if el.identifier == "AXNotificationListItems" { return }
+        for child in el.children() { collectWidgets(in: child, into: &found, depth: depth + 1) }
+    }
+
+    /// The part of Notification Center's window that draws something: the panel's column.
+    private func panelContentRect() -> CGRect? {
+        guard let window, let origin = window.point(),
+              let scroll = Self.find(in: window, depth: 0, { $0.stringAttribute(kAXRoleAttribute as String) == (kAXScrollAreaRole as String) })
+        else { return nil }
+        let frames = scroll.children().compactMap { el -> CGRect? in
+            guard let p = el.point(), let s = el.size(), s.width > 0, s.height > 0 else { return nil }
+            return CGRect(x: p.x - origin.x, y: p.y - origin.y, width: s.width, height: s.height)
+        }
+        return frames.dropFirst().reduce(frames.first) { $0?.union($1) }
+    }
+
+    private static func find(in el: AXUIElement, depth: Int, _ match: (AXUIElement) -> Bool) -> AXUIElement? {
+        guard depth < 6 else { return nil }
+        if match(el) { return el }
+        for child in el.children() {
+            if let found = find(in: child, depth: depth + 1, match) { return found }
+        }
+        return nil
+    }
+
+    /// Brings the real panel from parked to right under ours, so it is drawn and its
+    /// widgets can be captured: first an opaque cover where it will land, then the move.
+    private func startWidgets() {
+        ScreenRecordingPermission.shared.refresh()
+        if options.widgets, !ScreenRecordingPermission.shared.isGranted {
+            logger.log("Widgets are on, but Screen Recording isn't allowed — leaving them out", level: .warn, tag: "Panel")
+        }
+        readWidgets()
+        guard showsWidgets, !widgets.isEmpty, let content = panelContentRect() else { return }
+        let ours = panel.window.frame
+        guard let primary = NSScreen.screens.first else { return }
+        // Ours in AX coordinates (top left origin).
+        let oursTop = primary.frame.maxY - ours.maxY
+        let target = CGPoint(x: ours.maxX - 14 - content.maxX, y: oursTop + 8 - content.minY)
+        let landed = content.offsetBy(dx: target.x, dy: target.y)
+        cover.show(axRect: landed.insetBy(dx: -4, dy: -4), below: panel.window)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
+            guard let self, self.isActive else { return }
+            self.desiredOrigin = target
+            self.keepInPlace()
+            self.captureWidgets()
+            let timer = Timer(timeInterval: 2, repeats: true) { [weak self] _ in
+                MainActor.assumeIsolated { self?.captureWidgets() }
+            }
+            RunLoop.main.add(timer, forMode: .common)
+            self.widgetTimer = timer
+        }
+        logger.log("Showing \(widgets.count) widget(s)", tag: "Panel")
+    }
+
+    private func stopWidgets() {
+        widgetTimer?.invalidate()
+        widgetTimer = nil
+        cover.hide()
+        widgets = []
+        widgetElements = [:]
+    }
+
+    /// Captures the widgets, unless they move meanwhile: the panel slides in when it opens,
+    /// and a picture cut by where a widget was a moment earlier shows the wrong part of it.
+    /// Then it tries again shortly.
+    private func captureWidgets(retries: Int = 6) {
+        guard isActive, let window, let id = PrivateWindowAPI.windowID(for: window) else { return }
+        readWidgets()
+        let rects = Dictionary(widgets.map { ($0.id, $0.frameInWindow) }, uniquingKeysWith: { a, _ in a })
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            let images = await self.widgetCapture.capture(windowID: id, rects: rects)
+            guard self.isActive else { return }
+            self.readWidgets()
+            let settled = self.widgets.allSatisfy { w in
+                rects[w.id].map { abs($0.minX - w.frameInWindow.minX) < 1 && abs($0.minY - w.frameInWindow.minY) < 1 } ?? false
+            }
+            guard settled else {
+                if retries > 0 {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
+                        self?.captureWidgets(retries: retries - 1)
+                    }
+                }
+                return
+            }
+            if images.count < rects.count {
+                self.logger.log("Captured \(images.count) of \(rects.count) widget(s)", level: .warn, tag: "Panel")
+            }
+            for i in self.widgets.indices {
+                if let image = images[self.widgets[i].id] { self.widgets[i].image = image }
+            }
+        }
+    }
+
+    /// A click on a widget's picture, `at` as a fraction of its size. Widgets offer nothing
+    /// to Accessibility, so the click goes to the real widget, which is right under ours:
+    /// for that one click our panel and the router let everything through, and a real
+    /// click lands on Notification Center's own window, which doesn't close its panel.
+    /// The pointer goes back to where it was.
+    func click(_ widget: NCWidget, at fraction: CGPoint) {
+        guard let window, let origin = window.point() else { return }
+        let f = widget.frameInWindow
+        let point = CGPoint(x: origin.x + f.minX + f.width * fraction.x, y: origin.y + f.minY + f.height * fraction.y)
+        let back = CGEvent(source: nil)?.location
+        panel.window.ignoresMouseEvents = true
+        router.passThrough = true
+        // A beat for the window server to stop sending clicks to ours.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.03) { [weak self] in
+            for type in [CGEventType.mouseMoved, .leftMouseDown, .leftMouseUp] {
+                CGEvent(mouseEventSource: nil, mouseType: type, mouseCursorPosition: point, mouseButton: .left)?
+                    .post(tap: .cghidEventTap)
+            }
+            if let back {
+                CGEvent(mouseEventSource: nil, mouseType: .mouseMoved, mouseCursorPosition: back, mouseButton: .left)?
+                    .post(tap: .cghidEventTap)
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
+                guard let self else { return }
+                self.router.passThrough = false
+                self.panel.window.ignoresMouseEvents = false
+            }
+        }
+        logger.log("Widget clicked: \(widget.appBundleID ?? widget.id)", tag: "Panel")
     }
 
     // MARK: - Actions, passed back to Notification Center

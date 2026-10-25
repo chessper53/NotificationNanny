@@ -21,6 +21,7 @@
 
 import AppKit
 import ApplicationServices
+@preconcurrency import ScreenCaptureKit
 
 func attr(_ e: AXUIElement, _ key: String) -> CFTypeRef? {
     var v: CFTypeRef?
@@ -565,12 +566,91 @@ case "widget-cover":
     cover.orderOut(nil)
     restore()
 
+case "widget-hold":
+    // The real panel open under a grey cover for 6 s, captured every 2 s by <mode>:
+    // none, shot (screencapture -l) or sck (ScreenCaptureKit, as the app does). When,
+    // if at all, does Notification Center close it? Nothing captured is kept.
+    let mode = args.dropFirst().first ?? "none"
+    guard let screen = NSScreen.screens.first else { exit(1) }
+    let coverRect = NSRect(x: screen.frame.maxX - 800, y: screen.visibleFrame.minY, width: 800, height: screen.visibleFrame.height)
+    let cover = NSPanel(contentRect: coverRect, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+    cover.level = .statusBar
+    cover.backgroundColor = NSColor(calibratedWhite: 0.18, alpha: 1)
+    cover.ignoresMouseEvents = true
+    cover.orderFrontRegardless()
+    spin(0.4)
+    guard pressClock(), waitFor(3, { isOpen() }) != nil, let h = host(), let hf = frame(h) else {
+        print("panel did not open"); cover.orderOut(nil); restore(); exit(1)
+    }
+    hostHome = hf.origin
+    // move:dx,dy parks the window first, then brings it back on screen offset by that
+    // much from where Notification Center had it, the way the app lines it up under ours.
+    if mode.hasPrefix("move:") {
+        let parts = mode.dropFirst(5).split(separator: ",").compactMap { Double($0) }
+        _ = setPoint(h, CGPoint(x: hf.minX, y: -9999))
+        spin(0.3)
+        _ = setPoint(h, CGPoint(x: hf.minX + (parts.first ?? 0), y: hf.minY + (parts.last ?? 0)))
+        print("  moved to (\(Int(hf.minX + (parts.first ?? 0))),\(Int(hf.minY + (parts.last ?? 0))))")
+    }
+    var wid: CGWindowID = 0
+    let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID) as? [[String: Any]] ?? []
+    if let n = list.first(where: { info in
+        guard info[kCGWindowOwnerPID as String] as? pid_t == nc.processIdentifier,
+              let b = info[kCGWindowBounds as String] as? NSDictionary,
+              let r = CGRect(dictionaryRepresentation: b as CFDictionary) else { return false }
+        return abs(r.width - hf.width) < 2
+    })?[kCGWindowNumber as String] as? Int { wid = CGWindowID(n) }
+    let start = now()
+    var closedAt: Double?
+    var lastShot = -10.0
+    var shots = 0
+    while now() - start < 6 {
+        if closedAt == nil, !isOpen() { closedAt = now() - start; break }
+        if mode != "none", !mode.hasPrefix("move:"), now() - lastShot >= 2 {
+            lastShot = now()
+            shots += 1
+            if mode == "shot" {
+                let p = Process()
+                p.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
+                p.arguments = ["-x", "-o", "-l", "\(wid)", "build/panel-lab/hold.png"]
+                try? p.run(); p.waitUntilExit()
+                try? FileManager.default.removeItem(atPath: "build/panel-lab/hold.png")
+            } else {
+                var done = false
+                Task {
+                    if let content = try? await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: false),
+                       let w = content.windows.first(where: { $0.windowID == wid }) {
+                        let filter = SCContentFilter(desktopIndependentWindow: w)
+                        let config = SCStreamConfiguration()
+                        config.width = Int(w.frame.width); config.height = Int(w.frame.height)
+                        _ = try? await SCScreenshotManager.captureImage(contentFilter: filter, configuration: config)
+                    }
+                    done = true
+                }
+                let t = now()
+                while !done, now() - t < 3 { spin(0.02) }
+                print(String(format: "  capture %d took %.0f ms, panel %@", shots, (now() - t) * 1000, isOpen() ? "open" : "CLOSED"))
+            }
+        }
+        spin(0.05)
+    }
+    print("mode \(mode): \(shots) capture(s); panel \(closedAt.map { String(format: "CLOSED by itself after %.2f s", $0) } ?? "stayed open for 6 s")")
+    closePanel()
+    spin(0.3)
+    cover.orderOut(nil)
+    restore()
+
+case "shut":
+    // Closes the panel only if it is open; a clock press on a closed one opens it.
+    if isOpen() { _ = pressClock(); _ = waitFor(3) { !isOpen() } }
+    print("panel \(isOpen() ? "still open" : "closed")")
+
 case "clock":
     exit(pressClock() ? 0 : 1)
 
 // The ui-* commands drive NotificationNanny's own panel (pid as the second argument)
 // through its accessibility tree, with real clicks.
-case "ui-state", "ui-click", "ui-close", "ui-button", "ui-winid", "ui-scroll", "ui-count":
+case "ui-state", "ui-click", "ui-close", "ui-button", "ui-winid", "ui-scroll", "ui-count", "ui-widget":
     guard args.count >= 2, let pid = pid_t(args[1]) else { print("usage: lab \(args[0]) <pid> [text]"); exit(64) }
     let nn = AXUIElementCreateApplication(pid)
     AXUIElementSetMessagingTimeout(nn, 2)
@@ -599,6 +679,14 @@ case "ui-state", "ui-click", "ui-close", "ui-button", "ui-winid", "ui-scroll", "
         print("our buttons: \(elements.filter { role($0) == "AXButton" }.map(text).joined(separator: " | "))")
         print("NC panel open: \(isOpen()), NC window y: \(host().flatMap(frame).map { "\(Int($0.minY))" } ?? "none")")
         print("NC Lab rows: \(labRows().map { "\(str($0, kAXSubroleAttribute)?.replacingOccurrences(of: "AXNotificationCenter", with: "") ?? "?"):\(label($0).split(separator: ",").dropFirst().first.map { $0.trimmingCharacters(in: .whitespaces) } ?? "?")" }.joined(separator: " | "))")
+    case "ui-widget":
+        // Clicks the middle of the first widget picture in our panel.
+        guard let img = elements.filter({ role($0) == "AXImage" }).compactMap({ e in frame(e).map { (e, $0) } })
+                .max(by: { $0.1.width * $0.1.height < $1.1.width * $1.1.height }), img.1.width > 100 else {
+            print("no widget picture"); exit(1)
+        }
+        print("widget picture \(Int(img.1.width))x\(Int(img.1.height))")
+        exit(click(at: CGPoint(x: img.1.midX, y: img.1.midY), ifFrontIs: pid) ? 0 : 1)
     case "ui-count":
         // Numbers only, for runs that show the user's own notifications.
         let allRows = windows().flatMap { rows(in: $0) }

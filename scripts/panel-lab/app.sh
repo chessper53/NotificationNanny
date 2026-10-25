@@ -8,6 +8,7 @@
 #   post:App:Title        a Lab notification (App is Alpha, Bravo or Charlie)
 #   open | clock          press the menu bar clock (opens or closes the panel)
 #   clock2                a real click on the second screen's clock
+#   shut                  close the panel if it is open (a clock press would reopen it)
 #   scroll                scroll the wheel over our panel
 #   state                 what our panel and Notification Center's show
 #   count                 the same as numbers only, for PANEL_FILTER= runs
@@ -15,6 +16,8 @@
 #   click:Text            click the text in our panel (a row's title, say)
 #   close:Title           click the ✕ of the row with that title
 #   button:Label          click a button in our panel ("Show less", "Clear All")
+#   widget                click the middle of the first widget picture in our panel
+#   apps:Name             whether a process of that name is running
 #   wait:seconds
 #
 # PANEL_FILTER= (empty) lists every app, the user's own too; use count, not state or shot.
@@ -46,7 +49,10 @@ scripts/assemble-bundle.sh "$(swift build --show-bin-path)/NotificationNanny" "$
 swiftc -O -swift-version 5 -o "$OUT/lab" scripts/panel-lab/lab.swift
 
 BACKUP=$OUT/defaults-backup.plist
+# NN_SET="key=YES key2=NO" turns on more boolean settings for the run; restored the same way.
+EXTRA=(${NN_SET:-})
 KEYS=(customNotificationCenter lastBinaryMtime)
+for kv in ${EXTRA[@]+"${EXTRA[@]}"}; do KEYS+=("${kv%%=*}"); done
 defaults export "$DOMAIN" "$BACKUP"
 NN_PID=""
 restore() {
@@ -84,6 +90,7 @@ PY
 trap restore EXIT
 
 defaults write "$DOMAIN" customNotificationCenter -bool YES
+for kv in ${EXTRA[@]+"${EXTRA[@]}"}; do defaults write "$DOMAIN" "${kv%%=*}" -bool "${kv#*=}"; done
 env NN_LAB=1 NN_LAB_PANEL_FILTER="${PANEL_FILTER-Lab }" NN_LAB_PANEL_APPEARANCE="${PANEL_APPEARANCE:-}" NN_LOG_DIR="$PWD/$OUT/logs" NN_LOG_STDERR=1 \
     "$APP/Contents/MacOS/NotificationNanny" > "$OUT/app.log" 2>&1 &
 NN_PID=$!
@@ -101,6 +108,9 @@ for step in "$@"; do
         post)   app=${arg%%:*}; "$NOTIFY/Lab $app.app/Contents/MacOS/notifier" "${arg#*:}" "Panel lab" ;;
         open|clock) "$OUT/lab" clock ;;
         clock2) "$NOTIFY/watch" --click-clock 2 ;;
+        shut)   "$OUT/lab" shut ;;
+        widget) "$OUT/lab" ui-widget "$NN_PID" || echo "   widget click failed" ;;
+        apps)   for b in $arg; do pgrep -xq "$b" && echo "   $b running" || echo "   $b not running"; done ;;
         scroll) "$OUT/lab" ui-scroll "$NN_PID" ;;
         state)  "$OUT/lab" ui-state "$NN_PID" ;;
         count)  "$OUT/lab" ui-count "$NN_PID" ;;
