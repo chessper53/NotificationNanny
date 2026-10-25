@@ -56,7 +56,8 @@ scripts/assemble-bundle.sh "$(swift build --show-bin-path)/NotificationNanny" "$
 swiftc -O -swift-version 5 -o "$OUT/lab" scripts/panel-lab/lab.swift
 
 BACKUP=$OUT/defaults-backup.plist
-# NN_SET="key=YES key2=NO" turns on more boolean settings for the run; restored the same way.
+# NN_SET="key=YES key2=0.9 key3=left" sets more settings for the run (bool, number or
+# text); restored the same way.
 EXTRA=(${NN_SET:-})
 KEYS=(customNotificationCenter lastBinaryMtime)
 for kv in ${EXTRA[@]+"${EXTRA[@]}"}; do KEYS+=("${kv%%=*}"); done
@@ -102,7 +103,14 @@ trap restore EXIT
 trap 'exit 130' INT TERM
 
 defaults write "$DOMAIN" customNotificationCenter -bool YES
-for kv in ${EXTRA[@]+"${EXTRA[@]}"}; do defaults write "$DOMAIN" "${kv%%=*}" -bool "${kv#*=}"; done
+for kv in ${EXTRA[@]+"${EXTRA[@]}"}; do
+    k=${kv%%=*}; v=${kv#*=}
+    case "$v" in
+        YES|NO) defaults write "$DOMAIN" "$k" -bool "$v" ;;
+        *[!0-9.]*) defaults write "$DOMAIN" "$k" -string "$v" ;;
+        *) defaults write "$DOMAIN" "$k" -float "$v" ;;
+    esac
+done
 env NN_LAB=1 NN_LAB_PANEL_FILTER="${PANEL_FILTER-Lab }" NN_LAB_PANEL_APPEARANCE="${PANEL_APPEARANCE:-}" NN_LOG_DIR="$PWD/$OUT/logs" NN_LOG_STDERR=1 \
     "$APP/Contents/MacOS/NotificationNanny" > "$OUT/app.log" 2>&1 &
 NN_PID=$!

@@ -206,3 +206,10 @@
 "Options" = "Opciones";
 "Look" = "Aspecto";
 "Rows look like your banners: their colour, text colour and privacy blur come from the Banner tab and your exceptions." = "Las filas se ven como tus avisos: su color, el color del texto y el desenfoque vienen de la pestaña Aviso y de tus excepciones.";
+"Size" = "Tamaño";
+"Side" = "Lado";
+"Right" = "Derecha";
+"Left" = "Izquierda";
+"Opens on" = "Se abre";
+"Where you click the clock" = "Donde haces clic en el reloj";
+"Where your banners go" = "Donde van tus avisos";

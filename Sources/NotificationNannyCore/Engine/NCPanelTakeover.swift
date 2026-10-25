@@ -28,6 +28,10 @@ struct NCPanelOptions: Equatable {
     var appFilter = false
     /// How the panel opens and closes.
     var animation: BannerAnimation = .default
+    /// How large it is drawn, 1 being the system's size.
+    var scale: CGFloat = 1
+    /// Which side of the screen it opens on.
+    var side: NCPanelSide = .right
     /// Pictures of the real widgets; only acted on with Screen Recording allowed.
     var widgets = false
     /// The banners' text colour, nil for the system's.
@@ -60,6 +64,9 @@ final class NCPanelTakeover: ObservableObject {
 
     /// The options as set now; read when the panel opens and when settings change.
     var readOptions: () -> NCPanelOptions = { NCPanelOptions() }
+    /// The screen to open on instead of the one whose clock was clicked, if any: with
+    /// "Don't move Notification Center" off, the screen the banners go to.
+    var preferredScreen: () -> NSScreen? = { nil }
 
     /// Called when the panel opens, before ours shows.
     var onBegin: (() -> Void)?
@@ -189,7 +196,7 @@ final class NCPanelTakeover: ObservableObject {
         desiredOrigin = CGPoint(x: origin.x, y: Self.parkedY)
         keepInPlace()
         options = readOptions()
-        let screen = Self.screen(atAXPoint: origin) ?? NSScreen.main ?? NSScreen.screens[0]
+        let screen = preferredScreen() ?? Self.screen(atAXPoint: origin) ?? NSScreen.main ?? NSScreen.screens[0]
         onBegin?()
         refresh()
         guard router.start(for: panel.window) else {
@@ -476,10 +483,9 @@ final class NCPanelTakeover: ObservableObject {
         guard let primary = NSScreen.screens.first else { return }
         // Ours in AX coordinates (top left origin).
         let oursTop = primary.frame.maxY - ours.maxY
-        // Under our rows: they end the right inset short of the window's edge, and start
-        // the close button's room below its top.
-        let target = CGPoint(x: ours.maxX - CustomNCPanelController.rightInset - content.maxX,
-                             y: oursTop + CustomNCPanelController.chrome - content.minY)
+        // Under our rows, top right to top right, wherever they are.
+        let rows = CustomNCPanelController.rowsRect(in: ours, options: options)
+        let target = CGPoint(x: rows.maxX - content.maxX, y: oursTop + (ours.maxY - rows.maxY) - content.minY)
         let landed = content.offsetBy(dx: target.x, dy: target.y)
         cover.show(axRect: landed.insetBy(dx: -4, dy: -4), below: panel.window)
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
