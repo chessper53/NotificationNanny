@@ -96,6 +96,11 @@ struct GeneralTabView: View {
                 Divider().padding(.leading, 14)
                 toggleRow("Custom Notification Center (experimental)", isOn: $settings.customNotificationCenter,
                           detail: "Clicking the clock opens NotificationNanny's own list of your notifications instead of Notification Center. Widgets aren't shown in it.")
+                if settings.customNotificationCenter {
+                    Divider().padding(.leading, 14)
+                    toggleRow("Show when notifications arrived", isOn: $settings.customNotificationCenterTimes,
+                              detail: "Notification Center doesn't share its times, so NotificationNanny notes when each banner appears. Notifications that came in while it wasn't running have no time.")
+                }
                 Divider().padding(.leading, 14)
                 toggleRow("Don't move desktop widgets", isOn: $settings.protectDesktopWidgets)
                 Divider().padding(.leading, 14)

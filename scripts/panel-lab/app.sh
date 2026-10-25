@@ -10,12 +10,14 @@
 #   clock2                a real click on the second screen's clock
 #   scroll                scroll the wheel over our panel
 #   state                 what our panel and Notification Center's show
+#   count                 the same as numbers only, for PANEL_FILTER= runs
 #   shot:name             capture our panel into build/panel-lab/name.png
 #   click:Text            click the text in our panel (a row's title, say)
 #   close:Title           click the ✕ of the row with that title
 #   button:Label          click a button in our panel ("Show less", "Clear All")
 #   wait:seconds
 #
+# PANEL_FILTER= (empty) lists every app, the user's own too; use count, not state or shot.
 # PANEL_APPEARANCE=light draws our panel in Light Mode without touching the system's.
 #
 # Only the Lab apps are listed in the panel during a run (NN_LAB_PANEL_FILTER), so
@@ -82,7 +84,7 @@ PY
 trap restore EXIT
 
 defaults write "$DOMAIN" customNotificationCenter -bool YES
-env NN_LAB=1 NN_LAB_PANEL_FILTER="Lab " NN_LAB_PANEL_APPEARANCE="${PANEL_APPEARANCE:-}" NN_LOG_DIR="$PWD/$OUT/logs" NN_LOG_STDERR=1 \
+env NN_LAB=1 NN_LAB_PANEL_FILTER="${PANEL_FILTER-Lab }" NN_LAB_PANEL_APPEARANCE="${PANEL_APPEARANCE:-}" NN_LOG_DIR="$PWD/$OUT/logs" NN_LOG_STDERR=1 \
     "$APP/Contents/MacOS/NotificationNanny" > "$OUT/app.log" 2>&1 &
 NN_PID=$!
 sleep 3
@@ -101,6 +103,7 @@ for step in "$@"; do
         clock2) "$NOTIFY/watch" --click-clock 2 ;;
         scroll) "$OUT/lab" ui-scroll "$NN_PID" ;;
         state)  "$OUT/lab" ui-state "$NN_PID" ;;
+        count)  "$OUT/lab" ui-count "$NN_PID" ;;
         shot)   id=$("$OUT/lab" ui-winid "$NN_PID") && screencapture -x -o -l "$id" "$OUT/$arg.png" && echo "   $OUT/$arg.png" ;;
         click)  "$OUT/lab" ui-click "$NN_PID" "$arg" || echo "   click failed" ;;
         close)  "$OUT/lab" ui-close "$NN_PID" "$arg" || echo "   close failed" ;;

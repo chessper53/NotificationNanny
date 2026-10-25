@@ -190,3 +190,5 @@
 "All" = "Tutte";
 "Clear All" = "Cancella tutto";
 "Show less" = "Mostra meno";
+"Show when notifications arrived" = "Mostra quando sono arrivate le notifiche";
+"Notification Center doesn't share its times, so NotificationNanny notes when each banner appears. Notifications that came in while it wasn't running have no time." = "Il Centro Notifiche non condivide i suoi orari, quindi NotificationNanny annota quando appare ogni banner. Le notifiche arrivate mentre non era in esecuzione non hanno un orario.";

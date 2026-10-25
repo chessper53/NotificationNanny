@@ -386,12 +386,47 @@ case "list":
     }
     restore()
 
+case "ids":
+    // Notes each Lab banner's identifier the first time it is up, for <seconds>, then
+    // opens the panel parked, expands every Lab stack and says which rows were seen as
+    // banners. Decides whether a time noted at the banner can be shown on its row.
+    let seconds = Double(args.dropFirst().first ?? "8") ?? 8
+    var seen: [String: (String, Double)] = [:]
+    let start = now()
+    while now() - start < seconds {
+        for r in labRows() {
+            guard let id = str(r, kAXIdentifierAttribute), seen[id] == nil else { continue }
+            seen[id] = (label(r), now() - start)
+            print(String(format: "  %5.2fs banner %@ %@ [%@]", now() - start, String(id.prefix(8)),
+                         label(r), str(r, kAXSubroleAttribute) ?? "?"))
+        }
+        spin(0.05)
+    }
+    guard openPanel(), let h = host(), let home = frame(h)?.origin else { print("panel did not open"); restore(); exit(1) }
+    hostHome = home
+    _ = setPoint(h, CGPoint(x: home.x, y: -9999))
+    spin(0.4)
+    for stack in labRows() where str(stack, kAXSubroleAttribute)?.hasSuffix("Stack") == true {
+        AXUIElementPerformAction(stack, kAXPressAction as CFString)
+        spin(0.6)
+    }
+    var matched = 0
+    let rows = labRows()
+    for r in rows {
+        let id = str(r, kAXIdentifierAttribute) ?? "?"
+        let was = seen[id]
+        if was != nil { matched += 1 }
+        print("  row \(id.prefix(8)) \(label(r)) [\(str(r, kAXSubroleAttribute) ?? "?")] \(was.map { "seen as banner at \(String(format: "%.2f", $0.1))s" } ?? "NEVER seen as banner")")
+    }
+    print("rows seen as banners: \(matched) of \(rows.count)")
+    restore()
+
 case "clock":
     exit(pressClock() ? 0 : 1)
 
 // The ui-* commands drive NotificationNanny's own panel (pid as the second argument)
 // through its accessibility tree, with real clicks.
-case "ui-state", "ui-click", "ui-close", "ui-button", "ui-winid", "ui-scroll":
+case "ui-state", "ui-click", "ui-close", "ui-button", "ui-winid", "ui-scroll", "ui-count":
     guard args.count >= 2, let pid = pid_t(args[1]) else { print("usage: lab \(args[0]) <pid> [text]"); exit(64) }
     let nn = AXUIElementCreateApplication(pid)
     AXUIElementSetMessagingTimeout(nn, 2)
@@ -420,6 +455,11 @@ case "ui-state", "ui-click", "ui-close", "ui-button", "ui-winid", "ui-scroll":
         print("our buttons: \(elements.filter { role($0) == "AXButton" }.map(text).joined(separator: " | "))")
         print("NC panel open: \(isOpen()), NC window y: \(host().flatMap(frame).map { "\(Int($0.minY))" } ?? "none")")
         print("NC Lab rows: \(labRows().map { "\(str($0, kAXSubroleAttribute)?.replacingOccurrences(of: "AXNotificationCenter", with: "") ?? "?"):\(label($0).split(separator: ",").dropFirst().first.map { $0.trimmingCharacters(in: .whitespaces) } ?? "?")" }.joined(separator: " | "))")
+    case "ui-count":
+        // Numbers only, for runs that show the user's own notifications.
+        let allRows = windows().flatMap { rows(in: $0) }
+        let ourButtons = elements.filter { role($0) == "AXButton" }.map(text)
+        print("NC panel open: \(isOpen()), NC rows: \(allRows.count), our Clear All buttons: \(ourButtons.filter { $0 == "Clear All" }.count), our ✕ buttons: \(ourButtons.filter { $0 == "Close" }.count)")
     case "ui-scroll":
         // A scroll wheel over our panel: it must not close Notification Center's.
         guard let f = nnWindows.compactMap(frame).max(by: { $0.height < $1.height }) else { print("no panel"); exit(1) }

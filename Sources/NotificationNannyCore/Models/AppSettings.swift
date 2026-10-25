@@ -19,6 +19,7 @@ package final class AppSettings: ObservableObject {
         static let pauseWhileStreaming  = "pauseWhileStreaming"
         static let avoidNCPanel         = "avoidNCPanel"
         static let customNotificationCenter = "customNotificationCenter"
+        static let customNotificationCenterTimes = "customNotificationCenterTimes"
         static let protectDesktopWidgets = "protectDesktopWidgets"
         static let followActiveScreen   = "followActiveScreen"
         static let pauseDuringFocus     = "pauseDuringFocus"
@@ -103,6 +104,11 @@ package final class AppSettings: ObservableObject {
     /// NotificationNanny shows its own list of the same notifications instead.
     @Published package var customNotificationCenter: Bool {
         didSet { defaults.set(customNotificationCenter, forKey: Key.customNotificationCenter) }
+    }
+
+    /// Times on the custom Notification Center's rows, noted when each banner arrived.
+    @Published package var customNotificationCenterTimes: Bool {
+        didSet { defaults.set(customNotificationCenterTimes, forKey: Key.customNotificationCenterTimes) }
     }
 
 
@@ -360,6 +366,7 @@ package final class AppSettings: ObservableObject {
         self.pauseWhileStreaming    = (defaults.object(forKey: Key.pauseWhileStreaming) as? Bool) ?? false
         self.avoidNCPanel           = (defaults.object(forKey: Key.avoidNCPanel) as? Bool) ?? true
         self.customNotificationCenter = (defaults.object(forKey: Key.customNotificationCenter) as? Bool) ?? false
+        self.customNotificationCenterTimes = (defaults.object(forKey: Key.customNotificationCenterTimes) as? Bool) ?? true
         self.protectDesktopWidgets = (defaults.object(forKey: Key.protectDesktopWidgets) as? Bool) ?? true
         self.followActiveScreen    = (defaults.object(forKey: Key.followActiveScreen) as? Bool) ?? false
         self.pauseDuringFocus      = (defaults.object(forKey: Key.pauseDuringFocus) as? Bool) ?? false
@@ -601,6 +608,7 @@ package final class AppSettings: ObservableObject {
         /// and one without it imports as on.
         var avoidNCPanel: Bool?
         var customNotificationCenter: Bool?
+        var customNotificationCenterTimes: Bool?
         var protectDesktopWidgets: Bool?
         var followActiveScreen: Bool?
         var pauseDuringFocus: Bool?
@@ -620,6 +628,7 @@ package final class AppSettings: ObservableObject {
             pauseWhileStreaming: pauseWhileStreaming,
             avoidNCPanel: avoidNCPanel,
             customNotificationCenter: customNotificationCenter,
+            customNotificationCenterTimes: customNotificationCenterTimes,
             protectDesktopWidgets: protectDesktopWidgets,
             followActiveScreen: followActiveScreen,
             pauseDuringFocus: pauseDuringFocus,
@@ -648,6 +657,7 @@ package final class AppSettings: ObservableObject {
         pauseWhileStreaming  = imported.pauseWhileStreaming
         avoidNCPanel        = imported.avoidNCPanel ?? true
         customNotificationCenter = imported.customNotificationCenter ?? false
+        customNotificationCenterTimes = imported.customNotificationCenterTimes ?? true
         protectDesktopWidgets = imported.protectDesktopWidgets ?? true
         followActiveScreen  = imported.followActiveScreen ?? false
         pauseDuringFocus    = imported.pauseDuringFocus ?? false

@@ -285,16 +285,38 @@ private struct RowView: View {
     let showsIcon: Bool
     @ObservedObject var takeover: NCPanelTakeover
     @State private var hovering = false
+    @ObservedObject private var loc = LocalizationManager.shared
+
+    /// When it arrived, kept current: "now" becomes "1m" without anything else changing.
+    @ViewBuilder private var time: some View {
+        if let arrival = takeover.arrival(of: row) {
+            TimelineView(.periodic(from: .now, by: 30)) { context in
+                Text(NotificationTimeText.text(for: arrival, now: context.date, locale: loc.locale))
+                    .font(.caption2.monospacedDigit()).foregroundStyle(.secondary).lineLimit(1)
+            }
+            .fixedSize()
+        }
+    }
 
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
             if showsIcon { AppIcon(appName: row.appName, size: 32) }
             VStack(alignment: .leading, spacing: 1) {
                 if showsIcon {
-                    Text(row.appName).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
+                    HStack(spacing: 6) {
+                        Text(row.appName).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
+                        Spacer(minLength: 0)
+                        time
+                    }
                 }
-                if !row.title.isEmpty {
-                    Text(row.title).font(.callout.weight(.semibold)).foregroundStyle(Color.nannyStrong).lineLimit(1)
+                if !row.title.isEmpty || !showsIcon {
+                    HStack(spacing: 6) {
+                        Text(row.title).font(.callout.weight(.semibold)).foregroundStyle(Color.nannyStrong).lineLimit(1)
+                        if !showsIcon {
+                            Spacer(minLength: 0)
+                            time
+                        }
+                    }
                 }
                 if !row.subtitle.isEmpty {
                     Text(row.subtitle).font(.callout).lineLimit(1)

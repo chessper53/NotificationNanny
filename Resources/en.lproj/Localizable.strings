@@ -190,3 +190,5 @@
 "All" = "All";
 "Clear All" = "Clear All";
 "Show less" = "Show less";
+"Show when notifications arrived" = "Show when notifications arrived";
+"Notification Center doesn't share its times, so NotificationNanny notes when each banner appears. Notifications that came in while it wasn't running have no time." = "Notification Center doesn't share its times, so NotificationNanny notes when each banner appears. Notifications that came in while it wasn't running have no time.";
