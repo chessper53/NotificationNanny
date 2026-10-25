@@ -25,10 +25,14 @@ final class AppCoordinator: NSObject, ObservableObject, NSApplicationDelegate, N
 
     override init() {
         AppCoordinator.terminateIfAlreadyRunning()
-        // Unbundled builds (swift run, notify-lab) can run next to the installed app and
-        // would push its log aside.
+        // An unbundled swift run can run next to the installed app and would push its log
+        // aside. notify-lab runs the bundle, so it points the log at its own folder.
         if Bundle.main.bundleIdentifier != nil {
-            NannyLogger.shared.startWritingToDisk()
+            if let dir = ProcessInfo.processInfo.environment["NN_LOG_DIR"] {
+                NannyLogger.shared.startWritingToDisk(in: URL(fileURLWithPath: dir, isDirectory: true))
+            } else {
+                NannyLogger.shared.startWritingToDisk()
+            }
             let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "unknown"
             NannyLogger.shared.log("NotificationNanny v\(version) started", tag: "App")
         }
