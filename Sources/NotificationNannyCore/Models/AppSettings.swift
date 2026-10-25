@@ -18,6 +18,7 @@ package final class AppSettings: ObservableObject {
         static let knownApps            = "knownAppNames"
         static let pauseWhileStreaming  = "pauseWhileStreaming"
         static let avoidNCPanel         = "avoidNCPanel"
+        static let customNotificationCenter = "customNotificationCenter"
         static let protectDesktopWidgets = "protectDesktopWidgets"
         static let followActiveScreen   = "followActiveScreen"
         static let pauseDuringFocus     = "pauseDuringFocus"
@@ -96,6 +97,12 @@ package final class AppSettings: ObservableObject {
     /// own screen. Off, it opens on the screen the banners go to.
     @Published package var avoidNCPanel: Bool {
         didSet { defaults.set(avoidNCPanel, forKey: Key.avoidNCPanel) }
+    }
+
+    /// Experimental: the open Notification Center panel is kept off screen and
+    /// NotificationNanny shows its own list of the same notifications instead.
+    @Published package var customNotificationCenter: Bool {
+        didSet { defaults.set(customNotificationCenter, forKey: Key.customNotificationCenter) }
     }
 
 
@@ -212,6 +219,10 @@ package final class AppSettings: ObservableObject {
 
     package func effectiveBannerColor(for appName: String?) -> Color {
         effectiveBannerColorImpl(groupTint: appName.flatMap { group(for: $0) }?.bannerTint)
+    }
+
+    package func groupTint(for appName: String) -> Color? {
+        group(for: appName)?.bannerTint?.color
     }
 
     package func effectiveBannerColor(forGroupID groupID: UUID?) -> Color {
@@ -348,6 +359,7 @@ package final class AppSettings: ObservableObject {
         }
         self.pauseWhileStreaming    = (defaults.object(forKey: Key.pauseWhileStreaming) as? Bool) ?? false
         self.avoidNCPanel           = (defaults.object(forKey: Key.avoidNCPanel) as? Bool) ?? true
+        self.customNotificationCenter = (defaults.object(forKey: Key.customNotificationCenter) as? Bool) ?? false
         self.protectDesktopWidgets = (defaults.object(forKey: Key.protectDesktopWidgets) as? Bool) ?? true
         self.followActiveScreen    = (defaults.object(forKey: Key.followActiveScreen) as? Bool) ?? false
         self.pauseDuringFocus      = (defaults.object(forKey: Key.pauseDuringFocus) as? Bool) ?? false
@@ -588,6 +600,7 @@ package final class AppSettings: ObservableObject {
         /// Optional: a backup from the releases that had no such toggle may still carry it,
         /// and one without it imports as on.
         var avoidNCPanel: Bool?
+        var customNotificationCenter: Bool?
         var protectDesktopWidgets: Bool?
         var followActiveScreen: Bool?
         var pauseDuringFocus: Bool?
@@ -606,6 +619,7 @@ package final class AppSettings: ObservableObject {
             bannerScale: bannerScale,
             pauseWhileStreaming: pauseWhileStreaming,
             avoidNCPanel: avoidNCPanel,
+            customNotificationCenter: customNotificationCenter,
             protectDesktopWidgets: protectDesktopWidgets,
             followActiveScreen: followActiveScreen,
             pauseDuringFocus: pauseDuringFocus,
@@ -633,6 +647,7 @@ package final class AppSettings: ObservableObject {
         bannerScale         = imported.bannerScale
         pauseWhileStreaming  = imported.pauseWhileStreaming
         avoidNCPanel        = imported.avoidNCPanel ?? true
+        customNotificationCenter = imported.customNotificationCenter ?? false
         protectDesktopWidgets = imported.protectDesktopWidgets ?? true
         followActiveScreen  = imported.followActiveScreen ?? false
         pauseDuringFocus    = imported.pauseDuringFocus ?? false

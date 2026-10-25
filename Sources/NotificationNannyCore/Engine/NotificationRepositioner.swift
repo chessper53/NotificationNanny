@@ -40,6 +40,27 @@ package final class NotificationRepositioner: ObservableObject {
     private let logger: NannyLogger
 
     private let axController = AXObserverController()
+
+    /// Experimental custom Notification Center; see NCPanelTakeover.
+    private lazy var panelTakeover: NCPanelTakeover = {
+        let takeover = NCPanelTakeover(logger: logger)
+        // Banners that came in while the panel was open go where they belong.
+        takeover.onEnd = { [weak self] in self?.trackLayoutChange() }
+        // Alerts still up move into the panel, as they do in Notification Center's own,
+        // so their custom overlays go while it is open; the sweep after it brings them back.
+        takeover.onBegin = { [weak self] in
+            self?.customBannerManager.dismissAll()
+            self?.overlayContent.removeAll()
+            self?.customPiles.removeAll()
+        }
+        takeover.tint = { [weak self] in self?.settings?.groupTint(for: $0) }
+        return takeover
+    }()
+
+    private var customNotificationCenterEnabled: Bool {
+        guard let settings else { return false }
+        return settings.customNotificationCenter && settings.isActive
+    }
     private var ncApp: AXUIElement? { axController.ncApp }
     private var ncPid: pid_t { axController.ncPid }
 
@@ -234,6 +255,12 @@ package final class NotificationRepositioner: ObservableObject {
     private func handleAXEvent(element: AXUIElement, notification: String) {
         axLog.debug("── AX event: \(notification, privacy: .public)")
         axEventsSinceWake += 1
+
+        // First, so the real panel is parked before it shows; see NCPanelTakeover.
+        if let ncApp, panelTakeover.handle(notification: notification, ncApp: ncApp,
+                                           enabled: customNotificationCenterEnabled) {
+            return
+        }
 
         if notification == kAXUIElementDestroyedNotification as String {
             let key = CFHash(element)
@@ -478,6 +505,7 @@ package final class NotificationRepositioner: ObservableObject {
     /// macOS happens to be re-laying out; one drag produces one tail pass, not
     /// hundreds.
     private func applySettingsChange() {
+        panelTakeover.settingsChanged(enabled: customNotificationCenterEnabled)
         if let settings, !settings.isActive {
             customBannerManager.dismissAll()
             overlayContent.removeAll()
@@ -940,6 +968,8 @@ package final class NotificationRepositioner: ObservableObject {
             log.debug("targetOrigin: skipped — window was auto-dismissed")
             return nil
         }
+        // Parked behind the custom Notification Center; placing it would bring the real panel back.
+        guard !panelTakeover.owns(window) else { return nil }
         let testGroupID = effectiveTestGroup(for: window)
         if isPausedByEnvironment() {
             log.debug("targetOrigin: skipped — Focus/DND or screen sharing active")

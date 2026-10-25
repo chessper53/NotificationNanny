@@ -8,6 +8,7 @@ package protocol NotificationSettingsProviding: AnyObject {
     var isActive: Bool { get }
     var pauseWhileStreaming: Bool { get }
     var avoidNCPanel: Bool { get }
+    var customNotificationCenter: Bool { get }
     var protectDesktopWidgets: Bool { get }
     var followActiveScreen: Bool { get }
     var pauseDuringFocus: Bool { get }
@@ -22,6 +23,8 @@ package protocol NotificationSettingsProviding: AnyObject {
     var bannerScale: Double { get }
     var bannerColor: Color { get }
     func effectiveBannerColor(for appName: String?) -> Color
+    /// The tint of the exception group the app is in, if that group has one of its own.
+    func groupTint(for appName: String) -> Color?
     func effectiveBannerColor(forGroupID groupID: UUID?) -> Color
     var effectiveBannerTextColor: Color? { get }
     var settingsDidChange: AnyPublisher<Void, Never> { get }
