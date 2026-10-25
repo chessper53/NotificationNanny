@@ -119,6 +119,7 @@ struct NotificationCenterTabView: View {
                 .labelsHidden().pickerStyle(.menu).controlSize(.small).fixedSize()
             }
             NCPanelPositionTile(screen: previewScreen,
+                                anyScreen: settings.customNotificationCenterDisplayID == 0,
                                 side: $settings.customNotificationCenterSide,
                                 topOffset: $settings.customNotificationCenterTopOffset)
                 .frame(maxWidth: .infinity)
@@ -362,6 +363,9 @@ struct NotificationCenterTabView: View {
 /// it at its real size. Drag it: it snaps to either side, and goes down from the top.
 private struct NCPanelPositionTile: View {
     let screen: NSScreen
+    /// No display is chosen: it opens wherever the clock is clicked, so the preview is a
+    /// plain screen rather than one particular laptop or monitor.
+    var anyScreen = false
     @Binding var side: NCPanelSide
     @Binding var topOffset: Double
     var maxWidth: CGFloat = 438
@@ -378,35 +382,51 @@ private struct NCPanelPositionTile: View {
         let scale = min(maxWidth / max(frame.width, 1), maxHeight / max(frame.height, 1))
         let size = CGSize(width: frame.width * scale, height: frame.height * scale)
         let edge = CustomNCPanelController.rightInset
-        let x = side == .right ? frame.width - edge - Self.rowSize.width : edge
+        let x: CGFloat
+        switch side {
+        case .right: x = frame.width - edge - Self.rowSize.width
+        case .center: x = (frame.width - Self.rowSize.width) / 2
+        case .left: x = edge
+        }
         let y = CustomNCPanelController.topInset + topOffset
 
-        return DeviceChrome(screen: screen, screenSize: size) {
-            ZStack(alignment: .topLeading) {
-                Rectangle().fill(LinearGradient(colors: [Color(red: 0.13, green: 0.15, blue: 0.20),
-                                                         Color(red: 0.08, green: 0.09, blue: 0.12)],
-                                                startPoint: .topLeading, endPoint: .bottomTrailing))
-                Rectangle().fill(Color.white.opacity(0.16)).frame(height: menuBar * scale)
-                VStack(spacing: Self.rowGap * scale) {
-                    ForEach(0..<Self.rows, id: \.self) { _ in
-                        BannerChip(width: Self.rowSize.width * scale, height: Self.rowSize.height * scale)
-                    }
+        let picture = ZStack(alignment: .topLeading) {
+            Rectangle().fill(LinearGradient(colors: [Color(red: 0.13, green: 0.15, blue: 0.20),
+                                                     Color(red: 0.08, green: 0.09, blue: 0.12)],
+                                            startPoint: .topLeading, endPoint: .bottomTrailing))
+            Rectangle().fill(Color.white.opacity(0.16)).frame(height: menuBar * scale)
+            VStack(spacing: Self.rowGap * scale) {
+                ForEach(0..<Self.rows, id: \.self) { _ in
+                    BannerChip(width: Self.rowSize.width * scale, height: Self.rowSize.height * scale)
                 }
-                .offset(x: x * scale, y: y * scale)
             }
-            .frame(width: size.width, height: size.height)
-            .clipped()
-            .contentShape(Rectangle())
-            .gesture(DragGesture(minimumDistance: 0, coordinateSpace: .local).onChanged { value in
-                move(to: value.location, scale: scale, screenHeight: frame.height)
-            })
+            .offset(x: x * scale, y: y * scale)
+        }
+        .frame(width: size.width, height: size.height)
+        .clipped()
+        .contentShape(Rectangle())
+        .gesture(DragGesture(minimumDistance: 0, coordinateSpace: .local).onChanged { value in
+            move(to: value.location, scale: scale, screenHeight: frame.height)
+        })
+
+        return Group {
+            if anyScreen {
+                picture
+                    .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        .strokeBorder(Color.white.opacity(0.18), lineWidth: 1))
+            } else {
+                DeviceChrome(screen: screen, screenSize: size) { picture }
+            }
         }
     }
 
-    /// The column's middle follows the pointer: the half of the screen picks the side,
-    /// the height how far down it starts, never above the system's place or off screen.
+    /// The column's middle follows the pointer: the third of the screen picks left, middle
+    /// or right, the height how far down it starts, never above the system's place or off
+    /// screen.
     private func move(to point: CGPoint, scale: CGFloat, screenHeight: CGFloat) {
-        let newSide: NCPanelSide = point.x < (screen.frame.width * scale) / 2 ? .left : .right
+        let third = screen.frame.width * scale / 3
+        let newSide: NCPanelSide = point.x < third ? .left : point.x < third * 2 ? .center : .right
         let top = point.y / scale - Self.columnHeight / 2 - CustomNCPanelController.topInset
         let limit = max(0, screenHeight - CustomNCPanelController.topInset - Self.columnHeight - 16)
         var offset = min(max(0, top), limit)

@@ -32,14 +32,22 @@ final class CustomNCPanelController {
     static let chrome: CGFloat = CustomBannerView.Metrics.chromeInset
     /// To the screen's edge, so the panel slides in from beyond it as the system's. Rows
     /// and what overhangs them grow with the panel's size; the inset from the edge doesn't.
-    static func width(_ o: NCPanelOptions) -> CGFloat { (chrome + rowWidth) * o.scale + rightInset }
+    static func width(_ o: NCPanelOptions) -> CGFloat {
+        // In the middle there is no edge to reach, only the close button's room each side.
+        o.side == .center ? (chrome * 2 + rowWidth) * o.scale : (chrome + rowWidth) * o.scale + rightInset
+    }
 
     /// Where the rows sit in a window frame of ours (AppKit coordinates): the inset from
     /// the screen's edge on the panel's side, the close button's room on the other and
     /// above.
     static func rowsRect(in frame: NSRect, options o: NCPanelOptions) -> NSRect {
         let width = rowWidth * o.scale
-        let x = o.side == .right ? frame.maxX - rightInset - width : frame.minX + rightInset
+        let x: CGFloat
+        switch o.side {
+        case .right: x = frame.maxX - rightInset - width
+        case .center: x = frame.midX - width / 2
+        case .left: x = frame.minX + rightInset
+        }
         let top = frame.maxY - chrome * o.scale
         return NSRect(x: x, y: frame.minY, width: width, height: top - frame.minY)
     }
@@ -113,7 +121,12 @@ final class CustomNCPanelController {
         let height = min(contentHeight, maxHeight)
         let width = Self.width(o)
         let top = screen.frame.maxY - Self.topInset - o.topOffset + Self.chrome * o.scale
-        let x = o.side == .right ? screen.frame.maxX - width : screen.frame.minX
+        let x: CGFloat
+        switch o.side {
+        case .right: x = screen.frame.maxX - width
+        case .center: x = screen.frame.midX - width / 2
+        case .left: x = screen.frame.minX
+        }
         let frame = NSRect(x: x, y: top - height, width: width, height: height)
         window.setFrame(frame, display: true)
     }
@@ -250,7 +263,7 @@ struct CustomNCPanelView: View {
             // The inset from the screen's edge on the panel's side, the close button's
             // room on the other.
             .padding([.top, .bottom], chrome)
-            .padding(.leading, o.side == .right ? chrome : edge)
+            .padding(.leading, o.side == .left ? edge : chrome)
             .padding(.trailing, o.side == .right ? edge : chrome)
             .frame(width: CustomNCPanelController.width(o), alignment: .topLeading)
             .background(GeometryReader { g in
@@ -321,13 +334,21 @@ private struct PanelMotion: ViewModifier {
 
     func body(content: Content) -> some View {
         let t = shown ? BannerAnimation.Transform() : animation.hidden
-        // On the left, sideways motion is mirrored: the default comes in from that edge.
-        let x = side == .right ? t.x : -t.x
-        content
-            .opacity(t.opacity)
-            .scaleEffect(t.scale, anchor: side == .right ? .topTrailing : .topLeading)
-            .rotationEffect(.degrees(side == .right ? t.rotation : -t.rotation))
-            .offset(x: x, y: t.y)
+        // Sideways motion comes from the panel's own edge: mirrored on the left, and in
+        // the middle, where there is no edge, down from the top with a fade instead.
+        var x = t.x, y = t.y, opacity = t.opacity
+        switch side {
+        case .right: break
+        case .left: x = -t.x
+        case .center:
+            if t.x != 0 { y = -abs(t.x) * 0.5; x = 0; opacity = min(opacity, shown ? 1 : 0) }
+        }
+        let anchor: UnitPoint = side == .right ? .topTrailing : side == .left ? .topLeading : .top
+        return content
+            .opacity(opacity)
+            .scaleEffect(t.scale, anchor: anchor)
+            .rotationEffect(.degrees(side == .left ? -t.rotation : t.rotation))
+            .offset(x: x, y: y)
             .animation(shown ? animation.intro : animation.outro, value: shown)
     }
 }
