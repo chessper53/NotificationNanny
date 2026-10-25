@@ -1,658 +1,212 @@
-/* ==========================================================================
-   Tokens
-   Brand pulled from the app itself: nannyAccent (amber, MenuBarContent.swift)
-   on nannyGraphite, the same base as the icon and the settings window. Deliberately flat: no gradients anywhere.
-   ========================================================================== */
+/* NotificationNanny landing page. Navy from the demo's wallpaper, amber from the app. Follows the
+   system appearance, the same way the app does. */
 
 :root {
-  --accent: #e8833a;
-  --accent-strong: #f09b5e;
-
-  --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-  --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
-
-  /* One content column for every section below the hero: the showcase's
-     200 px tab list, a 24 px gap, and a screenshot at its 2x size (509 px). */
-  --column: 733px;
-
-  --radius-lg: 18px;
-  --radius-md: 14px;
-  --radius-sm: 8px;
-
-  --space-1: 4px;
-  --space-2: 8px;
-  --space-3: 16px;
-  --space-4: 24px;
-  --space-5: 40px;
-  --space-6: 64px;
-  --space-7: 96px;
-
-  color-scheme: dark light;
-
-  /* Dark (default) */
-  --bg: #1a1c21;
-  --bg-raised: #212329;
-  --surface: rgba(255, 255, 255, 0.045);
-  --surface-strong: rgba(255, 255, 255, 0.07);
-  --border: rgba(255, 255, 255, 0.09);
-  --border-strong: rgba(255, 255, 255, 0.16);
-  --text-primary: rgba(255, 255, 255, 0.94);
-  --text-secondary: rgba(255, 255, 255, 0.62);
-  --text-muted: rgba(255, 255, 255, 0.55);
-
-  /* Selected sidebar row, as the app draws it (nannyWash(0.25), nannySelectedIcon):
-     an amber wash with a white icon on dark, a neutral wash with an amber icon on light. */
-  --tab-selected-bg: rgba(232, 131, 58, 0.25);
-  --tab-selected-icon: #ffffff;
-
-  /* nannyProminent: large accent fills are amber on dark, graphite on light. */
-  --prominent: #e8833a;
-  --on-prominent: #1a1c21;
+  --bg: #f6f6f9;
+  --surface: #ececf2;
+  --text: #17172b;
+  --muted: #5c5e72;
+  --line: #dcdce6;
+  --accent: #a85514;
+  --on-accent: #ffffff;
+  --button: #17172b;
+  color-scheme: light dark;
 }
 
-@media (prefers-color-scheme: light) {
+@media (prefers-color-scheme: dark) {
   :root {
-    --accent: #a85514;
-    --accent-strong: #8a4310;
-    --bg: #f7f6f4;
-    --bg-raised: #ffffff;
-    --surface: rgba(18, 18, 20, 0.035);
-    --surface-strong: rgba(18, 18, 20, 0.055);
-    --border: rgba(18, 18, 20, 0.09);
-    --border-strong: rgba(18, 18, 20, 0.16);
-    --text-primary: rgba(14, 14, 16, 0.92);
-    --text-secondary: rgba(14, 14, 16, 0.6);
-    --text-muted: rgba(14, 14, 16, 0.56);
-    --tab-selected-bg: rgba(0, 0, 0, 0.08);
-    --tab-selected-icon: var(--accent);
-    --prominent: #2a2d34;
-    --on-prominent: #ffffff;
+    --bg: #15152a;
+    --surface: #1e1f37;
+    --text: #ececf3;
+    --muted: #9b9cb4;
+    --line: #2c2d4a;
+    --accent: #e8833a;
+    --on-accent: #15152a;
+    --button: #e8833a;
   }
 }
 
 * { box-sizing: border-box; }
 
-html {
-  scroll-behavior: smooth;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  html { scroll-behavior: auto; }
-  * { animation-duration: 0.001ms !important; animation-iteration-count: 1 !important; transition-duration: 0.001ms !important; }
-}
-
-html, body {
-  overflow-x: hidden;
-}
+html { -webkit-text-size-adjust: 100%; }
 
 body {
   margin: 0;
   background: var(--bg);
-  color: var(--text-primary);
-  font-family: var(--font);
-  font-size: 16px;
-  line-height: 1.5;
+  color: var(--text);
+  font: 16px/1.6 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", Arial, sans-serif;
   -webkit-font-smoothing: antialiased;
 }
 
-.wrap {
-  max-width: 1040px;
-  margin: 0 auto;
-  padding: 0 var(--space-4);
-}
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; text-underline-offset: 3px; }
 
-.column { max-width: calc(var(--column) + 2 * var(--space-4)); }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
 
-a { color: inherit; text-decoration: none; }
+h1, h2, h3 { margin: 0; line-height: 1.2; letter-spacing: -0.01em; }
+p { margin: 0; }
 
-/* One focus ring for every link, button, and tab, drawn only for keyboard focus. */
-:focus-visible {
-  outline: 2px solid var(--accent-strong);
-  outline-offset: 2px;
-}
+.wrap { width: min(960px, 100% - 48px); margin-inline: auto; }
 
-/* ==========================================================================
-   Nav
-   ========================================================================== */
+/* Header */
 
-.nav {
-  position: sticky;
-  top: 0;
-  z-index: 20;
-  background: var(--bg);
-  border-bottom: 1px solid var(--border);
-}
-
-.nav-row {
+.top {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  height: 56px;
+  gap: 16px;
+  padding-block: 20px;
 }
 
 .brand {
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  gap: var(--space-2);
+  gap: 10px;
+  color: var(--text);
   font-weight: 600;
-  font-size: 14.5px;
-  letter-spacing: -0.01em;
 }
+.brand:hover { text-decoration: none; }
+.brand img { border-radius: 5px; }
 
-.brand-icon {
-  border-radius: 6px;
-  display: block;
-}
+.top nav { display: flex; gap: 24px; font-size: 15px; }
+.top nav a { color: var(--muted); }
+.top nav a:hover { color: var(--text); text-decoration: none; }
 
-.nav-links {
-  display: flex;
-  align-items: center;
-  gap: var(--space-4);
-  font-size: 13.5px;
-  color: var(--text-secondary);
-}
+/* Hero */
 
-.nav-links a { transition: color 0.15s ease; }
-.nav-links a:hover { color: var(--text-primary); }
-.nav-links a { display: inline-flex; align-items: center; gap: 6px; }
+.hero { padding-block: 72px 40px; max-width: 720px; margin-inline: auto; text-align: center; }
 
-/* ==========================================================================
-   Hero
-   ========================================================================== */
+.hero h1 { font-size: clamp(32px, 5vw, 48px); font-weight: 700; }
 
-.hero {
-  position: relative;
-  overflow: hidden;
-  padding: var(--space-7) 0 var(--space-6);
-}
+.lede { margin-top: 18px; font-size: 19px; color: var(--muted); }
 
-.hero-inner {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  text-align: center;
-}
-
-.hero-icon {
-  border-radius: 22px;
-  box-shadow: 0 10px 24px -12px rgba(0, 0, 0, 0.55);
-  margin-bottom: var(--space-4);
-}
-
-.hero h1 {
-  font-size: clamp(28px, 4.4vw, 44px);
-  line-height: 1.15;
-  letter-spacing: -0.02em;
-  font-weight: 650;
-  max-width: 760px;
-  margin: 0 0 var(--space-3);
-}
-
-.hero-sub {
-  max-width: 560px;
-  color: var(--text-secondary);
-  font-size: 16.5px;
-  line-height: 1.6;
-  margin: 0 0 var(--space-5);
-}
-
-.hero-actions {
+.actions {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   justify-content: center;
-  gap: var(--space-3);
-  margin-bottom: var(--space-4);
-  max-width: 100%;
+  gap: 20px;
+  margin-top: 32px;
 }
 
-.hero-meta {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: var(--space-2);
-  color: var(--text-muted);
-  font-size: 13px;
-  margin: 0;
-}
-.hero-meta .dot { opacity: 0.6; }
-
-/* ==========================================================================
-   Buttons / copy blocks
-   ========================================================================== */
-
-.btn {
-  display: inline-flex;
-  align-items: center;
-  height: 44px;
-  padding: 0 20px;
-  border-radius: 12px;
-  font-size: 14.5px;
-  font-weight: 550;
-  border: 1px solid var(--border-strong);
-  background: var(--surface);
-  transition: background 0.15s ease, border-color 0.15s ease, transform 0.1s ease;
-}
-.btn:hover { background: var(--surface-strong); }
-.btn:active { transform: translateY(1px); }
-
-.btn-secondary { color: var(--text-primary); }
-
-.install-copy {
-  display: flex;
-  align-items: center;
-  border-radius: 12px;
-  background: var(--bg-raised);
-  border: 1px solid var(--border-strong);
-  padding: 10px var(--space-2) 10px var(--space-3);
-  gap: var(--space-3);
-  max-width: 100%;
-  min-width: 0;
-}
-
-.install-copy-lines {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  min-width: 0;
-  text-align: left;
-}
-
-.install-copy code {
-  font-family: var(--font-mono);
-  font-size: 13px;
-  color: var(--text-primary);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  min-width: 0;
-}
-
-.copy-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  height: 32px;
-  padding: 0 12px;
+.button {
+  display: inline-block;
+  padding: 11px 20px;
   border-radius: 8px;
-  border: 1px solid var(--border-strong);
-  background: var(--surface);
-  color: var(--text-secondary);
-  font-family: var(--font);
-  font-size: 12.5px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
-}
-.copy-btn:hover { background: var(--surface-strong); color: var(--text-primary); }
-.copy-btn.copied { color: var(--accent-strong); border-color: color-mix(in srgb, var(--accent) 45%, var(--border-strong)); }
-.copy-btn svg { flex-shrink: 0; }
-/* The hero's copy button is the page's one primary action, filled like the
-   app's prominent button (Send Test Notification). */
-.copy-btn-prominent {
-  border-color: transparent;
-  background: var(--prominent);
-  color: var(--on-prominent);
+  background: var(--button);
+  color: var(--on-accent);
   font-weight: 600;
 }
-.copy-btn-prominent:hover { background: color-mix(in srgb, var(--prominent) 88%, var(--text-primary)); color: var(--on-prominent); }
-.copy-btn-prominent.copied { border-color: transparent; color: var(--on-prominent); }
-.copy-btn .copied-icon,
-.copy-btn.copied .copy-icon { display: none; }
-.copy-btn.copied .copied-icon { display: block; }
+.button:hover { text-decoration: none; opacity: 0.9; }
 
-/* ==========================================================================
-   Stats
-   ========================================================================== */
+.link { font-weight: 500; }
 
-.stats { padding: 0 0 var(--space-6); }
+.meta { margin-top: 20px; font-size: 14px; color: var(--muted); }
 
-.stats-footer {
+.stats {
   display: flex;
-  align-items: center;
   justify-content: center;
-  flex-wrap: wrap;
-  gap: var(--space-3);
-  padding-top: var(--space-3);
+  margin: 36px 0 0;
+}
+.stats[hidden] { display: none; }
+.stats div { padding-inline: 32px; }
+.stats div + div { border-left: 1px solid var(--line); }
+.stats dd { margin: 0; font-size: 26px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.stats dt { font-size: 13px; color: var(--muted); }
+.stats div { display: flex; flex-direction: column-reverse; }
+
+/* Demo */
+
+.demo video {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: var(--surface);
 }
 
-.footer-link {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--text-secondary);
-  transition: color 0.15s ease;
-}
-.footer-link:hover { color: var(--text-primary); }
+/* Sections */
 
-.footer-link-dot { color: var(--text-muted); }
+.section { padding-block: 72px 0; }
+.section h2 { font-size: 26px; margin-bottom: 28px; }
+.section h3 { font-size: 16px; font-weight: 600; }
+.section > p, .section ol { color: var(--muted); }
 
-.stats-grid {
+.features {
+  list-style: none;
+  margin: 0;
+  padding: 0;
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: 1px;
-  background: var(--border);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  overflow: hidden;
+  gap: 32px 40px;
 }
+.features p { margin-top: 6px; color: var(--muted); font-size: 15px; }
 
-.stat-tile {
-  background: var(--bg-raised);
-  padding: var(--space-4) var(--space-3);
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  align-items: center;
-  text-align: center;
-}
+#install h3 { margin: 28px 0 12px; }
+#install h2 + h3 { margin-top: 0; }
+#install > p { margin-top: 12px; }
+#install ol { margin: 0; padding-left: 20px; }
+#install li + li { margin-top: 4px; }
+#install .note { margin-top: 20px; font-size: 14px; }
 
-.stat-value {
-  font-size: clamp(22px, 3vw, 30px);
-  font-weight: 650;
-  letter-spacing: -0.02em;
-  font-variant-numeric: proportional-nums;
-  transition: opacity 0.2s ease;
-}
-.stat-value.is-loading { opacity: 0.35; }
-
-.stat-label {
-  font-size: 12.5px;
-  color: var(--text-secondary);
-}
-
-/* ==========================================================================
-   Section shell
-   ========================================================================== */
-
-.section { padding: var(--space-6) 0; }
-
-.section-title {
-  font-size: clamp(22px, 3vw, 28px);
-  letter-spacing: -0.015em;
-  font-weight: 640;
-  margin: 0 0 6px;
-}
-
-.section-sub {
-  color: var(--text-secondary);
-  font-size: 15px;
-  margin: 0 0 var(--space-5);
-  max-width: 520px;
-}
-
-/* ==========================================================================
-   Demo
-   ========================================================================== */
-
-/* Demo clip. Shares the window-chrome framing with .shot so the player reads as
-   the same object as the screenshots below it. */
-.demo-frame {
-  background: var(--bg-raised);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  overflow: hidden;
-}
-
-.demo-frame video {
-  display: block;
-  width: 100%;
-  height: auto;
+.code {
+  position: relative;
+  border: 1px solid var(--line);
+  border-radius: 8px;
   background: var(--surface);
 }
-
-.demo-caption {
-  padding: 12px 16px 16px;
-  font-size: 13px;
-  color: var(--text-secondary);
-  text-align: center;
-}
-
-/* ==========================================================================
-   Features showcase
-   A tab list styled like the app's sidebar next to the selected tab's
-   screenshot. Without JS (.is-enhanced never added) the tab list stays
-   hidden and every panel shows, stacked.
-   ========================================================================== */
-
-.showcase {
-  display: grid;
-  grid-template-columns: minmax(0, 509px);
-  gap: var(--space-4);
-}
-
-.showcase.is-enhanced { grid-template-columns: 200px minmax(0, 509px); }
-
-/* Sticks beside the tall screenshot, under the 56 px nav. */
-.showcase-tabs {
-  position: sticky;
-  top: 80px;
-  align-self: start;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding: var(--space-2);
-  background: var(--bg-raised);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-}
-.showcase-tabs[hidden] { display: none; }
-
-.showcase-tab {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  width: 100%;
-  padding: 8px 10px;
-  border: 0;
-  border-radius: var(--radius-sm);
-  background: transparent;
-  color: var(--text-secondary);
-  font-family: var(--font);
-  font-size: 14px;
-  font-weight: 500;
-  text-align: left;
-  cursor: pointer;
-  transition: background 0.15s ease, color 0.15s ease;
-}
-.showcase-tab svg { width: 17px; height: 17px; flex-shrink: 0; color: var(--text-muted); }
-.showcase-tab:hover { background: var(--surface-strong); color: var(--text-primary); }
-.showcase-tab[aria-selected="true"] { background: var(--tab-selected-bg); color: var(--text-primary); }
-.showcase-tab[aria-selected="true"] svg { color: var(--tab-selected-icon); }
-
-/* Help sits apart at the bottom of the app's sidebar; a hairline stands in for the spacer. */
-.showcase-tab-end {
-  margin-top: var(--space-2);
-  position: relative;
-}
-.showcase-tab-end::before {
-  content: "";
-  position: absolute;
-  top: calc(-1 * var(--space-1) - 1px);
-  left: 10px;
-  right: 10px;
-  border-top: 1px solid var(--border);
-}
-
-.showcase-panels {
-  display: grid;
-  gap: var(--space-6);
-  min-width: 0;
-}
-
-/* Panels share one grid cell, so the frame keeps the height of the tallest one
-   and switching tabs never shifts the page. Hidden panels stay laid out
-   (visibility, not display) so their lazy screenshots load before first click. */
-.showcase.is-enhanced .showcase-panel { grid-area: 1 / 1; }
-.showcase.is-enhanced .showcase-panel[hidden] { display: block; visibility: hidden; }
-.showcase.is-enhanced .showcase-panel-title { display: none; }
-
-.showcase-panel { min-width: 0; border-radius: var(--radius-md); }
-
-.showcase-panel-title {
-  font-size: 15px;
-  font-weight: 620;
-  letter-spacing: -0.01em;
-  margin: 0 0 var(--space-2);
-}
-
-.showcase-panel p {
-  font-size: 14.5px;
-  line-height: 1.55;
-  color: var(--text-secondary);
-  margin: var(--space-3) 0 0;
-}
-
-.shot {
+.code pre {
   margin: 0;
-  background: var(--bg-raised);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  overflow: hidden;
-}
-
-.window-chrome {
-  display: flex;
-  gap: 6px;
-  padding: 10px 12px;
-  border-bottom: 1px solid var(--border);
-}
-.window-chrome span {
-  width: 9px; height: 9px; border-radius: 50%;
-  background: var(--border-strong);
-}
-
-.shot picture { display: block; }
-
-.shot img {
-  display: block;
-  width: 100%;
-  height: auto;
-  background: var(--surface);
-}
-
-/* ==========================================================================
-   Install / terminal
-   ========================================================================== */
-
-.terminal {
-  position: relative;
-  background: var(--bg-raised);
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-md);
-  overflow: hidden;
-  margin-bottom: var(--space-3);
-}
-
-.terminal-bar {
-  display: flex;
-  gap: 6px;
-  padding: 11px 14px;
-  border-bottom: 1px solid var(--border);
-}
-.terminal-bar span { width: 9px; height: 9px; border-radius: 50%; background: var(--border-strong); }
-
-.terminal-body {
-  padding: var(--space-3) var(--space-4) var(--space-4);
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.terminal-line {
-  display: flex;
-  gap: 10px;
-  font-family: var(--font-mono);
-  font-size: 13px;
+  padding: 16px 88px 16px 18px;
   overflow-x: auto;
+  font: 14px/1.7 ui-monospace, "SF Mono", Menlo, monospace;
 }
 
-.prompt { color: var(--text-muted); flex-shrink: 0; }
-.terminal-line code { color: var(--text-primary); white-space: nowrap; }
-
-/* Sits inside the title bar, clear of the commands. */
-.terminal-copy {
+.copy {
   position: absolute;
-  top: 4px;
-  right: 8px;
-  height: 24px;
-  padding: 0 10px;
+  top: 10px;
+  right: 10px;
+  padding: 5px 12px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
 }
+.copy:hover { border-color: var(--muted); }
+.copy.done { color: var(--accent); border-color: var(--accent); }
 
-.install-alt {
-  color: var(--text-secondary);
-  font-size: 13.5px;
-  line-height: 1.6;
-  max-width: 520px;
-  margin: 0 0 var(--space-2);
-}
-.install-alt a { color: var(--accent-strong); font-weight: 500; }
-.section-sub code,
-.install-alt code {
-  font-family: var(--font-mono);
-  font-size: 12.5px;
-  background: var(--surface);
-  padding: 1px 5px;
-  border-radius: 4px;
-}
-.install-permission { margin-top: var(--space-3); }
+.two { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; }
+.two h2 { margin-bottom: 12px; }
+.two p { color: var(--muted); }
 
-/* ==========================================================================
-   Footer
-   ========================================================================== */
+/* Footer */
 
-.footer {
-  border-top: 1px solid var(--border);
-  padding: var(--space-4) 0;
-  margin-top: var(--space-5);
-}
-
-.footer-row {
+.foot {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
   flex-wrap: wrap;
-  gap: var(--space-3);
+  justify-content: space-between;
+  gap: 12px 24px;
+  margin-top: 96px;
+  padding-block: 28px 40px;
+  border-top: 1px solid var(--line);
+  font-size: 14px;
+  color: var(--muted);
 }
-
-.footer-brand {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 13px;
-  font-weight: 550;
-  color: var(--text-secondary);
-}
-.footer-brand img { border-radius: 5px; display: block; }
-
-.footer-links {
-  display: flex;
-  gap: var(--space-4);
-  font-size: 13px;
-  color: var(--text-secondary);
-}
-.footer-links a:hover { color: var(--text-primary); }
-
-/* ==========================================================================
-   Responsive
-   ========================================================================== */
+.foot span:last-child { display: flex; gap: 24px; }
 
 @media (max-width: 760px) {
-  .nav-links { gap: var(--space-3); }
-  /* GitHub is the one link kept on phones. */
-  .nav-links a:not(.nav-gh) { display: none; }
+  .features { grid-template-columns: 1fr 1fr; }
+  .two { grid-template-columns: 1fr; }
+}
 
-  /* The meta line wraps here; dots would dangle at line ends, so space the items instead. */
-  .hero-meta { column-gap: var(--space-3); }
-  .hero-meta .dot { display: none; }
-
-  /* The tab list turns into a horizontal scroller above the screenshot. */
-  .showcase.is-enhanced { grid-template-columns: minmax(0, 1fr); gap: var(--space-3); }
-  .showcase-tabs { position: static; flex-direction: row; overflow-x: auto; scrollbar-width: none; }
-  .showcase-tab { width: auto; white-space: nowrap; }
-  .showcase-tab-end { margin-top: 0; }
-  .showcase-tab-end::before { display: none; }
+@media (max-width: 520px) {
+  .stats div { padding-inline: 16px; }
+  .stats dd { font-size: 21px; }
+  .top nav a:not(:last-child) { display: none; }
+  .hero { padding-top: 40px; }
+  .features { grid-template-columns: 1fr; }
 }
