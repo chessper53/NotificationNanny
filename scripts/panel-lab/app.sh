@@ -18,6 +18,11 @@
 #   button:Label          click a button in our panel ("Show less", "Clear All")
 #   widget                click the middle of the first widget picture in our panel
 #   apps:Name             whether a process of that name is running
+#   postact:App:Title     a Lab notification with buttons: Reply, Archive, Snooze
+#   hover:Text            rest the pointer on the text in our panel
+#   type:Text             type into Notification Center's open reply field, real keys,
+#                         only if that field has the keyboard focus
+#   responses:N           the last N responses the Lab apps received
 #   wait:seconds
 #
 # PANEL_FILTER= (empty) lists every app, the user's own too; use count, not state or shot.
@@ -58,6 +63,9 @@ NN_PID=""
 restore() {
     set +e
     if [[ -n "$NN_PID" ]]; then kill "$NN_PID" 2>/dev/null; wait "$NN_PID" 2>/dev/null; fi
+    # The app parks Notification Center's window for custom banners; stopped like this it
+    # can't put it back, and banners would arrive off screen until something did.
+    "$OUT/lab" unpark
     "$OUT/lab" host >/dev/null && "$NOTIFY/watch" --close-all >/dev/null 2>&1
     for a in Alpha Bravo Charlie; do "$NOTIFY/Lab $a.app/Contents/MacOS/notifier" --clear >/dev/null 2>&1; done
     python3 - "$DOMAIN" "$BACKUP" "${KEYS[@]}" <<'PY'
@@ -106,6 +114,10 @@ for step in "$@"; do
     echo "-- $step"
     case "$kind" in
         post)   app=${arg%%:*}; "$NOTIFY/Lab $app.app/Contents/MacOS/notifier" "${arg#*:}" "Panel lab" ;;
+        postact) app=${arg%%:*}; "$NOTIFY/Lab $app.app/Contents/MacOS/notifier" "${arg#*:}" "Panel lab" --actions ;;
+        hover)  "$OUT/lab" ui-hover "$NN_PID" "$arg" ;;
+        type)   "$OUT/lab" type "$arg" ;;
+        responses) tail -n "${arg:-3}" "$NOTIFY/responses.log" 2>/dev/null | sed 's/^/   /' ;;
         open|clock) "$OUT/lab" clock ;;
         clock2) "$NOTIFY/watch" --click-clock 2 ;;
         shut)   "$OUT/lab" shut ;;

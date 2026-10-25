@@ -93,6 +93,9 @@ final class NCPanelTakeover: ObservableObject {
     private let widgetCapture = WidgetCapture()
     private var widgetTimer: Timer?
     private lazy var cover = NCPanelCover()
+    private let actions = NotificationActions()
+    /// Mirrors a reply while one is open: the typing goes to Notification Center's field.
+    private var replyTimer: Timer?
 
     /// NN_LAB_PANEL_FILTER=prefix (scripts/panel-lab) lists only apps whose name starts with
     /// it, so a lab run's screenshots never show the user's own notifications.
@@ -220,6 +223,8 @@ final class NCPanelTakeover: ObservableObject {
         router.stop()
         panel.hide()
         stopWidgets()
+        replyTimer?.invalidate()
+        replyTimer = nil
         watchdog?.invalidate()
         watchdog = nil
         pendingRefresh?.cancel()
@@ -383,8 +388,12 @@ final class NCPanelTakeover: ObservableObject {
         let description = el.stringAttribute("AXAttributedDescription") ?? ""
         let appName = AppNameResolver.appName(fromDescription: description) ?? "Notification"
         let lines = el.identifiedTextValues()
+        let field = NotificationActions.replyField(in: el)
         return NCPanelRow(id: id, appName: appName, title: lines["title"] ?? "", subtitle: lines["subtitle"] ?? "",
-                          body: lines["body"] ?? "", isStack: subrole.hasSuffix("Stack"))
+                          body: lines["body"] ?? "", isStack: subrole.hasSuffix("Stack"),
+                          actions: NotificationActions.appActions(of: el),
+                          reply: field.map { $0.stringAttribute(kAXValueAttribute as String) ?? "" },
+                          replyPlaceholder: field?.stringAttribute(kAXPlaceholderValueAttribute as String) ?? "")
     }
 
     // MARK: - Widgets
@@ -583,6 +592,41 @@ final class NCPanelTakeover: ObservableObject {
             return AXUIElementPerformAction(el, kAXPressAction as CFString) == .success
         }
         return false
+    }
+
+    /// One of the app's buttons on the row. A reply opens Notification Center's own field
+    /// and gives it the focus: what you type goes there, and ours shows it.
+    func perform(_ action: String, on row: NCPanelRow) {
+        guard let el = rowElements[row.id] else { return }
+        actions.perform(action, id: row.id, on: el) { [weak self] opensReply in
+            guard let self else { return }
+            self.refresh()
+            if opensReply { self.mirrorReplies() }
+        }
+        logger.log("Action \(action) on \(row.appName)", tag: "Panel")
+    }
+
+    func sendReply(_ row: NCPanelRow) {
+        guard let el = rowElements[row.id] else { return }
+        actions.send(id: row.id, on: el)
+        scheduleRefresh()
+    }
+
+    private func mirrorReplies() {
+        guard replyTimer == nil else { return }
+        let timer = Timer(timeInterval: 0.1, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                self.refresh()
+                let replying = self.snapshot.sections.contains { $0.groups.contains { $0.rows.contains { $0.reply != nil } } }
+                if !replying {
+                    self.replyTimer?.invalidate()
+                    self.replyTimer = nil
+                }
+            }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        replyTimer = timer
     }
 
     /// The row's ✕: Close for one notification, Clear All for a collapsed stack.

@@ -13,6 +13,12 @@ struct NCPanelRow: Equatable, Identifiable {
     /// A collapsed stack: one row standing for several notifications from one app,
     /// showing the newest. Pressing it expands the stack in place.
     let isStack: Bool
+    /// The app's own buttons (Reply, Archive…); see NotificationActions.
+    var actions: [String] = []
+    /// What is typed in its open reply field, nil while no reply is open.
+    var reply: String? = nil
+    /// The reply field's placeholder, as the app set it.
+    var replyPlaceholder: String = ""
 }
 
 /// A child of the panel's `AXNotificationListItems` list, reduced to what decides the
