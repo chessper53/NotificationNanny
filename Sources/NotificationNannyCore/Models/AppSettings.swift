@@ -398,7 +398,8 @@ package final class AppSettings: ObservableObject {
         self.pauseWhileStreaming    = (defaults.object(forKey: Key.pauseWhileStreaming) as? Bool) ?? false
         self.avoidNCPanel           = (defaults.object(forKey: Key.avoidNCPanel) as? Bool) ?? true
         self.customNotificationCenter = (defaults.object(forKey: Key.customNotificationCenter) as? Bool) ?? false
-        self.customNotificationCenterTimes = (defaults.object(forKey: Key.customNotificationCenterTimes) as? Bool) ?? true
+        // macOS shows no times, so neither does ours unless asked to.
+        self.customNotificationCenterTimes = (defaults.object(forKey: Key.customNotificationCenterTimes) as? Bool) ?? false
         self.customNotificationCenterWidgets = (defaults.object(forKey: Key.customNotificationCenterWidgets) as? Bool) ?? false
         self.customNotificationCenterAppFilter = (defaults.object(forKey: Key.customNotificationCenterAppFilter) as? Bool) ?? false
         self.customNotificationCenterAnimation = defaults.string(forKey: Key.customNotificationCenterAnimation)
@@ -706,7 +707,7 @@ package final class AppSettings: ObservableObject {
         pauseWhileStreaming  = imported.pauseWhileStreaming
         avoidNCPanel        = imported.avoidNCPanel ?? true
         customNotificationCenter = imported.customNotificationCenter ?? false
-        customNotificationCenterTimes = imported.customNotificationCenterTimes ?? true
+        customNotificationCenterTimes = imported.customNotificationCenterTimes ?? false
         customNotificationCenterWidgets = imported.customNotificationCenterWidgets ?? false
         customNotificationCenterAppFilter = imported.customNotificationCenterAppFilter ?? false
         customNotificationCenterAnimation = imported.customNotificationCenterAnimation ?? .default
