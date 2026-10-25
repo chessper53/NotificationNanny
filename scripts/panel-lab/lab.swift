@@ -898,7 +898,9 @@ case "backdrop":
     // to put it behind the real panel.
     let level = Int(args.dropFirst(3).first ?? "") ?? (NSWindow.Level.statusBar.rawValue - 1)
     guard parts.count == 4, let primary = NSScreen.screens.first else { print("usage: lab backdrop x,y,w,h seconds"); exit(64) }
-    let pad = 40.0
+    // Wide: glass blurs more than what is right under it, and a narrow backdrop let what
+    // was on the screen around it shift the measurements from run to run.
+    let pad = 150.0
     let rect = NSRect(x: parts[0] - pad, y: primary.frame.maxY - parts[1] - parts[3] - pad,
                       width: parts[2] + pad * 2, height: parts[3] + pad * 2)
     // A non-activating panel: a plain window showing up closes Notification Center's panel.

@@ -334,6 +334,8 @@ struct BannerCard: View {
     var redactContent = false
     /// Under the pointer: shows the more menu and the chevron, as the system's does.
     var hovered = false
+    /// A row of the Notification Center panel rather than a banner; see GlassEdge.
+    var edge: GlassEdge = .banner
     var onOpen: () -> Void = {}
     var onAction: (String) -> Void = { _ in }
     var onDetails: () -> Void = {}
@@ -438,7 +440,9 @@ struct BannerCard: View {
             if content.expanded { expandedButtons }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .background { BannerGlass(shape: shape, cornerRadius: Metrics.cornerRadius * scale, scale: scale, tint: tint) }
+        .background {
+            BannerGlass(shape: shape, cornerRadius: Metrics.cornerRadius * scale, scale: scale, tint: tint, edge: edge)
+        }
         .overlay(alignment: .topLeading) {
             if !content.actions.isEmpty { chrome }
         }
@@ -583,12 +587,18 @@ struct BannerCard: View {
 /// The system banner's glass, as measured against a real one in both appearances (see
 /// BannerLook), for any shape: the banner itself, and the glass buttons and stack edges
 /// of the custom Notification Center, which the system draws the same way.
+/// How the glass catches the light along its edge. A banner's shines all the way round; a
+/// row of the Notification Center panel is lit from above and below, with a dark line
+/// along its sides instead (both measured, scripts/banner-lab and panel-lab compare.sh).
+enum GlassEdge { case banner, panelRow }
+
 struct BannerGlass<S: InsettableShape>: View {
     let shape: S
     /// The glass rounds its own corners; for a pill or a circle, half its height.
     let cornerRadius: CGFloat
     var scale: CGFloat = 1
     var tint: Color = .clear
+    var edge: GlassEdge = .banner
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
@@ -612,7 +622,9 @@ struct BannerGlass<S: InsettableShape>: View {
         }
         .clipShape(shape)
         .overlay {
-            if BannerBackground.isGlass {
+            if BannerBackground.isGlass, edge == .panelRow {
+                panelRowEdge(isLight: isLight)
+            } else if BannerBackground.isGlass {
                 // The system banner's glass catches the light along its edge, one point
                 // inside it, in both appearances; ours doesn't by itself.
                 shape.strokeBorder(Color.white.opacity(BannerLook.rim), lineWidth: scale)
@@ -626,6 +638,54 @@ struct BannerGlass<S: InsettableShape>: View {
             }
         }
     }
+}
+
+extension BannerGlass {
+    /// A panel row's edge: bright just inside its top and bottom, a dark line just outside
+    /// its sides and round its corners, and in Light Mode a fainter one above and below.
+    /// Measured against the real panel over a gray backdrop: the side line comes out at
+    /// 46 where the backdrop is 101, the highlights 17 above the inside at the top and 30
+    /// at the bottom.
+    @ViewBuilder func panelRowEdge(isLight: Bool) -> some View {
+        let sides = LinearGradient(stops: [.init(color: .black, location: 0), .init(color: .black, location: 0.07),
+                                           .init(color: .clear, location: 0.13), .init(color: .clear, location: 0.87),
+                                           .init(color: .black, location: 0.93), .init(color: .black, location: 1)],
+                                   startPoint: .leading, endPoint: .trailing)
+        let middle = LinearGradient(stops: [.init(color: .clear, location: 0), .init(color: .clear, location: 0.07),
+                                            .init(color: .black, location: 0.13), .init(color: .black, location: 0.87),
+                                            .init(color: .clear, location: 0.93), .init(color: .clear, location: 1)],
+                                    startPoint: .leading, endPoint: .trailing)
+        let topAndBottom = LinearGradient(stops: [.init(color: .white.opacity(PanelRowLook.topRim), location: 0),
+                                                  .init(color: .white.opacity(PanelRowLook.topRim), location: 0.4),
+                                                  .init(color: .white.opacity(PanelRowLook.bottomRim), location: 0.6),
+                                                  .init(color: .white.opacity(PanelRowLook.bottomRim), location: 1)],
+                                          startPoint: .top, endPoint: .bottom)
+        ZStack {
+            // The masks reach past the card: the dark lines run just outside it.
+            shape.inset(by: -0.5 * scale).stroke(Color.black.opacity(PanelRowLook.sideLine), lineWidth: scale)
+                .mask(sides.padding(-2 * scale))
+            shape.strokeBorder(topAndBottom, lineWidth: scale)
+                .mask(middle)
+            if isLight {
+                shape.inset(by: -0.5 * scale).stroke(Color.black.opacity(PanelRowLook.lightOuterLine), lineWidth: scale)
+                    .mask(middle.padding(-2 * scale))
+            }
+        }
+    }
+}
+
+/// The panel row's edge values; a lab build (PROD) takes candidates as NN_LOOK_<NAME>.
+enum PanelRowLook {
+    private static func value(_ name: String, _ measured: Double) -> Double {
+        #if PROD
+        if let v = ProcessInfo.processInfo.environment["NN_LOOK_" + name].flatMap(Double.init) { return v }
+        #endif
+        return measured
+    }
+    static var sideLine: Double { value("SIDE_LINE", 0.55) }
+    static var topRim: Double { value("TOP_RIM", 0.12) }
+    static var bottomRim: Double { value("BOTTOM_RIM", 0.25) }
+    static var lightOuterLine: Double { value("LIGHT_OUTER_LINE", 0.18) }
 }
 
 /// Where a menu of the app's buttons opens: under the Options pill, as the system's does.

@@ -403,7 +403,7 @@ private struct RowView: View {
     var body: some View {
         let options = takeover.options
         BannerCard(content: content, scale: 1, tint: takeover.tint(row.appName), textColor: options.textColor,
-                   redactContent: options.redact, hovered: hovering,
+                   redactContent: options.redact, hovered: hovering, edge: .panelRow,
                    onOpen: { takeover.activate(row) },
                    onAction: { takeover.perform($0, on: row) },
                    onDetails: { takeover.toggleDetails(row) })
