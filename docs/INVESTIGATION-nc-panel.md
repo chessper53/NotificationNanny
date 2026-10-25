@@ -91,41 +91,59 @@ it is the action that appears when the reply opens. Built, not yet checked live.
 
 ## What was built
 
-Behind the experimental setting "Custom Notification Center" (General, off by default):
+Behind the experimental setting in the Notification Center tab of Settings (off by
+default); how it fits together is in [ARCHITECTURE.md](ARCHITECTURE.md), section 9.
 
 - `NCPanelTakeover` sees the panel open from the AX events, parks the window at once and
   keeps it parked, reads the list in drawn order into `NCPanelSnapshot`, and passes our
-  actions back by row identifier: open, close, expand, Show Less, Clear, Clear All. After
-  opening a notification it closes the real panel through the clock, as Notification
-  Center does itself.
+  actions back by row identifier: open, close, expand, Show Less, Clear, Clear All, and the
+  app's own buttons with inline replies. After opening a notification it closes the real
+  panel through the clock, as Notification Center does itself.
 - `PanelClickRouter` is the event tap. It runs only while our panel is on screen and only
   takes mouse events that start inside it. Clicks anywhere else go through, so a click
   outside still closes Notification Center's panel, and ours with it.
-- `CustomNCPanel` draws the list: flat graphite and amber, following Light Mode, as tall
-  as its content (the router takes every click inside the window, so it must not have an
-  empty margin). It adds a filter by app, and a tint edge for apps whose exception group
-  has a colour of their own.
+- `CustomNCPanel` draws the list as the system does: each row is the custom banner's own
+  card (`BannerCard`), with the panel row's edge, at the real row's height; stacks show the
+  edges of the cards behind them; expanded stacks and the list get their headings with
+  Show Less and the round clear buttons, in the banners' glass. Behind the list it darkens
+  the column as Notification Center does. Rows take the banners' tint, text colour and
+  blur; the panel has its own size, side, screen and animation.
 - Times on each row, behind their own setting: Notification Center draws them but doesn't
   expose them, so `NotificationTimes` notes when each banner first shows and keeps it by
-  identifier. Rows that were already listed when the app first saw them (they came in
-  while it wasn't running, or alerts already up at launch) get no time rather than a
-  wrong one.
+  identifier. Rows that were already listed when the app first saw them get no time rather
+  than a wrong one.
+- Widgets, behind their own setting with Screen Recording: see Widgets above.
 - While it is open, custom banner overlays are put away, as Notification Center moves open
   alerts into its panel; the sweep after it closes brings them back.
 
+## How close it looks
+
+[`scripts/panel-lab/compare.sh`](../scripts/panel-lab/compare.sh) captures the real panel and
+ours over the same gray backdrop, collapsed and with a stack expanded, in both
+appearances. What it showed, in order:
+
+| Found | Measured | Done |
+|---|---|---|
+| Rows looked lighter than the system's | The system darkens what is behind its list: the column by 12%, fading in over 40 points, and behind the rows by 10% more, the same in both appearances | Ours does the same; rows within 2 levels |
+| Stack edges too bright | Two glass strips overlapping doubled the brightening | One strip each, 9% darker; within 3 levels |
+| Edges different from a banner's | A panel row is bright inside its top and bottom, with a dark line outside its sides (46 on a backdrop of 101) | `GlassEdge.panelRow` |
+| Headings, Show Less, clear buttons | White semibold headings in both appearances; glass buttons | Same |
+
+Over the whole picture ours is now 3 to 7 levels off on average, against 14 to 19 at the
+start. In Dark Mode the real panel itself moves by about ten levels between runs, with the
+same backdrop; Light Mode is steady.
+
 Checked live with [`scripts/panel-lab/app.sh`](../scripts/panel-lab/app.sh), which runs a
 debug build with only the Lab apps listed: opening, expanding a stack, Show Less, closing a
-row, clearing a group, a notification arriving while open, scrolling, opening a
-notification, and opening from the second display's clock. The real panel stayed parked
-and open throughout, and settings were restored and checked after every run.
+row, clearing a group, Clear All on the history, a notification arriving while open,
+scrolling, opening a notification, opening from the second display's clock, Archive and an
+inline reply from the panel and from a custom banner, widgets with a click on one, size
+and side. Settings were restored and checked after every run.
 
 ## Still open
 
+- Only the Lab apps' buttons were tried, not a real app's, such as a Teams reply.
+- The more menu (⋯) on a banner with its details shown is drawn but does nothing yet.
 - Widgets: only one widget, Weather, tested. The pointer visibly jumps for a widget click.
-- Times are unit tested but not yet seen live: the screen locked during that run.
 - Keyboard: Escape and arrow keys are untested. Our panel never takes focus.
-- App actions such as Reply are not offered yet; Reply needs a text field, which would
-  need focus.
-- Hover only expands a long body if SwiftUI delivers hover to a window that is never key;
-  not checked.
 - Only measured on 27.0. A release without `AXExpanded` never takes over.
