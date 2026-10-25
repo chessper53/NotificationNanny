@@ -218,7 +218,8 @@ struct BannerTabView: View {
     }
 }
 
-private struct AnimationPreviewPane: View {
+/// A sample banner playing an animation; shared with the Notification Center tab.
+struct AnimationPreviewPane: View {
     let animation: BannerAnimation
     let replay: Int
     var tint: Color = .clear

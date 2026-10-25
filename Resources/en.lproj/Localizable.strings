@@ -213,3 +213,10 @@
 "Opens on" = "Opens on";
 "Where you click the clock" = "Where you click the clock";
 "Where your banners go" = "Where your banners go";
+"Extras" = "Extras";
+"Open Notification Center" = "Open Notification Center";
+"As macOS: on the right, on the screen whose clock you click." = "As macOS: on the right, on the screen whose clock you click.";
+"The side of the screen, and which screen it opens on." = "The side of the screen, and which screen it opens on.";
+"As macOS: in from the edge of the screen." = "As macOS: in from the edge of the screen.";
+"How it comes in when you click the clock, and goes when it closes." = "How it comes in when you click the clock, and goes when it closes.";
+"Not part of macOS's Notification Center, so off unless you turn them on. Times are noted when each banner appears; notifications that came in while NotificationNanny wasn't running have none." = "Not part of macOS's Notification Center, so off unless you turn them on. Times are noted when each banner appears; notifications that came in while NotificationNanny wasn't running have none.";

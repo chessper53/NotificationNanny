@@ -213,3 +213,10 @@
 "Opens on" = "S'ouvre";
 "Where you click the clock" = "Là où vous cliquez sur l'horloge";
 "Where your banners go" = "Là où vont vos bannières";
+"Extras" = "Extras";
+"Open Notification Center" = "Ouvrir le Centre de notifications";
+"As macOS: on the right, on the screen whose clock you click." = "Comme macOS : à droite, sur l'écran dont vous cliquez l'horloge.";
+"The side of the screen, and which screen it opens on." = "Le côté de l'écran, et l'écran sur lequel il s'ouvre.";
+"As macOS: in from the edge of the screen." = "Comme macOS : depuis le bord de l'écran.";
+"How it comes in when you click the clock, and goes when it closes." = "Comment il apparaît quand vous cliquez l'horloge, et part quand il se ferme.";
+"Not part of macOS's Notification Center, so off unless you turn them on. Times are noted when each banner appears; notifications that came in while NotificationNanny wasn't running have none." = "Absents du Centre de notifications de macOS, donc désactivés tant que vous ne les activez pas. Les heures sont notées à l'apparition de chaque bannière ; les notifications arrivées quand NotificationNanny ne tournait pas n'en ont pas.";

@@ -1,89 +1,49 @@
 import AppKit
 import SwiftUI
 
+/// The custom Notification Center's settings, laid out like the Banner tab: one card per
+/// setting, its title on top, a note under it. Everything starts as macOS has it; the
+/// extras that macOS doesn't have start off.
 struct NotificationCenterTabView: View {
     @EnvironmentObject var settings: AppSettings
     @ObservedObject private var permission = ScreenRecordingPermission.shared
     @ObservedObject private var loc = LocalizationManager.shared
 
-    var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            LocalizedText("NotificationNanny can show its own list when you click the clock, in place of the Notification Center panel. Your notifications stay in Notification Center: this is another view of them, and everything you do in it goes back there.")
-                .font(.callout)
-                .foregroundStyle(Color.nannyMuted(0.55))
-                .fixedSize(horizontal: false, vertical: true)
+    @State private var previewReplay = 0
 
-            section("Notification Center") {
-                toggleRow("Use NotificationNanny's Notification Center (experimental)",
-                          isOn: $settings.customNotificationCenter)
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            card {
+                HStack {
+                    LocalizedText("Notification Center").font(.caption.weight(.medium)).foregroundStyle(.secondary)
+                    Spacer()
+                    Toggle("", isOn: $settings.customNotificationCenter)
+                        .labelsHidden().toggleStyle(.switch).controlSize(.small)
+                }
+                LocalizedText("Use NotificationNanny's Notification Center (experimental)").font(.callout)
+                note("NotificationNanny can show its own list when you click the clock, in place of the Notification Center panel. Your notifications stay in Notification Center: this is another view of them, and everything you do in it goes back there.")
             }
 
             if settings.customNotificationCenter {
-                section("List") {
-                    toggleRow("Show when notifications arrived", isOn: $settings.customNotificationCenterTimes,
-                              detail: "Notification Center doesn't share its times, so NotificationNanny notes when each banner appears. Notifications that came in while it wasn't running have no time.")
-                    Divider().padding(.leading, 14)
-                    toggleRow("Filter by app", isOn: $settings.customNotificationCenterAppFilter,
-                              detail: "A row of apps above the list; click one to see only its notifications.")
+                sizeCard
+                positionCard
+                animationCard
+                card {
+                    LocalizedText("Look").font(.caption.weight(.medium)).foregroundStyle(.secondary)
+                    note("Rows look like your banners: their colour, text colour and privacy blur come from the Banner tab and your exceptions.")
                 }
+                extrasCard
+                widgetsCard
 
-                section("Look") {
-                    VStack(alignment: .leading, spacing: 10) {
-                        LocalizedText("Rows look like your banners: their colour, text colour and privacy blur come from the Banner tab and your exceptions.")
-                            .font(.caption).foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                        HStack {
-                            LocalizedText("Size").font(.callout)
-                            Slider(value: $settings.customNotificationCenterScale, in: 0.8...1.4, step: 0.05)
-                                .controlSize(.small)
-                            Text("\(Int((settings.customNotificationCenterScale * 100).rounded()))%")
-                                .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
-                                .frame(width: 40, alignment: .trailing)
-                        }
-                        HStack {
-                            LocalizedText("Side").font(.callout)
-                            Spacer()
-                            Picker("", selection: $settings.customNotificationCenterSide) {
-                                ForEach(NCPanelSide.allCases) { Text(loc.string($0.labelKey)).tag($0) }
-                            }
-                            .labelsHidden().pickerStyle(.segmented).controlSize(.small).fixedSize()
-                        }
-                        HStack {
-                            LocalizedText("Opens on").font(.callout)
-                            Spacer()
-                            // The same setting as General's "Don't move Notification Center",
-                            // which means the same for the system's panel.
-                            Picker("", selection: $settings.avoidNCPanel) {
-                                Text(loc.string("Where you click the clock")).tag(true)
-                                Text(loc.string("Where your banners go")).tag(false)
-                            }
-                            .labelsHidden().pickerStyle(.menu).controlSize(.small).fixedSize()
-                        }
-                        LocalizedText("Animation").font(.caption.weight(.medium)).foregroundStyle(.secondary)
-                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 94), spacing: 8)], spacing: 8) {
-                            ForEach(BannerAnimation.allCases, id: \.self) { animationChip($0) }
-                        }
+                Button { NCPanelTakeover.pressMenuBarClock() } label: {
+                    Label {
+                        LocalizedText("Open Notification Center")
+                    } icon: {
+                        Image(systemName: "list.bullet.rectangle")
                     }
-                    .padding(.horizontal, 14).padding(.vertical, 10)
+                    .frame(maxWidth: .infinity)
                 }
-
-                section("Widgets") {
-                    LocalizedText("Widgets are drawn by their own apps, so NotificationNanny can only show them as live pictures of the real ones. That needs Screen Recording. Leave this off and widgets are simply left out.")
-                        .font(.caption).foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .padding(.horizontal, 14).padding(.top, 10).padding(.bottom, 2)
-                    toggleRow("Show widgets", isOn: Binding(
-                        get: { settings.customNotificationCenterWidgets },
-                        set: { on in
-                            settings.customNotificationCenterWidgets = on
-                            if on, !permission.isGranted { permission.request() }
-                        }
-                    ))
-                    if settings.customNotificationCenterWidgets {
-                        Divider().padding(.leading, 14)
-                        permissionRow
-                    }
-                }
+                .buttonStyle(.borderedProminent).controlSize(.regular)
             }
         }
         .onAppear { permission.refresh() }
@@ -92,33 +52,128 @@ struct NotificationCenterTabView: View {
         }
     }
 
-    private var permissionRow: some View {
-        HStack(alignment: .top, spacing: 8) {
-            Image(systemName: permission.isGranted ? "checkmark.circle.fill" : "exclamationmark.circle")
-                .foregroundStyle(permission.isGranted ? Color.nannyAccent : .secondary)
-            VStack(alignment: .leading, spacing: 2) {
-                LocalizedText(permission.isGranted ? "Screen Recording is allowed" : "Screen Recording isn't allowed yet")
-                    .font(.callout)
-                if !permission.isGranted {
-                    LocalizedText("Allow NotificationNanny in System Settings. If you just did, quit and reopen NotificationNanny: macOS only applies it after a restart.")
-                        .font(.caption).foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
+    private var sizeCard: some View {
+        card {
+            HStack {
+                LocalizedText("Size").font(.caption.weight(.medium)).foregroundStyle(.secondary)
+                Spacer()
+                Button(loc.string("Reset")) { settings.customNotificationCenterScale = 1 }
+                    .buttonStyle(.borderless).font(.caption).foregroundStyle(Color.nannyAccent)
+                    .disabled(abs(settings.customNotificationCenterScale - 1) < 0.01)
             }
-            Spacer()
-            if !permission.isGranted {
-                Button(loc.string("Open System Settings")) { permission.openSystemSettings() }
-                    .controlSize(.small)
+            HStack(spacing: 8) {
+                Text("A").font(.caption2).foregroundStyle(.secondary)
+                Slider(value: $settings.customNotificationCenterScale, in: 0.8...1.4)
+                    .onChange(of: settings.customNotificationCenterScale) { _, v in
+                        if abs(v - 1) < 0.02 { settings.customNotificationCenterScale = 1 }
+                    }
+                    .controlSize(.mini)
+                Text("A").font(.body.weight(.medium)).foregroundStyle(.secondary)
+                Text("\(Int((settings.customNotificationCenterScale * 100).rounded()))%")
+                    .font(.caption2.monospacedDigit()).foregroundStyle(.secondary).frame(width: 38, alignment: .trailing)
             }
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 10)
+    }
+
+    private var positionCard: some View {
+        card {
+            LocalizedText("Position").font(.caption.weight(.medium)).foregroundStyle(.secondary)
+            Picker("", selection: $settings.customNotificationCenterSide) {
+                ForEach(NCPanelSide.allCases) { Text(loc.string($0.labelKey)).tag($0) }
+            }
+            .pickerStyle(.segmented).labelsHidden()
+            // The same setting as General's "Don't move Notification Center", which means
+            // the same for the system's panel.
+            Picker("", selection: $settings.avoidNCPanel) {
+                Text(loc.string("Where you click the clock")).tag(true)
+                Text(loc.string("Where your banners go")).tag(false)
+            }
+            .pickerStyle(.segmented).labelsHidden()
+            note(settings.customNotificationCenterSide == .right && settings.avoidNCPanel
+                 ? "As macOS: on the right, on the screen whose clock you click."
+                 : "The side of the screen, and which screen it opens on.")
+        }
+    }
+
+    private var animationCard: some View {
+        card {
+            HStack {
+                LocalizedText("Animation").font(.caption.weight(.medium)).foregroundStyle(.secondary)
+                Spacer()
+                Button { previewReplay &+= 1 } label: {
+                    Label { LocalizedText("Replay") } icon: { Image(systemName: "arrow.clockwise") }
+                        .font(.caption2)
+                }
+                .buttonStyle(.borderless).foregroundStyle(Color.nannyAccent)
+            }
+            AnimationPreviewPane(animation: settings.customNotificationCenterAnimation, replay: previewReplay,
+                                 tint: settings.hasBannerColor ? settings.bannerColor : .clear,
+                                 textColor: settings.effectiveBannerTextColor ?? .primary)
+                .frame(height: 64)
+                .frame(maxWidth: .infinity)
+                .background(Color.nannyInset(0.22), in: RoundedRectangle(cornerRadius: 10))
+                .clipShape(RoundedRectangle(cornerRadius: 10))
+                .contentShape(Rectangle())
+                .onTapGesture { previewReplay &+= 1 }
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 94), spacing: 8)], spacing: 8) {
+                ForEach(BannerAnimation.allCases, id: \.self) { animationChip($0) }
+            }
+            note(settings.customNotificationCenterAnimation == .default
+                 ? "As macOS: in from the edge of the screen."
+                 : "How it comes in when you click the clock, and goes when it closes.")
+        }
+    }
+
+    private var extrasCard: some View {
+        card {
+            LocalizedText("Extras").font(.caption.weight(.medium)).foregroundStyle(.secondary)
+            toggleRow("Show when notifications arrived", isOn: $settings.customNotificationCenterTimes)
+            toggleRow("Filter by app", isOn: $settings.customNotificationCenterAppFilter)
+            note("Not part of macOS's Notification Center, so off unless you turn them on. Times are noted when each banner appears; notifications that came in while NotificationNanny wasn't running have none.")
+        }
+    }
+
+    private var widgetsCard: some View {
+        card {
+            HStack {
+                LocalizedText("Widgets").font(.caption.weight(.medium)).foregroundStyle(.secondary)
+                Spacer()
+                Toggle("", isOn: Binding(
+                    get: { settings.customNotificationCenterWidgets },
+                    set: { on in
+                        settings.customNotificationCenterWidgets = on
+                        if on, !permission.isGranted { permission.request() }
+                    }
+                ))
+                .labelsHidden().toggleStyle(.switch).controlSize(.small)
+            }
+            note("Widgets are drawn by their own apps, so NotificationNanny can only show them as live pictures of the real ones. That needs Screen Recording. Leave this off and widgets are simply left out.")
+            if settings.customNotificationCenterWidgets {
+                HStack(alignment: .top, spacing: 8) {
+                    Image(systemName: permission.isGranted ? "checkmark.circle.fill" : "exclamationmark.circle")
+                        .foregroundStyle(permission.isGranted ? Color.nannyAccent : .secondary)
+                    VStack(alignment: .leading, spacing: 2) {
+                        LocalizedText(permission.isGranted ? "Screen Recording is allowed" : "Screen Recording isn't allowed yet")
+                            .font(.callout)
+                        if !permission.isGranted {
+                            note("Allow NotificationNanny in System Settings. If you just did, quit and reopen NotificationNanny: macOS only applies it after a restart.")
+                        }
+                    }
+                    Spacer()
+                    if !permission.isGranted {
+                        Button(loc.string("Open System Settings")) { permission.openSystemSettings() }
+                            .controlSize(.small)
+                    }
+                }
+            }
+        }
     }
 
     private func animationChip(_ anim: BannerAnimation) -> some View {
         let selected = settings.customNotificationCenterAnimation == anim
         return Button {
             settings.customNotificationCenterAnimation = anim
+            previewReplay &+= 1
         } label: {
             HStack(spacing: 5) {
                 Image(systemName: anim.iconName).font(.system(size: 10))
@@ -134,31 +189,23 @@ struct NotificationCenterTabView: View {
         .buttonStyle(.plain)
     }
 
-    @ViewBuilder
-    private func section<Content: View>(_ titleKey: String, @ViewBuilder content: () -> Content) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            LocalizedText(titleKey)
-                .textCase(.uppercase)
-                .font(.caption2.weight(.semibold)).foregroundStyle(.tertiary).kerning(0.5)
-                .padding(.leading, 4)
-            VStack(alignment: .leading, spacing: 0) { content() }
-                .background(Color.nannyRaised(0.06), in: RoundedRectangle(cornerRadius: 10))
-        }
+    private func card<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 10) { content() }
+            .padding(12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color.nannyRaised(0.06), in: RoundedRectangle(cornerRadius: 10))
     }
 
-    private func toggleRow(_ labelKey: String, isOn: Binding<Bool>, detail: String? = nil) -> some View {
+    private func note(_ key: String) -> some View {
+        LocalizedText(key).font(.caption2).foregroundStyle(.tertiary)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private func toggleRow(_ key: String, isOn: Binding<Bool>) -> some View {
         HStack {
-            VStack(alignment: .leading, spacing: 2) {
-                LocalizedText(labelKey).font(.callout)
-                if let detail {
-                    LocalizedText(detail).font(.caption).foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            }
+            LocalizedText(key).font(.callout)
             Spacer()
             Toggle("", isOn: isOn).labelsHidden().toggleStyle(.switch).controlSize(.small)
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 10)
     }
 }
