@@ -9,6 +9,7 @@ package protocol NotificationSettingsProviding: AnyObject {
     var pauseWhileStreaming: Bool { get }
     var avoidNCPanel: Bool { get }
     var customNotificationCenter: Bool { get }
+    var customNotificationCenterTimes: Bool { get }
     var protectDesktopWidgets: Bool { get }
     var followActiveScreen: Bool { get }
     var pauseDuringFocus: Bool { get }

@@ -60,6 +60,11 @@ package final class LocalizationManager: ObservableObject {
         }
     }
 
+    /// The locale dates and times are written in: the chosen language, or the system's.
+    package var locale: Locale {
+        language == .system ? .current : Locale(identifier: language.rawValue)
+    }
+
     /// Looks up `key` in the active language's `Localizable.strings`, falling back to the
     /// key itself if not found — matching `NSLocalizedString`'s own missing-key behavior.
     package func string(_ key: String) -> String {

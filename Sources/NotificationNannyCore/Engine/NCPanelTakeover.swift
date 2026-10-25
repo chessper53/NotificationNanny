@@ -33,6 +33,15 @@ final class NCPanelTakeover: ObservableObject {
     var onEnd: (() -> Void)?
     /// The app's own tint from its exception group, if any. Read by the panel's view.
     var tint: (String) -> Color? = { _ in nil }
+    /// Whether rows show when they arrived.
+    var showTimes: () -> Bool = { false }
+
+    private let times: NotificationTimes
+    /// When the panel opened. Rows listed then came in before it; rows that appear later
+    /// arrive while it is open. The list can be empty for a moment after opening, so
+    /// "listed then" lasts until it has rows or briefly after.
+    private var openedAt: Double = 0
+    private var listedBaselineTaken = false
 
     private let logger: NannyLogger
     private let router = PanelClickRouter()
@@ -57,8 +66,14 @@ final class NCPanelTakeover: ObservableObject {
     /// y of the parked window: far above any screen arrangement.
     private static let parkedY: CGFloat = -9999
 
-    init(logger: NannyLogger) {
+    init(logger: NannyLogger, times: NotificationTimes) {
         self.logger = logger
+        self.times = times
+    }
+
+    /// When the row's notification arrived, if known and times are on.
+    func arrival(of row: NCPanelRow) -> Date? {
+        showTimes() ? times.arrival(of: row.id) : nil
     }
 
     /// Whether `window` is the one this has taken over; the repositioner leaves it alone.
@@ -119,6 +134,8 @@ final class NCPanelTakeover: ObservableObject {
         window = host
         home = origin
         isActive = true
+        openedAt = ProcessInfo.processInfo.systemUptime
+        listedBaselineTaken = false
         // First, before anything else: every millisecond here is a frame of the real panel.
         park(host)
         let screen = Self.screen(atAXPoint: origin) ?? NSScreen.main ?? NSScreen.screens[0]
@@ -214,6 +231,7 @@ final class NCPanelTakeover: ObservableObject {
         }
         var entries: [NCListEntry] = []
         var elements: [AXUIElement] = []
+        var allIDs: Set<String> = []
         // In a lab run, a header of an app filtered out goes with its buttons.
         var skippingHeader = false
         for child in Self.visualOrder(list.children()) {
@@ -222,6 +240,7 @@ final class NCPanelTakeover: ObservableObject {
             skippingHeader = false
             if let sub = child.stringAttribute(kAXSubroleAttribute as String), AppNameResolver.bannerSubroles.contains(sub) {
                 guard let row = Self.readRow(child, subrole: sub) else { continue }
+                allIDs.insert(row.id)
                 if let only = Self.labFilter, !row.appName.hasPrefix(only) { continue }
                 entries.append(.row(row))
             } else if role == "AXHeading" {
@@ -239,9 +258,23 @@ final class NCPanelTakeover: ObservableObject {
             }
             elements.append(child)
         }
+        noteTimes(allIDs)
         let next = NCPanelSnapshot.build(from: entries)
         mapElements(entries: entries, elements: elements)
         if next != snapshot { snapshot = next }
+    }
+
+    private func noteTimes(_ ids: Set<String>) {
+        let settled = ProcessInfo.processInfo.systemUptime - openedAt > 0.3
+        if !listedBaselineTaken {
+            guard !ids.isEmpty || settled else { return }
+            ids.forEach { times.noteAlreadyListed($0) }
+            listedBaselineTaken = true
+        } else {
+            ids.forEach { times.noteArrival($0) }
+        }
+        // The open panel lists every notification there is.
+        if !ids.isEmpty { times.prune(keeping: ids) }
     }
 
     /// Records which element answers for which row and header button, the same way

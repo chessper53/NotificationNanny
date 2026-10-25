@@ -31,7 +31,7 @@ of anything else with its length.
 | Is there a flash? | Filmed with `screencapture`: without parking the panel shows for about 2.4 s; parked 13 ms after `AXExpanded`, not one frame of it was caught (recordings ran at 16 to 30 fps). |
 | Can the window be faded instead? | No. `CGSSetWindowAlpha` on it reports success and changes nothing. |
 | Is the whole list in the tree? | Yes. 36 rows were all there, 21 of them below the visible part. Scrolling it from outside does nothing (`AXScrollToVisible`, `AXScrollDownByPage`, the wheel), and nothing needs it. |
-| Are rows stable? | `AXIdentifier` stays the same from banner to panel row and across the panel closing and opening. |
+| Are rows stable? | `AXIdentifier` stays the same from banner to panel row and across the panel closing and opening. Each notification in a stack keeps the identifier it had as a banner (6 of 6), and a collapsed stack carries its newest notification's. |
 | What does a row offer? | `AXPress` (opens it, or expands a collapsed stack), Show Details, Close or Clear All, and the app's own actions such as Show and Reply. Title, subtitle and body are labelled children. No timestamp is exposed. |
 | How is the list laid out? | Flat. Alerts still up come first. Then a "Notification Center" heading with its Clear All button, then the history. An expanded stack is a heading with the app's name, Show Less and Clear buttons, then one row each. |
 | Is the tree in the order it is drawn? | No. The header of a stack expanded after others came first in the tree. The list has to be sorted by position. |
@@ -39,6 +39,7 @@ of anything else with its length.
 | What does a click on a window of ours do? | It closes the real panel, even for a non-activating panel. A scroll wheel over it does not. |
 | Can that click be kept from it? | Yes. An event tap at the head of the session that takes the click out of the stream, and sends it to our window directly, leaves the real panel open, and our view still gets the click. |
 | Does opening a notification close the panel? | Not while parked; it does when clicked in the real panel. |
+| Does Clear All on the history ask first? | No. One press cleared it, and the panel stayed open. |
 
 ## What was built
 
@@ -56,6 +57,11 @@ Behind the experimental setting "Custom Notification Center" (General, off by de
   as its content (the router takes every click inside the window, so it must not have an
   empty margin). It adds a filter by app, and a tint edge for apps whose exception group
   has a colour of their own.
+- Times on each row, behind their own setting: Notification Center draws them but doesn't
+  expose them, so `NotificationTimes` notes when each banner first shows and keeps it by
+  identifier. Rows that were already listed when the app first saw them (they came in
+  while it wasn't running, or alerts already up at launch) get no time rather than a
+  wrong one.
 - While it is open, custom banner overlays are put away, as Notification Center moves open
   alerts into its panel; the sweep after it closes brings them back.
 
@@ -69,13 +75,10 @@ and open throughout, and settings were restored and checked after every run.
 
 - Widgets are not shown. They are drawn by their own processes and Accessibility doesn't
   describe them.
-- Clear All on the history section was not pressed in a test: it would clear the real
-  notifications on this Mac. Notification Center may ask for confirmation there.
+- Times are unit tested but not yet seen live: the screen locked during that run.
 - Keyboard: Escape and arrow keys are untested. Our panel never takes focus.
 - App actions such as Reply are not offered yet; Reply needs a text field, which would
   need focus.
-- No timestamps, since Notification Center doesn't expose any. The app could keep its own
-  from when it first saw each banner.
 - Hover only expands a long body if SwiftUI delivers hover to a window that is never key;
   not checked.
 - Only measured on 27.0. A release without `AXExpanded` never takes over.

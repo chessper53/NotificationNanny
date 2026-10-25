@@ -58,6 +58,12 @@ for x in "${experiments[@]}"; do
         tap)           "$OUT/lab" tap ;;
         skin)          seed 12; "$OUT/lab" skin ;;
         list)          seed 3; "$OUT/lab" list ;;
+        ids)           "$OUT/lab" ids 9 &
+                       sleep 0.5
+                       for i in 1 2 3; do post Bravo "Bravo $i" "Panel lab $i"; sleep 1.5; done
+                       post Alpha "Alpha 1" "Panel lab"; sleep 1.5
+                       post Charlie "Charlie 1" "Panel lab"; post Charlie "Charlie 2" "Panel lab"
+                       wait ;;
         actions)       seed; "$OUT/lab" actions ;;
         *)             echo "unknown experiment $x" ;;
     esac

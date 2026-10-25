@@ -42,8 +42,14 @@ package final class NotificationRepositioner: ObservableObject {
     private let axController = AXObserverController()
 
     /// Experimental custom Notification Center; see NCPanelTakeover.
+    private let notificationTimes = NotificationTimes(fileURL: NotificationTimes.defaultFileURL)
+    /// Whether banners already up have been noted as such. Until then, the first sweep's
+    /// banners count as already there rather than arriving: alerts stay up for hours.
+    private var timesBaselineTaken = false
+
     private lazy var panelTakeover: NCPanelTakeover = {
-        let takeover = NCPanelTakeover(logger: logger)
+        let takeover = NCPanelTakeover(logger: logger, times: notificationTimes)
+        takeover.showTimes = { [weak self] in self?.settings?.customNotificationCenterTimes == true }
         // Banners that came in while the panel was open go where they belong.
         takeover.onEnd = { [weak self] in self?.trackLayoutChange() }
         // Alerts still up move into the panel, as they do in Notification Center's own,
@@ -130,6 +136,7 @@ package final class NotificationRepositioner: ObservableObject {
             return
         }
         teardownObserver()
+        timesBaselineTaken = false
 
         guard axController.start(onEvent: { [weak self] element, notification in
             self?.handleAXEvent(element: element, notification: notification)
@@ -571,6 +578,7 @@ package final class NotificationRepositioner: ObservableObject {
         log.debug("repositionVisibleWindows: \(windows.count) window(s) from ncApp")
         sweepBanners = [:]
         defer { sweepBanners = nil }
+        noteBannerArrivals(in: windows)
         if !dismissTimers.armedIDs.isEmpty || !closedBannerIDs.isEmpty || !unreadableBannerSweeps.isEmpty
             || !bannerFirstSeen.isEmpty {
             let present = Set(windows.flatMap { banners(in: $0) }.compactMap(\.id))
@@ -594,6 +602,22 @@ package final class NotificationRepositioner: ObservableObject {
             snapWindow(window, stackIndex: idx, precomputed: idx == 0 ? base : nil)
         }
         return !baseTargets.isEmpty
+    }
+
+    /// Notes when each banner first shows, for the custom Notification Center's times. Not
+    /// while the real panel is open: its rows look just like banners.
+    private func noteBannerArrivals(in windows: [AXUIElement]) {
+        guard settings?.customNotificationCenter == true else {
+            timesBaselineTaken = false
+            return
+        }
+        guard !panelTakeover.isActive, ncExpandedState() != .open else { return }
+        for window in windows {
+            for id in banners(in: window).compactMap(\.id) {
+                if timesBaselineTaken { notificationTimes.noteArrival(id) } else { notificationTimes.noteAlreadyListed(id) }
+            }
+        }
+        timesBaselineTaken = true
     }
 
     /// A banner and its identifier, read once.
