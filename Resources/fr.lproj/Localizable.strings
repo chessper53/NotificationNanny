@@ -206,3 +206,10 @@
 "Options" = "Options";
 "Look" = "Apparence";
 "Rows look like your banners: their colour, text colour and privacy blur come from the Banner tab and your exceptions." = "Les lignes ressemblent à vos bannières : leur couleur, la couleur du texte et le flou viennent de l'onglet Bannière et de vos exceptions.";
+"Size" = "Taille";
+"Side" = "Côté";
+"Right" = "Droite";
+"Left" = "Gauche";
+"Opens on" = "S'ouvre";
+"Where you click the clock" = "Là où vous cliquez sur l'horloge";
+"Where your banners go" = "Là où vont vos bannières";

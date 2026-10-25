@@ -23,6 +23,8 @@ package final class AppSettings: ObservableObject {
         static let customNotificationCenterWidgets = "customNotificationCenterWidgets"
         static let customNotificationCenterAppFilter = "customNotificationCenterAppFilter"
         static let customNotificationCenterAnimation = "customNotificationCenterAnimation"
+        static let customNotificationCenterScale = "customNotificationCenterScale"
+        static let customNotificationCenterSide = "customNotificationCenterSide"
         static let protectDesktopWidgets = "protectDesktopWidgets"
         static let followActiveScreen   = "followActiveScreen"
         static let pauseDuringFocus     = "pauseDuringFocus"
@@ -129,6 +131,16 @@ package final class AppSettings: ObservableObject {
     /// Default is the system's: in from the right edge of the screen.
     @Published package var customNotificationCenterAnimation: BannerAnimation {
         didSet { defaults.set(customNotificationCenterAnimation.rawValue, forKey: Key.customNotificationCenterAnimation) }
+    }
+
+    /// How large the custom Notification Center is drawn, 1 being the system's size.
+    @Published package var customNotificationCenterScale: Double {
+        didSet { defaults.set(customNotificationCenterScale, forKey: Key.customNotificationCenterScale) }
+    }
+
+    /// Which side of the screen the custom Notification Center opens on.
+    @Published package var customNotificationCenterSide: NCPanelSide {
+        didSet { defaults.set(customNotificationCenterSide.rawValue, forKey: Key.customNotificationCenterSide) }
     }
 
 
@@ -391,6 +403,9 @@ package final class AppSettings: ObservableObject {
         self.customNotificationCenterAppFilter = (defaults.object(forKey: Key.customNotificationCenterAppFilter) as? Bool) ?? false
         self.customNotificationCenterAnimation = defaults.string(forKey: Key.customNotificationCenterAnimation)
             .flatMap(BannerAnimation.init(rawValue:)) ?? .default
+        self.customNotificationCenterScale = (defaults.object(forKey: Key.customNotificationCenterScale) as? Double) ?? 1
+        self.customNotificationCenterSide = defaults.string(forKey: Key.customNotificationCenterSide)
+            .flatMap(NCPanelSide.init(rawValue:)) ?? .right
         self.protectDesktopWidgets = (defaults.object(forKey: Key.protectDesktopWidgets) as? Bool) ?? true
         self.followActiveScreen    = (defaults.object(forKey: Key.followActiveScreen) as? Bool) ?? false
         self.pauseDuringFocus      = (defaults.object(forKey: Key.pauseDuringFocus) as? Bool) ?? false
@@ -636,6 +651,8 @@ package final class AppSettings: ObservableObject {
         var customNotificationCenterWidgets: Bool?
         var customNotificationCenterAppFilter: Bool?
         var customNotificationCenterAnimation: BannerAnimation?
+        var customNotificationCenterScale: Double?
+        var customNotificationCenterSide: NCPanelSide?
         var protectDesktopWidgets: Bool?
         var followActiveScreen: Bool?
         var pauseDuringFocus: Bool?
@@ -659,6 +676,8 @@ package final class AppSettings: ObservableObject {
             customNotificationCenterWidgets: customNotificationCenterWidgets,
             customNotificationCenterAppFilter: customNotificationCenterAppFilter,
             customNotificationCenterAnimation: customNotificationCenterAnimation,
+            customNotificationCenterScale: customNotificationCenterScale,
+            customNotificationCenterSide: customNotificationCenterSide,
             protectDesktopWidgets: protectDesktopWidgets,
             followActiveScreen: followActiveScreen,
             pauseDuringFocus: pauseDuringFocus,
@@ -691,6 +710,8 @@ package final class AppSettings: ObservableObject {
         customNotificationCenterWidgets = imported.customNotificationCenterWidgets ?? false
         customNotificationCenterAppFilter = imported.customNotificationCenterAppFilter ?? false
         customNotificationCenterAnimation = imported.customNotificationCenterAnimation ?? .default
+        customNotificationCenterScale = imported.customNotificationCenterScale ?? 1
+        customNotificationCenterSide = imported.customNotificationCenterSide ?? .right
         protectDesktopWidgets = imported.protectDesktopWidgets ?? true
         followActiveScreen  = imported.followActiveScreen ?? false
         pauseDuringFocus    = imported.pauseDuringFocus ?? false

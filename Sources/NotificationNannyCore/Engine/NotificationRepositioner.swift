@@ -50,10 +50,16 @@ package final class NotificationRepositioner: ObservableObject {
     private lazy var panelTakeover: NCPanelTakeover = {
         let takeover = NCPanelTakeover(logger: logger, times: notificationTimes)
         takeover.showTimes = { [weak self] in self?.settings?.customNotificationCenterTimes == true }
+        takeover.preferredScreen = { [weak self] in
+            guard let s = self?.settings, !s.avoidNCPanel else { return nil }
+            return s.resolvedTargetScreen()
+        }
         takeover.readOptions = { [weak self] in
             guard let s = self?.settings else { return NCPanelOptions() }
             return NCPanelOptions(appFilter: s.customNotificationCenterAppFilter,
                                   animation: s.customNotificationCenterAnimation,
+                                  scale: CGFloat(s.customNotificationCenterScale),
+                                  side: s.customNotificationCenterSide,
                                   widgets: s.customNotificationCenterWidgets,
                                   textColor: s.effectiveBannerTextColor,
                                   redact: s.redactBannerContent)

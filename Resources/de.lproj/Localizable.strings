@@ -206,3 +206,10 @@
 "Options" = "Optionen";
 "Look" = "Aussehen";
 "Rows look like your banners: their colour, text colour and privacy blur come from the Banner tab and your exceptions." = "Die Zeilen sehen aus wie deine Banner: Farbe, Textfarbe und Unschärfe kommen aus dem Banner-Tab und deinen Ausnahmen.";
+"Size" = "Größe";
+"Side" = "Seite";
+"Right" = "Rechts";
+"Left" = "Links";
+"Opens on" = "Öffnet sich";
+"Where you click the clock" = "Wo du auf die Uhr klickst";
+"Where your banners go" = "Wo deine Banner erscheinen";

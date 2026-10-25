@@ -32,6 +32,33 @@ struct NotificationCenterTabView: View {
                         LocalizedText("Rows look like your banners: their colour, text colour and privacy blur come from the Banner tab and your exceptions.")
                             .font(.caption).foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
+                        HStack {
+                            LocalizedText("Size").font(.callout)
+                            Slider(value: $settings.customNotificationCenterScale, in: 0.8...1.4, step: 0.05)
+                                .controlSize(.small)
+                            Text("\(Int((settings.customNotificationCenterScale * 100).rounded()))%")
+                                .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+                                .frame(width: 40, alignment: .trailing)
+                        }
+                        HStack {
+                            LocalizedText("Side").font(.callout)
+                            Spacer()
+                            Picker("", selection: $settings.customNotificationCenterSide) {
+                                ForEach(NCPanelSide.allCases) { Text(loc.string($0.labelKey)).tag($0) }
+                            }
+                            .labelsHidden().pickerStyle(.segmented).controlSize(.small).fixedSize()
+                        }
+                        HStack {
+                            LocalizedText("Opens on").font(.callout)
+                            Spacer()
+                            // The same setting as General's "Don't move Notification Center",
+                            // which means the same for the system's panel.
+                            Picker("", selection: $settings.avoidNCPanel) {
+                                Text(loc.string("Where you click the clock")).tag(true)
+                                Text(loc.string("Where your banners go")).tag(false)
+                            }
+                            .labelsHidden().pickerStyle(.menu).controlSize(.small).fixedSize()
+                        }
                         LocalizedText("Animation").font(.caption.weight(.medium)).foregroundStyle(.secondary)
                         LazyVGrid(columns: [GridItem(.adaptive(minimum: 94), spacing: 8)], spacing: 8) {
                             ForEach(BannerAnimation.allCases, id: \.self) { animationChip($0) }
