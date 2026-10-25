@@ -13,6 +13,7 @@
 #   state                 what our panel and Notification Center's show
 #   count                 the same as numbers only, for PANEL_FILTER= runs
 #   shot:name             capture our panel into build/panel-lab/name.png
+#   sshot:name            the same, as it is on screen, desktop and all
 #   click:Text            click the text in our panel (a row's title, say)
 #   close:Title           click the ✕ of the row with that title
 #   button:Label          click a button in our panel ("Show less", "Clear All")
@@ -97,6 +98,8 @@ print("settings restored and checked")
 PY
 }
 trap restore EXIT
+# Stopped from outside, the EXIT trap only runs if the signal ends the script through exit.
+trap 'exit 130' INT TERM
 
 defaults write "$DOMAIN" customNotificationCenter -bool YES
 for kv in ${EXTRA[@]+"${EXTRA[@]}"}; do defaults write "$DOMAIN" "${kv%%=*}" -bool "${kv#*=}"; done
@@ -128,6 +131,11 @@ for step in "$@"; do
         state)  "$OUT/lab" ui-state "$NN_PID" ;;
         count)  "$OUT/lab" ui-count "$NN_PID" ;;
         shot)   id=$("$OUT/lab" ui-winid "$NN_PID") && screencapture -x -o -l "$id" "$OUT/$arg.png" && echo "   $OUT/$arg.png" ;;
+        # The same area as it is on screen, with the desktop behind: our panel is transparent.
+        # Over a gray backdrop, so nothing of the user's screen behind it is captured.
+        # Waits for the backdrop only: a bare wait would wait for the app, forever.
+        sshot)  r=$("$OUT/lab" ui-rect "$NN_PID") && { "$OUT/lab" backdrop "$r" 2 & bd=$!; sleep 0.8
+                screencapture -x -R"$r" "$OUT/$arg.png"; wait "$bd"; echo "   $OUT/$arg.png"; } ;;
         click)  "$OUT/lab" ui-click "$NN_PID" "$arg" || echo "   click failed" ;;
         close)  "$OUT/lab" ui-close "$NN_PID" "$arg" || echo "   close failed" ;;
         button) "$OUT/lab" ui-button "$NN_PID" "$arg" || echo "   button failed" ;;
