@@ -120,6 +120,33 @@ struct BannerContent: Equatable {
     }
 }
 
+/// How the replica differs between appearances, measured against the system banner with
+/// scripts/banner-lab. A lab build (compiled with PROD) takes candidates from the
+/// environment, NN_LOOK_<NAME>, to try them without editing this.
+enum BannerLook {
+    private static func value(_ name: String, _ measured: Double) -> Double {
+        #if PROD
+        if let v = ProcessInfo.processInfo.environment["NN_LOOK_" + name].flatMap(Double.init) { return v }
+        #endif
+        return measured
+    }
+    /// The white wash over the glass in Light Mode; Dark Mode's is Metrics.wash. None:
+    /// it dims what shows through, and Light Mode needs the opposite.
+    static var lightWash: Double { value("LIGHT_WASH", 0) }
+    /// The glass is a little too dense in Light Mode: the system banner lets more of what
+    /// is behind it through (0.475 of it against our 0.43, measured on white, black and
+    /// gray), and brightens by a constant on top, see lightAdd.
+    static var lightGlassOpacity: Double { value("LIGHT_GLASS", 0.92) }
+    /// White added on top in Light Mode (plus-lighter), brightening without dimming.
+    /// Inside the banner within 1.5 levels of the system's on every backdrop measured,
+    /// against 12 before (on white).
+    static var lightAdd: Double { value("LIGHT_ADD", 0.037) }
+    /// The bright line just inside the edge, both appearances.
+    static var rim: Double { value("RIM", 0) }
+    /// The dark line just outside the edge, Light Mode only.
+    static var lightLine: Double { value("LIGHT_LINE", 0) }
+}
+
 @MainActor
 final class BannerAnimationController {
     var slideOutClosure: (() -> Void)?
@@ -148,6 +175,8 @@ struct CustomBannerView: View {
     @State private var animScale: CGFloat
     @State private var animRotation: Double
     @State private var isHovered = false
+    @Environment(\.colorScheme) private var colorScheme
+    private var isLight: Bool { colorScheme == .light }
     @State private var animationsSetup = false
     @State private var cursorPushed = false
 
@@ -244,20 +273,34 @@ struct CustomBannerView: View {
         .background {
             ZStack {
                 BannerBackground(cornerRadius: Metrics.cornerRadius * scale)
+                    .opacity(isLight ? BannerLook.lightGlassOpacity : 1)
                 // Untinted means "look like the system banner". The glass alone
                 // comes out slightly dark, so it gets the measured wash; a user
                 // tint replaces the wash rather than stacking on top of it.
                 if tint != .clear {
                     tint.opacity(0.45)
                 } else if BannerBackground.isGlass {
-                    Color.white.opacity(Metrics.wash)
+                    Color.white.opacity(isLight ? BannerLook.lightWash : Metrics.wash)
+                    // Light Mode's glass is brighter by a constant on any backdrop, which
+                    // a wash can't give: a wash also dims what shows through.
+                    if isLight, BannerLook.lightAdd > 0 {
+                        Color.white.opacity(BannerLook.lightAdd).blendMode(.plusLighter)
+                    }
                 }
             }
             .clipShape(shape)
         }
         .overlay {
-            // Glass draws its own edge. The pre-26 material needs the hairline.
-            if !BannerBackground.isGlass {
+            if BannerBackground.isGlass {
+                // The system banner's glass catches the light along its edge, one point
+                // inside it, in both appearances; ours doesn't by itself.
+                shape.strokeBorder(Color.white.opacity(BannerLook.rim), lineWidth: scale)
+                // In Light Mode a fine dark line runs just outside it as well.
+                if isLight {
+                    shape.inset(by: -0.5 * scale).stroke(Color.black.opacity(BannerLook.lightLine), lineWidth: scale)
+                }
+            } else {
+                // The pre-26 material needs the hairline.
                 shape.strokeBorder(Color.primary.opacity(0.08), lineWidth: 0.5)
             }
         }
