@@ -656,6 +656,7 @@ struct MenuAnchorView: NSViewRepresentable {
 enum SystemStrings {
     private static let bundle = Bundle(path: "/System/Library/CoreServices/NotificationCenter.app")
     static let options = bundle?.localizedString(forKey: "Options", value: "Options", table: "Localizable") ?? "Options"
+    static let showLess = bundle?.localizedString(forKey: "Show less", value: "Show less", table: "Localizable") ?? "Show less"
 }
 
 /// Liquid Glass on macOS 26 and later, which is what the system banner is made

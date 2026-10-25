@@ -834,12 +834,85 @@ case "hover-test":
     print("tracking area entered: \(tracker.entered), SwiftUI onHover: \(box.swiftUI), polled pointer inside: \(polledInside), acceptsMouseMoved \(panel.acceptsMouseMovedEvents)")
     panel.orderOut(nil)
 
+case "panel-shots":
+    // The real panel as it looks, for the replica: crops of the Lab rows only (and the
+    // heading lines), with every frame written down. Nothing else of the panel is saved.
+    let dir = args.dropFirst().first ?? "build/panel-lab/real"
+    try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
+    var notes: [String] = []
+    func shot(_ r: CGRect, _ name: String, pad: CGFloat = 4) {
+        let c = r.insetBy(dx: -pad, dy: -pad)
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
+        p.arguments = ["-x", "-R\(Int(c.minX)),\(Int(c.minY)),\(Int(c.width)),\(Int(c.height))", "\(dir)/\(name).png"]
+        try? p.run(); p.waitUntilExit()
+    }
+    func note(_ e: AXUIElement, _ what: String) {
+        guard let f = frame(e) else { return }
+        notes.append("\(what) (\(Int(f.minX)),\(Int(f.minY)) \(Int(f.width))x\(Int(f.height)))")
+    }
+    func capture(_ stage: String) {
+        guard let h = host(), let list = find(h, { str($0, kAXIdentifierAttribute) == "AXNotificationListItems" }) else { return }
+        notes.append("-- \(stage)")
+        var i = 0
+        for c in children(list) {
+            let role = str(c, kAXRoleAttribute) ?? "?"
+            let d = label(c).isEmpty ? (str(c, kAXDescriptionAttribute) ?? "") : label(c)
+            if d.hasPrefix("Lab ") {
+                note(c, "row \(str(c, kAXSubroleAttribute) ?? "") \"\(d.prefix(40))\"")
+                for k in children(c) { note(k, "   \(str(k, kAXRoleAttribute) ?? "?") #\(str(k, kAXIdentifierAttribute) ?? "")") }
+                if let f = frame(c) { shot(f, "\(stage)-row\(i)"); i += 1 }
+            } else if role == "AXHeading" || role == "AXButton" {
+                note(c, "\(role) \"\(d)\"")
+                // Heading lines hold no notification: the heading and its buttons.
+                if role == "AXHeading", let f = frame(c), let lf = frame(list) {
+                    shot(CGRect(x: lf.minX, y: f.minY, width: lf.width, height: f.height), "\(stage)-heading\(i)", pad: 3)
+                    i += 1
+                }
+            }
+        }
+    }
+    guard pressClock(), waitFor(3, { isOpen() }) != nil else { print("panel did not open"); restore(); exit(1) }
+    spin(1.0)
+    capture("collapsed")
+    if let stack = labRows().first(where: { str($0, kAXSubroleAttribute)?.hasSuffix("Stack") == true }) {
+        AXUIElementPerformAction(stack, kAXPressAction as CFString)
+        spin(1.0)
+        capture("expanded")
+    }
+    if let withButtons = labRows().first(where: { r in actionNames(r).contains { displayName($0) == "Show Details" } && actionNames(r).contains { displayName($0) == "Reply" } }) {
+        _ = perform(withButtons, named: "Show Details")
+        spin(0.8)
+        capture("details")
+    }
+    closePanel()
+    try? notes.joined(separator: "\n").write(toFile: "\(dir)/frames.txt", atomically: true, encoding: .utf8)
+    print(notes.joined(separator: "\n"))
+
+case "backdrop":
+    // A plain gray window over everything but our panel, for <seconds>, so an on-screen
+    // capture of the panel shows nothing of what is behind it on the user's screen.
+    let parts = (args.dropFirst().first ?? "").split(separator: ",").compactMap { Double($0) }
+    let seconds = Double(args.dropFirst(2).first ?? "3") ?? 3
+    guard parts.count == 4, let primary = NSScreen.screens.first else { print("usage: lab backdrop x,y,w,h seconds"); exit(64) }
+    let pad = 40.0
+    let rect = NSRect(x: parts[0] - pad, y: primary.frame.maxY - parts[1] - parts[3] - pad,
+                      width: parts[2] + pad * 2, height: parts[3] + pad * 2)
+    // A non-activating panel: a plain window showing up closes Notification Center's panel.
+    let w = NSPanel(contentRect: rect, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+    w.level = NSWindow.Level(rawValue: NSWindow.Level.statusBar.rawValue - 1)
+    w.backgroundColor = NSColor(calibratedWhite: 0.42, alpha: 1)
+    w.hasShadow = false
+    w.ignoresMouseEvents = true
+    w.orderFrontRegardless()
+    spin(seconds)
+
 case "clock":
     exit(pressClock() ? 0 : 1)
 
 // The ui-* commands drive NotificationNanny's own panel (pid as the second argument)
 // through its accessibility tree, with real clicks.
-case "ui-state", "ui-click", "ui-close", "ui-button", "ui-winid", "ui-scroll", "ui-count", "ui-widget", "ui-hover":
+case "ui-state", "ui-click", "ui-close", "ui-button", "ui-winid", "ui-scroll", "ui-count", "ui-widget", "ui-hover", "ui-rect":
     guard args.count >= 2, let pid = pid_t(args[1]) else { print("usage: lab \(args[0]) <pid> [text]"); exit(64) }
     let nn = AXUIElementCreateApplication(pid)
     AXUIElementSetMessagingTimeout(nn, 2)
@@ -871,6 +944,10 @@ case "ui-state", "ui-click", "ui-close", "ui-button", "ui-winid", "ui-scroll", "
         }
         guard let id = mine.max(by: { area($0) < area($1) })?[kCGWindowNumber as String] as? Int else { print("none"); exit(1) }
         print(id)
+    case "ui-rect":
+        // Our panel's frame as screencapture -R wants it.
+        guard let f = nnWindows.compactMap(frame).first else { print("none"); exit(1) }
+        print("\(Int(f.minX)),\(Int(f.minY)),\(Int(f.width)),\(Int(f.height))")
     case "ui-state":
         let panelFrame = nnWindows.compactMap(frame).max { $0.height < $1.height }
         print("our panel: \(panelFrame.map { "(\(Int($0.minX)),\(Int($0.minY)) \(Int($0.width))x\(Int($0.height)))" } ?? "none")")

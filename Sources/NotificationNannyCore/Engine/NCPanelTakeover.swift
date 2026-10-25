@@ -22,12 +22,17 @@ import SwiftUI
 ///
 /// Widgets are left out: they are drawn by their own processes and Accessibility
 /// doesn't describe them.
-/// What the user chose for the custom panel, in the Notification Center tab.
+/// What the user chose for the custom panel, in the Notification Center tab, and how
+/// banners look, which the panel's rows follow.
 struct NCPanelOptions: Equatable {
-    var appFilter = true
+    var appFilter = false
     var compact = false
     /// Pictures of the real widgets; only acted on with Screen Recording allowed.
     var widgets = false
+    /// The banners' text colour, nil for the system's.
+    var textColor: Color? = nil
+    /// The banners' privacy blur.
+    var redact = false
 }
 
 /// A widget in Notification Center's panel, as a picture of the real one.
@@ -59,8 +64,8 @@ final class NCPanelTakeover: ObservableObject {
     var onBegin: (() -> Void)?
     /// Called after the panel closes, so the repositioner can place banners again.
     var onEnd: (() -> Void)?
-    /// The app's own tint from its exception group, if any. Read by the panel's view.
-    var tint: (String) -> Color? = { _ in nil }
+    /// The tint a banner from the app gets, clear for none. Read by the panel's view.
+    var tint: (String) -> Color = { _ in .clear }
     /// Whether rows show when they arrived.
     var showTimes: () -> Bool = { false }
 
@@ -393,7 +398,9 @@ final class NCPanelTakeover: ObservableObject {
                           body: lines["body"] ?? "", isStack: subrole.hasSuffix("Stack"),
                           actions: NotificationActions.appActions(of: el),
                           reply: field.map { $0.stringAttribute(kAXValueAttribute as String) ?? "" },
-                          replyPlaceholder: field?.stringAttribute(kAXPlaceholderValueAttribute as String) ?? "")
+                          replyPlaceholder: field?.stringAttribute(kAXPlaceholderValueAttribute as String) ?? "",
+                          expanded: NotificationActions.isExpanded(el),
+                          height: el.size()?.height ?? 58)
     }
 
     // MARK: - Widgets
@@ -604,6 +611,13 @@ final class NCPanelTakeover: ObservableObject {
             if opensReply { self.mirrorReplies() }
         }
         logger.log("Action \(action) on \(row.appName)", tag: "Panel")
+    }
+
+    /// The row's chevron: shows or hides its buttons, in Notification Center too.
+    func toggleDetails(_ row: NCPanelRow) {
+        guard let el = rowElements[row.id] else { return }
+        actions.toggleDetails(of: el)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in self?.refresh() }
     }
 
     func sendReply(_ row: NCPanelRow) {

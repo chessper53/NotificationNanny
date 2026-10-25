@@ -387,7 +387,7 @@ package final class AppSettings: ObservableObject {
         self.customNotificationCenter = (defaults.object(forKey: Key.customNotificationCenter) as? Bool) ?? false
         self.customNotificationCenterTimes = (defaults.object(forKey: Key.customNotificationCenterTimes) as? Bool) ?? true
         self.customNotificationCenterWidgets = (defaults.object(forKey: Key.customNotificationCenterWidgets) as? Bool) ?? false
-        self.customNotificationCenterAppFilter = (defaults.object(forKey: Key.customNotificationCenterAppFilter) as? Bool) ?? true
+        self.customNotificationCenterAppFilter = (defaults.object(forKey: Key.customNotificationCenterAppFilter) as? Bool) ?? false
         self.customNotificationCenterCompact = (defaults.object(forKey: Key.customNotificationCenterCompact) as? Bool) ?? false
         self.protectDesktopWidgets = (defaults.object(forKey: Key.protectDesktopWidgets) as? Bool) ?? true
         self.followActiveScreen    = (defaults.object(forKey: Key.followActiveScreen) as? Bool) ?? false
@@ -687,7 +687,7 @@ package final class AppSettings: ObservableObject {
         customNotificationCenter = imported.customNotificationCenter ?? false
         customNotificationCenterTimes = imported.customNotificationCenterTimes ?? true
         customNotificationCenterWidgets = imported.customNotificationCenterWidgets ?? false
-        customNotificationCenterAppFilter = imported.customNotificationCenterAppFilter ?? true
+        customNotificationCenterAppFilter = imported.customNotificationCenterAppFilter ?? false
         customNotificationCenterCompact = imported.customNotificationCenterCompact ?? false
         protectDesktopWidgets = imported.protectDesktopWidgets ?? true
         followActiveScreen  = imported.followActiveScreen ?? false

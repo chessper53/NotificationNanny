@@ -54,7 +54,9 @@ package final class NotificationRepositioner: ObservableObject {
             guard let s = self?.settings else { return NCPanelOptions() }
             return NCPanelOptions(appFilter: s.customNotificationCenterAppFilter,
                                   compact: s.customNotificationCenterCompact,
-                                  widgets: s.customNotificationCenterWidgets)
+                                  widgets: s.customNotificationCenterWidgets,
+                                  textColor: s.effectiveBannerTextColor,
+                                  redact: s.redactBannerContent)
         }
         // Banners that came in while the panel was open go where they belong.
         takeover.onEnd = { [weak self] in self?.trackLayoutChange() }
@@ -65,7 +67,7 @@ package final class NotificationRepositioner: ObservableObject {
             self?.overlayContent.removeAll()
             self?.customPiles.removeAll()
         }
-        takeover.tint = { [weak self] in self?.settings?.groupTint(for: $0) }
+        takeover.tint = { [weak self] in self?.settings?.effectiveBannerColor(for: $0) ?? .clear }
         return takeover
     }()
 

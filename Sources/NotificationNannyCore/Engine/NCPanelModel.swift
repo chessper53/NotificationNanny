@@ -19,6 +19,11 @@ struct NCPanelRow: Equatable, Identifiable {
     var reply: String? = nil
     /// The reply field's placeholder, as the app set it.
     var replyPlaceholder: String = ""
+    /// Its details are shown in Notification Center: the app's buttons under the text.
+    var expanded = false
+    /// Its height in Notification Center, which grows with details and a reply: ours is
+    /// drawn the same.
+    var height: CGFloat = 58
 }
 
 /// A child of the panel's `AXNotificationListItems` list, reduced to what decides the
