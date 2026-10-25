@@ -142,9 +142,10 @@ enum BannerLook {
     /// against 12 before (on white).
     static var lightAdd: Double { value("LIGHT_ADD", 0.037) }
     /// The bright line just inside the edge, both appearances.
-    static var rim: Double { value("RIM", 0) }
+    /// 0.25 in both: the edge 2.4 levels off in Dark Mode and 2.1 in Light, against 6.3.
+    static var rim: Double { value("RIM", 0.25) }
     /// The dark line just outside the edge, Light Mode only.
-    static var lightLine: Double { value("LIGHT_LINE", 0) }
+    static var lightLine: Double { value("LIGHT_LINE", 0.08) }
 }
 
 @MainActor
