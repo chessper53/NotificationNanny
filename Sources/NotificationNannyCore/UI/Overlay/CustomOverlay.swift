@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import UniformTypeIdentifiers
 
 package enum BannerAnimation: String, Codable, CaseIterable {
     case `default`  = "Default"
@@ -437,40 +438,7 @@ struct BannerCard: View {
             if content.expanded { expandedButtons }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .background {
-            ZStack {
-                BannerBackground(cornerRadius: Metrics.cornerRadius * scale)
-                    .opacity(isLight ? BannerLook.lightGlassOpacity : 1)
-                // Untinted means "look like the system banner". The glass alone
-                // comes out slightly dark, so it gets the measured wash; a user
-                // tint replaces the wash rather than stacking on top of it.
-                if tint != .clear {
-                    tint.opacity(0.45)
-                } else if BannerBackground.isGlass {
-                    Color.white.opacity(isLight ? BannerLook.lightWash : Metrics.wash)
-                    // Light Mode's glass is brighter by a constant on any backdrop, which
-                    // a wash can't give: a wash also dims what shows through.
-                    if isLight, BannerLook.lightAdd > 0 {
-                        Color.white.opacity(BannerLook.lightAdd).blendMode(.plusLighter)
-                    }
-                }
-            }
-            .clipShape(shape)
-        }
-        .overlay {
-            if BannerBackground.isGlass {
-                // The system banner's glass catches the light along its edge, one point
-                // inside it, in both appearances; ours doesn't by itself.
-                shape.strokeBorder(Color.white.opacity(BannerLook.rim), lineWidth: scale)
-                // In Light Mode a fine dark line runs just outside it as well.
-                if isLight {
-                    shape.inset(by: -0.5 * scale).stroke(Color.black.opacity(BannerLook.lightLine), lineWidth: scale)
-                }
-            } else {
-                // The pre-26 material needs the hairline.
-                shape.strokeBorder(Color.primary.opacity(0.08), lineWidth: 0.5)
-            }
-        }
+        .background { BannerGlass(shape: shape, cornerRadius: Metrics.cornerRadius * scale, scale: scale, tint: tint) }
         .overlay(alignment: .topLeading) {
             if !content.actions.isEmpty { chrome }
         }
@@ -602,16 +570,60 @@ struct BannerCard: View {
                 .antialiased(true)
                 .frame(width: Metrics.iconFrame * scale, height: Metrics.iconFrame * scale)
         } else {
-            // Sized to the visible squircle of a real app icon, not to its frame.
-            ZStack {
-                Color.primary.opacity(0.12)
-                Image(systemName: "bell.fill")
-                    .foregroundStyle(.primary.opacity(0.7))
-                    .font(.system(size: 15 * scale, weight: .medium))
+            // Without an icon of its own, the generic app icon, as the system banner shows.
+            Image(nsImage: NSWorkspace.shared.icon(for: .applicationBundle))
+                .resizable()
+                .interpolation(.high)
+                .antialiased(true)
+                .frame(width: Metrics.iconFrame * scale, height: Metrics.iconFrame * scale)
+        }
+    }
+}
+
+/// The system banner's glass, as measured against a real one in both appearances (see
+/// BannerLook), for any shape: the banner itself, and the glass buttons and stack edges
+/// of the custom Notification Center, which the system draws the same way.
+struct BannerGlass<S: InsettableShape>: View {
+    let shape: S
+    /// The glass rounds its own corners; for a pill or a circle, half its height.
+    let cornerRadius: CGFloat
+    var scale: CGFloat = 1
+    var tint: Color = .clear
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        let isLight = colorScheme == .light
+        ZStack {
+            BannerBackground(cornerRadius: cornerRadius)
+                .opacity(isLight ? BannerLook.lightGlassOpacity : 1)
+            // Untinted means "look like the system banner". The glass alone comes out
+            // slightly dark, so it gets the measured wash; a user tint replaces the wash
+            // rather than stacking on top of it.
+            if tint != .clear {
+                tint.opacity(0.45)
+            } else if BannerBackground.isGlass {
+                Color.white.opacity(isLight ? BannerLook.lightWash : CustomBannerView.Metrics.wash)
+                // Light Mode's glass is brighter by a constant on any backdrop, which a
+                // wash can't give: a wash also dims what shows through.
+                if isLight, BannerLook.lightAdd > 0 {
+                    Color.white.opacity(BannerLook.lightAdd).blendMode(.plusLighter)
+                }
             }
-            .frame(width: 31 * scale, height: 31 * scale)
-            .clipShape(RoundedRectangle(cornerRadius: 7 * scale, style: .continuous))
-            .frame(width: Metrics.iconFrame * scale, height: Metrics.iconFrame * scale)
+        }
+        .clipShape(shape)
+        .overlay {
+            if BannerBackground.isGlass {
+                // The system banner's glass catches the light along its edge, one point
+                // inside it, in both appearances; ours doesn't by itself.
+                shape.strokeBorder(Color.white.opacity(BannerLook.rim), lineWidth: scale)
+                // In Light Mode a fine dark line runs just outside it as well.
+                if isLight {
+                    shape.inset(by: -0.5 * scale).stroke(Color.black.opacity(BannerLook.lightLine), lineWidth: scale)
+                }
+            } else {
+                // The pre-26 material needs the hairline.
+                shape.strokeBorder(Color.primary.opacity(0.08), lineWidth: 0.5)
+            }
         }
     }
 }
