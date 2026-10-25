@@ -144,6 +144,15 @@ enum BannerLook {
     /// The bright line just inside the edge, both appearances.
     /// 0.25 in both: the edge 2.4 levels off in Dark Mode and 2.1 in Light, against 6.3.
     static var rim: Double { value("RIM", 0.25) }
+    /// The hairline above each of the app's buttons when the details are shown.
+    static var divider: Double { value("DIVIDER", 0.12) }
+    /// The Options pill shown on hover.
+    static var pill: Double { value("PILL", 0.12) }
+    /// The reply field's fill and edge.
+    static var field: Double { value("FIELD", 0.25) }
+    static var fieldEdge: Double { value("FIELD_EDGE", 0.22) }
+    /// A lab build can show the hover state without a pointer, to measure it.
+    static var forceHover: Bool { value("HOVER", 0) > 0 }
     /// The dark line just outside the edge, Light Mode only.
     static var lightLine: Double { value("LIGHT_LINE", 0.08) }
 }
@@ -228,7 +237,9 @@ struct CustomBannerView: View {
         /// The close button is centred just inside the corner and overhangs it,
         /// so the panel is grown by this much on every side to leave it room.
         static let closeDiameter: CGFloat = 20
-        static let closeCentre: CGFloat = 5
+        /// The close button's top left, from the banner's: it overhangs the corner.
+        /// Measured from a hovered system banner (scripts/banner-lab `real-states`).
+        static let closeOrigin = CGPoint(x: -6, y: -4)
         static let chromeInset: CGFloat = 8
     }
 
@@ -236,10 +247,9 @@ struct CustomBannerView: View {
         let inset = Metrics.chromeInset * scale
         banner
             .overlay(alignment: .topLeading) {
-                if isHovered {
+                if isHovered || BannerLook.forceHover {
                     closeButton
-                        .offset(x: (Metrics.closeCentre - Metrics.closeDiameter / 2) * scale,
-                                y: (Metrics.closeCentre - Metrics.closeDiameter / 2) * scale)
+                        .offset(x: Metrics.closeOrigin.x * scale, y: Metrics.closeOrigin.y * scale)
                         .transition(.opacity.combined(with: .scale(scale: 0.8)))
                 }
             }
@@ -265,6 +275,162 @@ struct CustomBannerView: View {
     }
 
     private var banner: some View {
+        BannerCard(content: content, scale: scale, tint: tint, textColor: textColor,
+                   redactContent: redactContent, hovered: isHovered,
+                   onOpen: onOpen, onAction: onAction, onDetails: onDetails)
+    }
+
+    private var closeButton: some View {
+        Button(action: onDismiss) {
+            ZStack {
+                BannerBackground(cornerRadius: Metrics.closeDiameter / 2 * scale)
+                Image(systemName: "xmark")
+                    .font(.system(size: 8 * scale, weight: .bold))
+                    .foregroundStyle(.secondary)
+            }
+            .frame(width: Metrics.closeDiameter * scale, height: Metrics.closeDiameter * scale)
+            .clipShape(Circle())
+            .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func setupAnimations() {
+        let hidden = animation.hidden
+        controller.slideOutClosure = {
+            withAnimation(animation.outro) { apply(hidden) }
+            scheduleDismiss(after: animation.outroDuration)
+        }
+        withAnimation(animation.intro) { apply(.init()) }
+    }
+
+    private func setCursorPushed(_ pushed: Bool) {
+        guard pushed != cursorPushed else { return }
+        cursorPushed = pushed
+        if pushed { NSCursor.pointingHand.push() } else { NSCursor.pop() }
+    }
+
+    private func apply(_ t: BannerAnimation.Transform) {
+        animX = t.x; animY = t.y; animOpacity = t.opacity; animScale = t.scale; animRotation = t.rotation
+    }
+
+    private func scheduleDismiss(after delay: Double) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak controller] in
+            controller?.dismissCompletion?()
+        }
+    }
+}
+
+/// The banner itself, as the system draws it: glass, icon, text, and when its details are
+/// shown, the app's buttons. Shared by the custom banner and the custom Notification
+/// Center, whose rows are banners too (measured on 27.0, scripts/panel-lab
+/// `panel-shots`), so both look the same and take the same tint and text colour.
+struct BannerCard: View {
+    let content: BannerContent
+    let scale: CGFloat
+    let tint: Color
+    let textColor: Color?
+    var redactContent = false
+    /// Under the pointer: shows the more menu and the chevron, as the system's does.
+    var hovered = false
+    var onOpen: () -> Void = {}
+    var onAction: (String) -> Void = { _ in }
+    var onDetails: () -> Void = {}
+
+    @Environment(\.colorScheme) private var colorScheme
+    private var isLight: Bool { colorScheme == .light }
+    @State private var menuAnchor: MenuAnchor = MenuAnchor()
+
+    typealias Metrics = CustomBannerView.Metrics
+
+    /// What the system banner adds for the app's buttons, at the places measured on a real
+    /// one: hovered, a chevron that shows the details and an Options menu of the buttons;
+    /// with the details shown, a more menu and the chevron turned down.
+    @ViewBuilder private var chrome: some View {
+        let showDetails = content.expanded || hovered || BannerLook.forceHover
+        if showDetails {
+            ZStack(alignment: .topLeading) {
+                Button(action: onDetails) {
+                    Image(systemName: "chevron.forward")
+                        .font(.system(size: 11 * scale, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                        .rotationEffect(.degrees(content.expanded ? 90 : 0))
+                        .frame(width: chevron.width * scale, height: chevron.height * scale)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(LocalizationManager.shared.string("Options"))
+                .offset(x: chevron.minX * scale, y: chevron.minY * scale)
+                if content.expanded {
+                    Image(systemName: "ellipsis")
+                        .font(.system(size: 11 * scale, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                        .frame(width: Expanded.moreFrame.width * scale, height: Expanded.moreFrame.height * scale)
+                        .offset(x: Expanded.moreFrame.minX * scale, y: Expanded.moreFrame.minY * scale)
+                } else {
+                    optionsMenu
+                        .offset(x: Hovered.options.minX * scale, y: Hovered.options.minY * scale)
+                }
+            }
+            .transition(.opacity)
+        }
+    }
+
+    private var chevron: CGRect { content.expanded ? Expanded.chevronFrame : Hovered.chevron }
+
+    /// Options and the app's buttons in a menu; with a single button, that button itself.
+    @ViewBuilder private var optionsMenu: some View {
+        let pill = Capsule().fill(Color.primary.opacity(BannerLook.pill))
+        let size = CGSize(width: Hovered.options.width * scale, height: Hovered.options.height * scale)
+        if content.actions.count == 1, let only = content.actions.first {
+            Button { onAction(only) } label: {
+                Text(only).font(.system(size: Metrics.fontSize * scale)).foregroundStyle(titleStyle)
+                    .frame(width: size.width, height: size.height).background(pill)
+            }
+            .buttonStyle(.plain)
+        } else {
+            // A plain button opening the menu itself: SwiftUI's Menu restyles its label,
+            // moving the arrow in front and dropping the pill.
+            Button { menuAnchor.popUp(content.actions, onAction) } label: {
+                HStack(spacing: 3 * scale) {
+                    Text(SystemStrings.options).font(.system(size: Metrics.fontSize * scale))
+                    Image(systemName: "chevron.down").font(.system(size: 8 * scale, weight: .bold))
+                }
+                .foregroundStyle(titleStyle)
+                .frame(width: size.width, height: size.height)
+                .background(pill)
+                .contentShape(Capsule())
+            }
+            .buttonStyle(.plain)
+            .background(MenuAnchorView(anchor: menuAnchor))
+        }
+    }
+
+    /// Hovered, from a real banner's frames.
+    enum Hovered {
+        static let chevron = CGRect(x: 319, y: 7, width: 17, height: 19)
+        static let options = CGRect(x: 254, y: 26, width: 80, height: 22)
+    }
+
+    /// The system banner with its details shown, from a real one's frames: the text where
+    /// it is collapsed, then one row per button under a hairline, 16 points in from each
+    /// side, and a little room under the last.
+    enum Expanded {
+        static let collapsedHeight: CGFloat = 58
+        static let gapAboveButtons: CGFloat = 5
+        static let buttonHeight: CGFloat = 28
+        static let divider: CGFloat = 1
+        static let sideInset: CGFloat = 16
+        static let bottom: CGFloat = 7
+        /// The reply field's box; with its spacing it fills the 40 points between the
+        /// hairline and the send button on the real one.
+        static let replyHeight: CGFloat = 27
+        /// The more menu (⋯) and the chevron, from the top right corner.
+        static let moreFrame = CGRect(x: 299, y: 10, width: 20, height: 13)
+        static let chevronFrame = CGRect(x: 318, y: 8, width: 19, height: 17)
+    }
+
+    var body: some View {
         let shape = RoundedRectangle(cornerRadius: Metrics.cornerRadius * scale, style: .continuous)
         return VStack(spacing: 0) {
             summary
@@ -305,59 +471,74 @@ struct CustomBannerView: View {
                 shape.strokeBorder(Color.primary.opacity(0.08), lineWidth: 0.5)
             }
         }
-        .overlay(alignment: .topTrailing) {
-            // The real banner's chevron: shows or hides the app's buttons.
-            if isHovered, !content.actions.isEmpty {
-                Button(action: onDetails) {
-                    Image(systemName: content.expanded ? "chevron.up" : "chevron.down")
-                        .font(.system(size: 10 * scale, weight: .semibold))
-                        .foregroundStyle(.secondary)
-                        .frame(width: 22 * scale, height: 22 * scale)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel(LocalizationManager.shared.string("Options"))
-                .padding(.top, 6 * scale).padding(.trailing, 6 * scale)
-                .transition(.opacity)
-            }
+        .overlay(alignment: .topLeading) {
+            if !content.actions.isEmpty { chrome }
         }
         .contentShape(shape)
         .onTapGesture { onOpen() }
     }
 
-    /// The app's buttons and an open reply, laid out as the real banner does when it
-    /// shows its details: full-width rows under the text.
+    /// The app's buttons and an open reply, as the system banner shows them with its
+    /// details: plain centred titles in full-width rows, a hairline above each.
     private var expandedButtons: some View {
-        VStack(spacing: 4 * scale) {
-            if let reply = content.reply {
-                HStack(spacing: 0) {
-                    Text(reply.isEmpty ? content.replyPlaceholder : reply)
-                        .font(.system(size: Metrics.fontSize * scale))
-                        .foregroundStyle(reply.isEmpty ? AnyShapeStyle(.secondary) : bodyStyle)
-                        .lineLimit(3)
-                    Rectangle().fill(Color.nannyAccent).frame(width: 1.5 * scale, height: 14 * scale)
-                        .padding(.leading, 1)
-                    Spacer(minLength: 0)
+        VStack(spacing: 0) {
+            ForEach(Array(content.actions.enumerated()), id: \.element) { index, name in
+                // With a reply open, its field takes the first button's hairline, and the
+                // send button sits right under the field.
+                if let reply = content.reply, index == 0 {
+                    divider
+                    replyField(reply)
+                } else {
+                    divider
                 }
-                .padding(.horizontal, 8 * scale).padding(.vertical, 5 * scale)
-                .background(RoundedRectangle(cornerRadius: 8 * scale, style: .continuous).fill(Color.primary.opacity(0.06)))
-            }
-            ForEach(content.actions, id: \.self) { name in
+                let sends = content.reply != nil && index == 0
+                let waiting = sends && (content.reply ?? "").isEmpty
                 Button { onAction(name) } label: {
                     Text(name)
-                        .font(.system(size: Metrics.fontSize * scale, weight: .medium))
-                        .foregroundStyle(titleStyle)
+                        .font(.system(size: Metrics.fontSize * scale))
+                        .foregroundStyle(waiting ? AnyShapeStyle(.secondary) : titleStyle)
                         .frame(maxWidth: .infinity)
-                        .frame(height: 26 * scale)
-                        .background(RoundedRectangle(cornerRadius: 8 * scale, style: .continuous)
-                            .fill(Color.primary.opacity(0.08)))
+                        .frame(height: Expanded.buttonHeight * scale)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                .disabled(waiting)
             }
         }
-        .padding(.horizontal, 10 * scale)
-        .padding(.bottom, 10 * scale)
+        .padding(.horizontal, Expanded.sideInset * scale)
+        .padding(.top, Expanded.gapAboveButtons * scale)
+        .padding(.bottom, Expanded.bottom * scale)
+    }
+
+    private var divider: some View {
+        Rectangle().fill(Color.primary.opacity(BannerLook.divider)).frame(height: Expanded.divider * scale)
+    }
+
+    /// The system's reply field: a rounded box a little lighter than the banner, with the
+    /// app's placeholder and the caret. The typing itself goes to the real one.
+    private func replyField(_ text: String) -> some View {
+        // The caret is the system accent: Color.accentColor turns gray in a window of an
+        // app that isn't active, which this always is. It stands before the placeholder,
+        // and after what is typed.
+        let caret = Rectangle().fill(Color(nsColor: .controlAccentColor)).frame(width: 1 * scale, height: 15 * scale)
+        return HStack(spacing: 0) {
+            if text.isEmpty { caret }
+            Text(text.isEmpty ? content.replyPlaceholder : text)
+                .font(.system(size: Metrics.fontSize * scale))
+                .foregroundStyle(text.isEmpty ? AnyShapeStyle(.secondary) : bodyStyle)
+                .lineLimit(3)
+            if !text.isEmpty { caret.padding(.leading, 1) }
+            Spacer(minLength: 0)
+        }
+        // Text and caret 9 points into the box, as on the real one (21 from the banner's edge).
+        .padding(.horizontal, 9 * scale)
+        .frame(height: Expanded.replyHeight * scale)
+        .background(RoundedRectangle(cornerRadius: 5 * scale, style: .continuous).fill(Color.primary.opacity(BannerLook.field)))
+        .overlay(RoundedRectangle(cornerRadius: 5 * scale, style: .continuous)
+            .strokeBorder(Color.primary.opacity(BannerLook.fieldEdge), lineWidth: scale))
+        .padding(.horizontal, -4 * scale)
+        .padding(.top, 7 * scale)
+        .padding(.bottom, 6 * scale)
     }
 
     private var summary: some View {
@@ -396,24 +577,11 @@ struct CustomBannerView: View {
         }
         .padding(.leading, Metrics.iconLeading * scale)
         .padding(.trailing, Metrics.textTrailing * scale)
-        // Collapsed it fills the banner and stays centred, as before; expanded it sits
-        // at the top with the buttons under it.
-        .frame(maxWidth: .infinity, maxHeight: content.expanded ? nil : .infinity)
-    }
-
-    private var closeButton: some View {
-        Button(action: onDismiss) {
-            ZStack {
-                BannerBackground(cornerRadius: Metrics.closeDiameter / 2 * scale)
-                Image(systemName: "xmark")
-                    .font(.system(size: 8 * scale, weight: .bold))
-                    .foregroundStyle(.secondary)
-            }
-            .frame(width: Metrics.closeDiameter * scale, height: Metrics.closeDiameter * scale)
-            .clipShape(Circle())
-            .contentShape(Circle())
-        }
-        .buttonStyle(.plain)
+        // Collapsed it fills the banner and stays centred, as before; expanded it keeps
+        // the collapsed height, so the text doesn't move, with the buttons under it.
+        .frame(maxWidth: .infinity)
+        .frame(height: content.expanded ? Expanded.collapsedHeight * scale : nil)
+        .frame(maxHeight: content.expanded ? nil : .infinity)
     }
 
     // The system banner draws title, subtitle and body all in the label colour,
@@ -423,31 +591,6 @@ struct CustomBannerView: View {
     }
     private var bodyStyle: AnyShapeStyle {
         textColor.map { AnyShapeStyle($0.opacity(0.85)) } ?? AnyShapeStyle(.primary)
-    }
-
-    private func setupAnimations() {
-        let hidden = animation.hidden
-        controller.slideOutClosure = {
-            withAnimation(animation.outro) { apply(hidden) }
-            scheduleDismiss(after: animation.outroDuration)
-        }
-        withAnimation(animation.intro) { apply(.init()) }
-    }
-
-    private func setCursorPushed(_ pushed: Bool) {
-        guard pushed != cursorPushed else { return }
-        cursorPushed = pushed
-        if pushed { NSCursor.pointingHand.push() } else { NSCursor.pop() }
-    }
-
-    private func apply(_ t: BannerAnimation.Transform) {
-        animX = t.x; animY = t.y; animOpacity = t.opacity; animScale = t.scale; animRotation = t.rotation
-    }
-
-    private func scheduleDismiss(after delay: Double) {
-        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak controller] in
-            controller?.dismissCompletion?()
-        }
     }
 
     @ViewBuilder
@@ -471,6 +614,48 @@ struct CustomBannerView: View {
             .frame(width: Metrics.iconFrame * scale, height: Metrics.iconFrame * scale)
         }
     }
+}
+
+/// Where a menu of the app's buttons opens: under the Options pill, as the system's does.
+@MainActor
+final class MenuAnchor {
+    weak var view: NSView?
+    private var handlers: [() -> Void] = []
+
+    func popUp(_ actions: [String], _ onAction: @escaping (String) -> Void) {
+        guard let view else { return }
+        let menu = NSMenu()
+        handlers = actions.map { name in { onAction(name) } }
+        for (i, name) in actions.enumerated() {
+            let item = NSMenuItem(title: name, action: #selector(choose(_:)), keyEquivalent: "")
+            item.target = self
+            item.tag = i
+            menu.addItem(item)
+        }
+        menu.popUp(positioning: nil, at: NSPoint(x: 0, y: view.isFlipped ? view.bounds.maxY + 4 : -4), in: view)
+    }
+
+    @objc private func choose(_ item: NSMenuItem) {
+        guard handlers.indices.contains(item.tag) else { return }
+        handlers[item.tag]()
+    }
+}
+
+struct MenuAnchorView: NSViewRepresentable {
+    let anchor: MenuAnchor
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView()
+        anchor.view = view
+        return view
+    }
+    func updateNSView(_ view: NSView, context: Context) { anchor.view = view }
+}
+
+/// Notification Center's own words for what the replica draws, so they read as the
+/// system's do, in the language Notification Center shows.
+enum SystemStrings {
+    private static let bundle = Bundle(path: "/System/Library/CoreServices/NotificationCenter.app")
+    static let options = bundle?.localizedString(forKey: "Options", value: "Options", table: "Localizable") ?? "Options"
 }
 
 /// Liquid Glass on macOS 26 and later, which is what the system banner is made
