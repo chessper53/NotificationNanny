@@ -8,7 +8,8 @@ struct BannerTabView: View {
 
     @State private var previewReplay = 0
 
-    private static let colorPresets: [(String, Color)] = [
+    /// Shared with the Notification Center tab, whose colours work the same.
+    static let colorPresets: [(String, Color)] = [
         ("Red",    Color(red: 1.0,  green: 0.23, blue: 0.19)),
         ("Orange", Color(red: 1.0,  green: 0.58, blue: 0.0)),
         ("Yellow", Color(red: 1.0,  green: 0.80, blue: 0.0)),
@@ -55,7 +56,7 @@ struct BannerTabView: View {
                         Button { settings.bannerColor = color } label: {
                             Circle().fill(color).frame(width: 22, height: 22)
                                 .overlay(Circle().strokeBorder(
-                                    settings.hasBannerColor && isColorMatch(color, settings.bannerColor)
+                                    settings.hasBannerColor && Self.isColorMatch(color, settings.bannerColor)
                                         ? Color.nannyStrong : Color.clear,
                                     lineWidth: 2))
                         }
@@ -208,7 +209,7 @@ struct BannerTabView: View {
         .buttonStyle(.plain)
     }
 
-    private func isColorMatch(_ a: Color, _ b: Color) -> Bool {
+    static func isColorMatch(_ a: Color, _ b: Color) -> Bool {
         let ca = NSColor(a).usingColorSpace(.sRGB)
         let cb = NSColor(b).usingColorSpace(.sRGB)
         guard let ca, let cb else { return false }

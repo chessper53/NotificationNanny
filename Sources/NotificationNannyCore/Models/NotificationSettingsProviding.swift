@@ -15,6 +15,12 @@ package protocol NotificationSettingsProviding: AnyObject {
     var customNotificationCenterAnimation: BannerAnimation { get }
     var customNotificationCenterScale: Double { get }
     var customNotificationCenterSide: NCPanelSide { get }
+    var customNotificationCenterDisplayID: CGDirectDisplayID { get }
+    var customNotificationCenterTopOffset: Double { get }
+    var customNotificationCenterOwnBackground: Bool { get }
+    var customNotificationCenterTint: BannerTint? { get }
+    var customNotificationCenterOwnText: Bool { get }
+    var customNotificationCenterTextTint: BannerTint? { get }
     var protectDesktopWidgets: Bool { get }
     var followActiveScreen: Bool { get }
     var pauseDuringFocus: Bool { get }

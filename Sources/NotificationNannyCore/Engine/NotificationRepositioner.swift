@@ -50,9 +50,10 @@ package final class NotificationRepositioner: ObservableObject {
     private lazy var panelTakeover: NCPanelTakeover = {
         let takeover = NCPanelTakeover(logger: logger, times: notificationTimes)
         takeover.showTimes = { [weak self] in self?.settings?.customNotificationCenterTimes == true }
+        // A display chosen in Settings; otherwise the one whose clock was clicked.
         takeover.preferredScreen = { [weak self] in
-            guard let s = self?.settings, !s.avoidNCPanel else { return nil }
-            return s.resolvedTargetScreen()
+            guard let id = self?.settings?.customNotificationCenterDisplayID, id != 0 else { return nil }
+            return NSScreen.screens.first { $0.displayID == id }
         }
         takeover.readOptions = { [weak self] in
             guard let s = self?.settings else { return NCPanelOptions() }
@@ -60,8 +61,10 @@ package final class NotificationRepositioner: ObservableObject {
                                   animation: s.customNotificationCenterAnimation,
                                   scale: CGFloat(s.customNotificationCenterScale),
                                   side: s.customNotificationCenterSide,
+                                  topOffset: CGFloat(s.customNotificationCenterTopOffset),
                                   widgets: s.customNotificationCenterWidgets,
-                                  textColor: s.effectiveBannerTextColor,
+                                  textColor: s.customNotificationCenterOwnText
+                                      ? s.customNotificationCenterTextTint?.color : s.effectiveBannerTextColor,
                                   redact: s.redactBannerContent)
         }
         // Banners that came in while the panel was open go where they belong.
@@ -73,7 +76,12 @@ package final class NotificationRepositioner: ObservableObject {
             self?.overlayContent.removeAll()
             self?.customPiles.removeAll()
         }
-        takeover.tint = { [weak self] in self?.settings?.effectiveBannerColor(for: $0) ?? .clear }
+        // Same as banners unless the panel has its own; its own is one for every row.
+        takeover.tint = { [weak self] app in
+            guard let s = self?.settings else { return .clear }
+            guard s.customNotificationCenterOwnBackground else { return s.effectiveBannerColor(for: app) }
+            return s.customNotificationCenterTint.map { $0.color.opacity(0.55) } ?? .clear
+        }
         return takeover
     }()
 

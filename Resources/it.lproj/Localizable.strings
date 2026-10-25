@@ -220,3 +220,11 @@
 "As macOS: in from the edge of the screen." = "Come macOS: entra dal bordo dello schermo.";
 "How it comes in when you click the clock, and goes when it closes." = "Come entra quando fai clic sull'orologio e come esce quando si chiude.";
 "Not part of macOS's Notification Center, so off unless you turn them on. Times are noted when each banner appears; notifications that came in while NotificationNanny wasn't running have none." = "Non fanno parte del Centro Notifiche di macOS, quindi sono disattivati finché non li attivi. Gli orari vengono annotati quando appare ogni banner; le notifiche arrivate mentre NotificationNanny non era in esecuzione non ne hanno.";
+"Same as banners" = "Come i banner";
+"As macOS. Drag it on the preview to either side, and down from the top." = "Come macOS. Trascinalo nell'anteprima su un lato, e verso il basso dall'alto.";
+"Drag it on the preview to either side, and down from the top." = "Trascinalo nell'anteprima su un lato, e verso il basso dall'alto.";
+"Same as your banners, and per app where your exceptions set one." = "Come i tuoi banner, e per app dove le tue eccezioni ne impostano uno.";
+"No tint: the system's look." = "Nessuna tinta: l'aspetto del sistema.";
+"One tint for every row." = "Una tinta per ogni riga.";
+"Same as your banners." = "Come i tuoi banner.";
+"Custom text color active." = "Colore del testo personalizzato attivo.";

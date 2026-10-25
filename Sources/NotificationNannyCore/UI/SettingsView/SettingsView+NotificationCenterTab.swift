@@ -2,8 +2,8 @@ import AppKit
 import SwiftUI
 
 /// The custom Notification Center's settings, laid out like the Banner tab: one card per
-/// setting, its title on top, a note under it. Everything starts as macOS has it; the
-/// extras that macOS doesn't have start off.
+/// setting, its title on top, a note under it. Everything starts as macOS has it; colours
+/// start as the banners', and the extras that macOS doesn't have start off.
 struct NotificationCenterTabView: View {
     @EnvironmentObject var settings: AppSettings
     @ObservedObject private var permission = ScreenRecordingPermission.shared
@@ -11,29 +11,24 @@ struct NotificationCenterTabView: View {
 
     @State private var previewReplay = 0
 
+    private var screens: [NSScreen] { NSScreen.screens }
+
+    /// The display the preview shows: the chosen one, or the main one while it opens
+    /// wherever the clock is clicked.
+    private var previewScreen: NSScreen {
+        screens.first { $0.displayID == settings.customNotificationCenterDisplayID } ?? NSScreen.main ?? screens[0]
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            card {
-                HStack {
-                    LocalizedText("Notification Center").font(.caption.weight(.medium)).foregroundStyle(.secondary)
-                    Spacer()
-                    Toggle("", isOn: $settings.customNotificationCenter)
-                        .labelsHidden().toggleStyle(.switch).controlSize(.small)
-                }
-                LocalizedText("Use NotificationNanny's Notification Center (experimental)").font(.callout)
-                note("NotificationNanny can show its own list when you click the clock, in place of the Notification Center panel. Your notifications stay in Notification Center: this is another view of them, and everything you do in it goes back there.")
-            }
-
+            mainCard
             if settings.customNotificationCenter {
-                sizeCard
                 positionCard
+                sizeCard
+                backgroundCard
+                textCard
                 animationCard
-                card {
-                    LocalizedText("Look").font(.caption.weight(.medium)).foregroundStyle(.secondary)
-                    note("Rows look like your banners: their colour, text colour and privacy blur come from the Banner tab and your exceptions.")
-                }
                 extrasCard
-                widgetsCard
 
                 Button { NCPanelTakeover.pressMenuBarClock() } label: {
                     Label {
@@ -51,6 +46,103 @@ struct NotificationCenterTabView: View {
             permission.refresh()
         }
     }
+
+    // MARK: - The switch, and widgets under it
+
+    private var mainCard: some View {
+        card {
+            HStack {
+                LocalizedText("Use NotificationNanny's Notification Center (experimental)").font(.callout)
+                Spacer()
+                Toggle("", isOn: $settings.customNotificationCenter)
+                    .labelsHidden().toggleStyle(.switch).controlSize(.small)
+            }
+            note("NotificationNanny can show its own list when you click the clock, in place of the Notification Center panel. Your notifications stay in Notification Center: this is another view of them, and everything you do in it goes back there.")
+
+            if settings.customNotificationCenter {
+                Divider()
+                HStack {
+                    LocalizedText("Show widgets").font(.callout)
+                    Spacer()
+                    Toggle("", isOn: Binding(
+                        get: { settings.customNotificationCenterWidgets },
+                        set: { on in
+                            settings.customNotificationCenterWidgets = on
+                            if on, !permission.isGranted { permission.request() }
+                        }
+                    ))
+                    .labelsHidden().toggleStyle(.switch).controlSize(.small)
+                }
+                .padding(.leading, 12)
+                note("Widgets are drawn by their own apps, so NotificationNanny can only show them as live pictures of the real ones. That needs Screen Recording. Leave this off and widgets are simply left out.")
+                    .padding(.leading, 12)
+                if settings.customNotificationCenterWidgets { permissionRow.padding(.leading, 12) }
+            }
+        }
+    }
+
+    private var permissionRow: some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: permission.isGranted ? "checkmark.circle.fill" : "exclamationmark.circle")
+                .foregroundStyle(permission.isGranted ? Color.nannyAccent : .secondary)
+            VStack(alignment: .leading, spacing: 2) {
+                LocalizedText(permission.isGranted ? "Screen Recording is allowed" : "Screen Recording isn't allowed yet")
+                    .font(.callout)
+                if !permission.isGranted {
+                    note("Allow NotificationNanny in System Settings. If you just did, quit and reopen NotificationNanny: macOS only applies it after a restart.")
+                }
+            }
+            Spacer()
+            if !permission.isGranted {
+                Button(loc.string("Open System Settings")) { permission.openSystemSettings() }
+                    .controlSize(.small)
+            }
+        }
+    }
+
+    // MARK: - Position
+
+    private var positionCard: some View {
+        let isDefault = settings.customNotificationCenterSide == .right && settings.customNotificationCenterTopOffset == 0
+        return card {
+            HStack {
+                LocalizedText("Position").font(.caption.weight(.medium)).foregroundStyle(.secondary)
+                Spacer()
+                Picker("", selection: $settings.customNotificationCenterDisplayID) {
+                    LocalizedText("Where you click the clock").tag(CGDirectDisplayID(0))
+                    if screens.count > 1 {
+                        ForEach(screens, id: \.displayID) { screen in
+                            Text(screen.nannyDisplayName).tag(screen.displayID)
+                        }
+                    }
+                }
+                .labelsHidden().pickerStyle(.menu).controlSize(.small).fixedSize()
+            }
+            NCPanelPositionTile(screen: previewScreen,
+                                side: $settings.customNotificationCenterSide,
+                                topOffset: $settings.customNotificationCenterTopOffset)
+                .frame(maxWidth: .infinity)
+            HStack(spacing: 6) {
+                LocalizedText(settings.customNotificationCenterSide.labelKey)
+                    .font(.caption.weight(.medium)).foregroundStyle(.secondary)
+                if settings.customNotificationCenterTopOffset > 0 {
+                    Text("+\(Int(settings.customNotificationCenterTopOffset.rounded())) px")
+                        .font(.caption2.monospacedDigit()).foregroundStyle(.tertiary)
+                }
+                Spacer()
+                Button(loc.string("Reset")) {
+                    settings.customNotificationCenterSide = .right
+                    settings.customNotificationCenterTopOffset = 0
+                }
+                .buttonStyle(.borderless).font(.caption).foregroundStyle(Color.nannyAccent).disabled(isDefault)
+            }
+            note(isDefault && settings.customNotificationCenterDisplayID == 0
+                 ? "As macOS. Drag it on the preview to either side, and down from the top."
+                 : "Drag it on the preview to either side, and down from the top.")
+        }
+    }
+
+    // MARK: - Size
 
     private var sizeCard: some View {
         card {
@@ -75,25 +167,103 @@ struct NotificationCenterTabView: View {
         }
     }
 
-    private var positionCard: some View {
-        card {
-            LocalizedText("Position").font(.caption.weight(.medium)).foregroundStyle(.secondary)
-            Picker("", selection: $settings.customNotificationCenterSide) {
-                ForEach(NCPanelSide.allCases) { Text(loc.string($0.labelKey)).tag($0) }
+    // MARK: - Colours, as in the Banner tab, with "Same as banners" first
+
+    private var backgroundCard: some View {
+        let own = settings.customNotificationCenterOwnBackground
+        let tint = settings.customNotificationCenterTint
+        return card {
+            HStack {
+                LocalizedText("Background Color").font(.caption.weight(.medium)).foregroundStyle(.secondary)
+                Spacer()
+                Button(loc.string("Clear")) {
+                    settings.customNotificationCenterOwnBackground = true
+                    settings.customNotificationCenterTint = nil
+                }
+                .buttonStyle(.borderless).font(.caption).foregroundStyle(Color.nannyAccent)
+                .disabled(own && tint == nil)
             }
-            .pickerStyle(.segmented).labelsHidden()
-            // The same setting as General's "Don't move Notification Center", which means
-            // the same for the system's panel.
-            Picker("", selection: $settings.avoidNCPanel) {
-                Text(loc.string("Where you click the clock")).tag(true)
-                Text(loc.string("Where your banners go")).tag(false)
+            HStack(spacing: 6) {
+                sameAsBannersChip(selected: !own) { settings.customNotificationCenterOwnBackground = false }
+                ForEach(BannerTabView.colorPresets, id: \.0) { name, color in
+                    Button {
+                        settings.customNotificationCenterOwnBackground = true
+                        settings.customNotificationCenterTint = Self.tint(of: color)
+                    } label: {
+                        Circle().fill(color).frame(width: 22, height: 22)
+                            .overlay(Circle().strokeBorder(
+                                own && tint.map { BannerTabView.isColorMatch(color, $0.color) } == true
+                                    ? Color.nannyStrong : Color.clear,
+                                lineWidth: 2))
+                    }
+                    .buttonStyle(.plain).help(name)
+                }
+                Spacer()
+                HStack(spacing: 4) {
+                    LocalizedText("Custom").font(.system(size: 9)).foregroundStyle(.tertiary)
+                    ColorPicker("", selection: Binding(
+                        get: { tint?.color ?? settings.bannerColor },
+                        set: {
+                            settings.customNotificationCenterOwnBackground = true
+                            settings.customNotificationCenterTint = Self.tint(of: $0)
+                        }
+                    ), supportsOpacity: false).labelsHidden()
+                }
+                .help(loc.string("Pick any custom color"))
             }
-            .pickerStyle(.segmented).labelsHidden()
-            note(settings.customNotificationCenterSide == .right && settings.avoidNCPanel
-                 ? "As macOS: on the right, on the screen whose clock you click."
-                 : "The side of the screen, and which screen it opens on.")
+            note(!own ? "Same as your banners, and per app where your exceptions set one."
+                 : tint == nil ? "No tint: the system's look." : "One tint for every row.")
         }
     }
+
+    private var textCard: some View {
+        let own = settings.customNotificationCenterOwnText
+        let tint = settings.customNotificationCenterTextTint
+        return card {
+            HStack {
+                LocalizedText("Text Color").font(.caption.weight(.medium)).foregroundStyle(.secondary)
+                Spacer()
+                Button(loc.string("Reset")) {
+                    settings.customNotificationCenterOwnText = true
+                    settings.customNotificationCenterTextTint = nil
+                }
+                .buttonStyle(.borderless).font(.caption).foregroundStyle(Color.nannyAccent)
+                .disabled(own && tint == nil)
+            }
+            HStack(spacing: 8) {
+                sameAsBannersChip(selected: !own) { settings.customNotificationCenterOwnText = false }
+                ColorPicker("Text", selection: Binding(
+                    get: { tint?.color ?? settings.bannerTextTint?.color ?? .black },
+                    set: {
+                        settings.customNotificationCenterOwnText = true
+                        settings.customNotificationCenterTextTint = Self.tint(of: $0)
+                    }
+                ), supportsOpacity: false)
+                Spacer()
+            }
+            note(!own ? "Same as your banners."
+                 : tint == nil ? "Default. Follows system appearance" : "Custom text color active.")
+        }
+    }
+
+    private func sameAsBannersChip(selected: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            LocalizedText("Same as banners")
+                .font(.caption)
+                .padding(.horizontal, 10).padding(.vertical, 4)
+                .background(selected ? Color.nannyProminent.opacity(0.9) : Color.nannyRaised(0.06),
+                            in: Capsule())
+                .foregroundStyle(selected ? Color.white : Color.secondary)
+        }
+        .buttonStyle(.plain)
+    }
+
+    private static func tint(of color: Color) -> BannerTint {
+        let c = NSColor(color).usingColorSpace(.sRGB) ?? .black
+        return BannerTint(r: Double(c.redComponent), g: Double(c.greenComponent), b: Double(c.blueComponent))
+    }
+
+    // MARK: - Animation
 
     private var animationCard: some View {
         card {
@@ -107,8 +277,7 @@ struct NotificationCenterTabView: View {
                 .buttonStyle(.borderless).foregroundStyle(Color.nannyAccent)
             }
             AnimationPreviewPane(animation: settings.customNotificationCenterAnimation, replay: previewReplay,
-                                 tint: settings.hasBannerColor ? settings.bannerColor : .clear,
-                                 textColor: settings.effectiveBannerTextColor ?? .primary)
+                                 tint: previewTint, textColor: previewTextColor)
                 .frame(height: 64)
                 .frame(maxWidth: .infinity)
                 .background(Color.nannyInset(0.22), in: RoundedRectangle(cornerRadius: 10))
@@ -124,49 +293,15 @@ struct NotificationCenterTabView: View {
         }
     }
 
-    private var extrasCard: some View {
-        card {
-            LocalizedText("Extras").font(.caption.weight(.medium)).foregroundStyle(.secondary)
-            toggleRow("Show when notifications arrived", isOn: $settings.customNotificationCenterTimes)
-            toggleRow("Filter by app", isOn: $settings.customNotificationCenterAppFilter)
-            note("Not part of macOS's Notification Center, so off unless you turn them on. Times are noted when each banner appears; notifications that came in while NotificationNanny wasn't running have none.")
-        }
+    private var previewTint: Color {
+        settings.customNotificationCenterOwnBackground
+            ? settings.customNotificationCenterTint?.color ?? .clear
+            : settings.hasBannerColor ? settings.bannerColor : .clear
     }
 
-    private var widgetsCard: some View {
-        card {
-            HStack {
-                LocalizedText("Widgets").font(.caption.weight(.medium)).foregroundStyle(.secondary)
-                Spacer()
-                Toggle("", isOn: Binding(
-                    get: { settings.customNotificationCenterWidgets },
-                    set: { on in
-                        settings.customNotificationCenterWidgets = on
-                        if on, !permission.isGranted { permission.request() }
-                    }
-                ))
-                .labelsHidden().toggleStyle(.switch).controlSize(.small)
-            }
-            note("Widgets are drawn by their own apps, so NotificationNanny can only show them as live pictures of the real ones. That needs Screen Recording. Leave this off and widgets are simply left out.")
-            if settings.customNotificationCenterWidgets {
-                HStack(alignment: .top, spacing: 8) {
-                    Image(systemName: permission.isGranted ? "checkmark.circle.fill" : "exclamationmark.circle")
-                        .foregroundStyle(permission.isGranted ? Color.nannyAccent : .secondary)
-                    VStack(alignment: .leading, spacing: 2) {
-                        LocalizedText(permission.isGranted ? "Screen Recording is allowed" : "Screen Recording isn't allowed yet")
-                            .font(.callout)
-                        if !permission.isGranted {
-                            note("Allow NotificationNanny in System Settings. If you just did, quit and reopen NotificationNanny: macOS only applies it after a restart.")
-                        }
-                    }
-                    Spacer()
-                    if !permission.isGranted {
-                        Button(loc.string("Open System Settings")) { permission.openSystemSettings() }
-                            .controlSize(.small)
-                    }
-                }
-            }
-        }
+    private var previewTextColor: Color {
+        (settings.customNotificationCenterOwnText ? settings.customNotificationCenterTextTint?.color
+            : settings.effectiveBannerTextColor) ?? .primary
     }
 
     private func animationChip(_ anim: BannerAnimation) -> some View {
@@ -189,6 +324,19 @@ struct NotificationCenterTabView: View {
         .buttonStyle(.plain)
     }
 
+    // MARK: - Extras
+
+    private var extrasCard: some View {
+        card {
+            LocalizedText("Extras").font(.caption.weight(.medium)).foregroundStyle(.secondary)
+            toggleRow("Show when notifications arrived", isOn: $settings.customNotificationCenterTimes)
+            toggleRow("Filter by app", isOn: $settings.customNotificationCenterAppFilter)
+            note("Not part of macOS's Notification Center, so off unless you turn them on. Times are noted when each banner appears; notifications that came in while NotificationNanny wasn't running have none.")
+        }
+    }
+
+    // MARK: - Pieces
+
     private func card<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: 10) { content() }
             .padding(12)
@@ -207,5 +355,64 @@ struct NotificationCenterTabView: View {
             Spacer()
             Toggle("", isOn: isOn).labelsHidden().toggleStyle(.switch).controlSize(.small)
         }
+    }
+}
+
+/// The display as a device, as on the Position tab, with Notification Center's column on
+/// it at its real size. Drag it: it snaps to either side, and goes down from the top.
+private struct NCPanelPositionTile: View {
+    let screen: NSScreen
+    @Binding var side: NCPanelSide
+    @Binding var topOffset: Double
+    var maxWidth: CGFloat = 438
+    var maxHeight: CGFloat = 260
+
+    private static let rowSize = CGSize(width: 344, height: 58)
+    private static let rowGap: CGFloat = 6
+    private static let rows = 3
+    private static var columnHeight: CGFloat { rowSize.height * CGFloat(rows) + rowGap * CGFloat(rows - 1) }
+
+    var body: some View {
+        let frame = screen.frame
+        let menuBar = max(0, frame.maxY - screen.visibleFrame.maxY)
+        let scale = min(maxWidth / max(frame.width, 1), maxHeight / max(frame.height, 1))
+        let size = CGSize(width: frame.width * scale, height: frame.height * scale)
+        let edge = CustomNCPanelController.rightInset
+        let x = side == .right ? frame.width - edge - Self.rowSize.width : edge
+        let y = CustomNCPanelController.topInset + topOffset
+
+        return DeviceChrome(screen: screen, screenSize: size) {
+            ZStack(alignment: .topLeading) {
+                Rectangle().fill(LinearGradient(colors: [Color(red: 0.13, green: 0.15, blue: 0.20),
+                                                         Color(red: 0.08, green: 0.09, blue: 0.12)],
+                                                startPoint: .topLeading, endPoint: .bottomTrailing))
+                Rectangle().fill(Color.white.opacity(0.16)).frame(height: menuBar * scale)
+                VStack(spacing: Self.rowGap * scale) {
+                    ForEach(0..<Self.rows, id: \.self) { _ in
+                        BannerChip(width: Self.rowSize.width * scale, height: Self.rowSize.height * scale)
+                    }
+                }
+                .offset(x: x * scale, y: y * scale)
+            }
+            .frame(width: size.width, height: size.height)
+            .clipped()
+            .contentShape(Rectangle())
+            .gesture(DragGesture(minimumDistance: 0, coordinateSpace: .local).onChanged { value in
+                move(to: value.location, scale: scale, screenHeight: frame.height)
+            })
+        }
+    }
+
+    /// The column's middle follows the pointer: the half of the screen picks the side,
+    /// the height how far down it starts, never above the system's place or off screen.
+    private func move(to point: CGPoint, scale: CGFloat, screenHeight: CGFloat) {
+        let newSide: NCPanelSide = point.x < (screen.frame.width * scale) / 2 ? .left : .right
+        let top = point.y / scale - Self.columnHeight / 2 - CustomNCPanelController.topInset
+        let limit = max(0, screenHeight - CustomNCPanelController.topInset - Self.columnHeight - 16)
+        var offset = min(max(0, top), limit)
+        if offset < 8 { offset = 0 }
+        offset = offset.rounded()
+        if newSide != side { side = newSide }
+        if abs(offset - topOffset) >= 1 { topOffset = offset }
     }
 }

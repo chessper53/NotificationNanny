@@ -25,6 +25,12 @@ package final class AppSettings: ObservableObject {
         static let customNotificationCenterAnimation = "customNotificationCenterAnimation"
         static let customNotificationCenterScale = "customNotificationCenterScale"
         static let customNotificationCenterSide = "customNotificationCenterSide"
+        static let customNotificationCenterDisplayID = "customNotificationCenterDisplayID"
+        static let customNotificationCenterTopOffset = "customNotificationCenterTopOffset"
+        static let customNotificationCenterOwnBackground = "customNotificationCenterOwnBackground"
+        static let customNotificationCenterTint = "customNotificationCenterTint"
+        static let customNotificationCenterOwnText = "customNotificationCenterOwnText"
+        static let customNotificationCenterTextTint = "customNotificationCenterTextTint"
         static let protectDesktopWidgets = "protectDesktopWidgets"
         static let followActiveScreen   = "followActiveScreen"
         static let pauseDuringFocus     = "pauseDuringFocus"
@@ -141,6 +147,43 @@ package final class AppSettings: ObservableObject {
     /// Which side of the screen the custom Notification Center opens on.
     @Published package var customNotificationCenterSide: NCPanelSide {
         didSet { defaults.set(customNotificationCenterSide.rawValue, forKey: Key.customNotificationCenterSide) }
+    }
+
+    /// The display it opens on; 0 for the one whose clock was clicked, as macOS does.
+    @Published package var customNotificationCenterDisplayID: CGDirectDisplayID {
+        didSet { defaults.set(Int(customNotificationCenterDisplayID), forKey: Key.customNotificationCenterDisplayID) }
+    }
+
+    /// How much lower than the system's it starts, in points.
+    @Published package var customNotificationCenterTopOffset: Double {
+        didSet { defaults.set(customNotificationCenterTopOffset, forKey: Key.customNotificationCenterTopOffset) }
+    }
+
+    /// Off: rows take the banners' background colour. On: `customNotificationCenterTint`,
+    /// none being the system's look.
+    @Published package var customNotificationCenterOwnBackground: Bool {
+        didSet { defaults.set(customNotificationCenterOwnBackground, forKey: Key.customNotificationCenterOwnBackground) }
+    }
+    @Published package var customNotificationCenterTint: BannerTint? {
+        didSet { Self.store(customNotificationCenterTint, Key.customNotificationCenterTint, in: defaults) }
+    }
+
+    /// Off: rows take the banners' text colour. On: `customNotificationCenterTextTint`,
+    /// none being the system's.
+    @Published package var customNotificationCenterOwnText: Bool {
+        didSet { defaults.set(customNotificationCenterOwnText, forKey: Key.customNotificationCenterOwnText) }
+    }
+    @Published package var customNotificationCenterTextTint: BannerTint? {
+        didSet { Self.store(customNotificationCenterTextTint, Key.customNotificationCenterTextTint, in: defaults) }
+    }
+
+    private static func store(_ tint: BannerTint?, _ key: String, in defaults: UserDefaults) {
+        if let tint, let data = try? JSONEncoder().encode(tint) { defaults.set(data, forKey: key) }
+        else { defaults.removeObject(forKey: key) }
+    }
+
+    private static func loadTint(_ key: String, from defaults: UserDefaults) -> BannerTint? {
+        defaults.data(forKey: key).flatMap { try? JSONDecoder().decode(BannerTint.self, from: $0) }
     }
 
 
@@ -407,6 +450,12 @@ package final class AppSettings: ObservableObject {
         self.customNotificationCenterScale = (defaults.object(forKey: Key.customNotificationCenterScale) as? Double) ?? 1
         self.customNotificationCenterSide = defaults.string(forKey: Key.customNotificationCenterSide)
             .flatMap(NCPanelSide.init(rawValue:)) ?? .right
+        self.customNotificationCenterDisplayID = CGDirectDisplayID(defaults.integer(forKey: Key.customNotificationCenterDisplayID))
+        self.customNotificationCenterTopOffset = defaults.double(forKey: Key.customNotificationCenterTopOffset)
+        self.customNotificationCenterOwnBackground = defaults.bool(forKey: Key.customNotificationCenterOwnBackground)
+        self.customNotificationCenterTint = Self.loadTint(Key.customNotificationCenterTint, from: defaults)
+        self.customNotificationCenterOwnText = defaults.bool(forKey: Key.customNotificationCenterOwnText)
+        self.customNotificationCenterTextTint = Self.loadTint(Key.customNotificationCenterTextTint, from: defaults)
         self.protectDesktopWidgets = (defaults.object(forKey: Key.protectDesktopWidgets) as? Bool) ?? true
         self.followActiveScreen    = (defaults.object(forKey: Key.followActiveScreen) as? Bool) ?? false
         self.pauseDuringFocus      = (defaults.object(forKey: Key.pauseDuringFocus) as? Bool) ?? false
@@ -654,6 +703,12 @@ package final class AppSettings: ObservableObject {
         var customNotificationCenterAnimation: BannerAnimation?
         var customNotificationCenterScale: Double?
         var customNotificationCenterSide: NCPanelSide?
+        var customNotificationCenterDisplayID: CGDirectDisplayID?
+        var customNotificationCenterTopOffset: Double?
+        var customNotificationCenterOwnBackground: Bool?
+        var customNotificationCenterTint: BannerTint?
+        var customNotificationCenterOwnText: Bool?
+        var customNotificationCenterTextTint: BannerTint?
         var protectDesktopWidgets: Bool?
         var followActiveScreen: Bool?
         var pauseDuringFocus: Bool?
@@ -679,6 +734,12 @@ package final class AppSettings: ObservableObject {
             customNotificationCenterAnimation: customNotificationCenterAnimation,
             customNotificationCenterScale: customNotificationCenterScale,
             customNotificationCenterSide: customNotificationCenterSide,
+            customNotificationCenterDisplayID: customNotificationCenterDisplayID,
+            customNotificationCenterTopOffset: customNotificationCenterTopOffset,
+            customNotificationCenterOwnBackground: customNotificationCenterOwnBackground,
+            customNotificationCenterTint: customNotificationCenterTint,
+            customNotificationCenterOwnText: customNotificationCenterOwnText,
+            customNotificationCenterTextTint: customNotificationCenterTextTint,
             protectDesktopWidgets: protectDesktopWidgets,
             followActiveScreen: followActiveScreen,
             pauseDuringFocus: pauseDuringFocus,
@@ -713,6 +774,12 @@ package final class AppSettings: ObservableObject {
         customNotificationCenterAnimation = imported.customNotificationCenterAnimation ?? .default
         customNotificationCenterScale = imported.customNotificationCenterScale ?? 1
         customNotificationCenterSide = imported.customNotificationCenterSide ?? .right
+        customNotificationCenterDisplayID = imported.customNotificationCenterDisplayID ?? 0
+        customNotificationCenterTopOffset = imported.customNotificationCenterTopOffset ?? 0
+        customNotificationCenterOwnBackground = imported.customNotificationCenterOwnBackground ?? false
+        customNotificationCenterTint = imported.customNotificationCenterTint
+        customNotificationCenterOwnText = imported.customNotificationCenterOwnText ?? false
+        customNotificationCenterTextTint = imported.customNotificationCenterTextTint
         protectDesktopWidgets = imported.protectDesktopWidgets ?? true
         followActiveScreen  = imported.followActiveScreen ?? false
         pauseDuringFocus    = imported.pauseDuringFocus ?? false

@@ -96,7 +96,7 @@ final class CustomNCPanelController {
     /// The tallest the panel can be on its screen.
     var maxHeight: CGFloat {
         guard let screen else { return 600 }
-        return screen.frame.height - Self.topInset - Self.rightInset + Self.chrome * options.scale * 2
+        return screen.frame.height - Self.topInset - options.topOffset - Self.rightInset + Self.chrome * options.scale * 2
     }
 
     private func contentHeightChanged(_ height: CGFloat) {
@@ -112,7 +112,7 @@ final class CustomNCPanelController {
         let o = options
         let height = min(contentHeight, maxHeight)
         let width = Self.width(o)
-        let top = screen.frame.maxY - Self.topInset + Self.chrome * o.scale
+        let top = screen.frame.maxY - Self.topInset - o.topOffset + Self.chrome * o.scale
         let x = o.side == .right ? screen.frame.maxX - width : screen.frame.minX
         let frame = NSRect(x: x, y: top - height, width: width, height: height)
         window.setFrame(frame, display: true)
