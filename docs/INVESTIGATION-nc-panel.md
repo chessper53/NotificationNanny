@@ -41,6 +41,26 @@ of anything else with its length.
 | Does opening a notification close the panel? | Not while parked; it does when clicked in the real panel. |
 | Does Clear All on the history ask first? | No. One press cleared it, and the panel stayed open. |
 
+## Widgets
+
+Widgets and notifications are drawn by the same process. Each desktop widget is a window
+of Notification Center's own (`AXUnknown`, on the desktop layer), and a widget in the
+panel sits in the panel's scroll area, in an `AXOpaqueProviderGroup` above the
+notifications. Either way a widget's element has an identifier
+`widget-local:<app>:<kind>:<container>`, for example
+`widget-local:com.apple.weather:com.apple.weather.widget:com.apple.weather`.
+
+| Question | Answer |
+|---|---|
+| Can a widget be read? | Its text, yes: the Weather widget describes itself as place, temperature, conditions, warning, high and low, then one element per hour. Not its look. |
+| Can it be clicked through Accessibility? | No. Its parts only offer `AXScrollToVisible`; there is no `AXPress`. |
+| Can it be captured as a picture? | Not while parked: a window wholly off screen isn't drawn, and `screencapture -l` fails. On screen, yes, even covered by a window of ours above it (level 25 over Notification Center's 21): the real Weather widget came out pixel for pixel. That needs Screen Recording. |
+| A trap for anything that moves windows | With the panel closed, a desktop widget can be Notification Center's only window. A lab cleanup that took the widest window for the panel's moved a desktop widget to (0,0). Only the `AXSystemDialog` window is the panel's. |
+
+So widgets could be shown in the custom panel two ways: as text cards, which need nothing
+more, or as pictures of the real ones, which needs the real panel kept on screen under
+ours instead of parked, and Screen Recording.
+
 ## What was built
 
 Behind the experimental setting "Custom Notification Center" (General, off by default):
@@ -73,8 +93,7 @@ and open throughout, and settings were restored and checked after every run.
 
 ## Still open
 
-- Widgets are not shown. They are drawn by their own processes and Accessibility doesn't
-  describe them.
+- Widgets are not shown yet; see Widgets above for the two ways they could be.
 - Times are unit tested but not yet seen live: the screen locked during that run.
 - Keyboard: Escape and arrow keys are untested. Our panel never takes focus.
 - App actions such as Reply are not offered yet; Reply needs a text field, which would

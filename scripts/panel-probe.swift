@@ -151,8 +151,11 @@ AXUIElementSetMessagingTimeout(ncApp, 2)
 
 func expanded() -> Bool? { attr(ncApp, "AXExpanded") as? Bool }
 func windows() -> [AXUIElement] { attr(ncApp, kAXWindowsAttribute) as? [AXUIElement] ?? [] }
+/// The fullscreen window the panel opens in; never a desktop widget, which is a
+/// Notification Center window too.
 func host() -> AXUIElement? {
-    windows().max { (frame($0)?.width ?? 0) * (frame($0)?.height ?? 0) < (frame($1)?.width ?? 0) * (frame($1)?.height ?? 0) }
+    windows().filter { str($0, kAXSubroleAttribute) == "AXSystemDialog" }
+        .max { (frame($0)?.width ?? 0) * (frame($0)?.height ?? 0) < (frame($1)?.width ?? 0) * (frame($1)?.height ?? 0) }
 }
 func widgetButton() -> AXUIElement? {
     for w in windows() { if let b = find(w, { str($0, kAXIdentifierAttribute) == "widget-editor-button" }) { return b } }
