@@ -17,6 +17,7 @@ package protocol NotificationSettingsProviding: AnyObject {
     var customNotificationCenterSide: NCPanelSide { get }
     var customNotificationCenterDisplayID: CGDirectDisplayID { get }
     var customNotificationCenterTopOffset: Double { get }
+    var customNotificationCenterXOffset: Double { get }
     var customNotificationCenterOwnBackground: Bool { get }
     var customNotificationCenterTint: BannerTint? { get }
     var customNotificationCenterOwnText: Bool { get }
@@ -45,6 +46,9 @@ package protocol NotificationSettingsProviding: AnyObject {
     func targetDisplay(for appName: String?) -> CGDirectDisplayID
     func targetDisplay(forGroupID groupID: UUID?) -> CGDirectDisplayID
     func recordAppName(_ name: String)
+    /// What a notification from the app plays besides macOS's own sound, if anything.
+    func notificationSound(for appName: String) -> (sound: String, volume: Double)?
+    var playsAnySound: Bool { get }
     func effectiveBannerScale(for appName: String?) -> Double
     func effectiveBannerScale(forGroupID groupID: UUID?) -> Double
     func effectiveBannerMode(for appName: String?) -> BannerMode?

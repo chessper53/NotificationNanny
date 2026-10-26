@@ -8,7 +8,7 @@ package struct SettingsView: View {
     @EnvironmentObject var launchAtLogin: LaunchAtLogin
     @ObservedObject private var loc = LocalizationManager.shared
 
-    enum NavTab: Hashable { case position, exceptions, presets, general, banner, notificationCenter, help, debug }
+    enum NavTab: Hashable { case position, presets, general, banner, notificationCenter, sounds, help, debug }
 
     @State private var activeTab: NavTab = .position
     @State private var newerVersion: String? = nil
@@ -21,6 +21,8 @@ package struct SettingsView: View {
     /// The smallest the window's content may get. Below this the sidebar labels and the
     /// tab content were cut off rather than scrolled. The window takes it from here.
     package static let minimumContentSize = CGSize(width: 620, height: 412)
+    /// The widest a tab's content gets, padding included.
+    static let contentMaxWidth: CGFloat = 600
 
     package var body: some View {
         VStack(spacing: 0) {
@@ -57,12 +59,12 @@ package struct SettingsView: View {
                     // banners go, then what they look like, then per-app overrides
                     // of those two, then presets that save the combination. App
                     // preferences come last, with import/export inside General.
-                    // Exceptions used to sit above Banner, ahead of the
-                    // appearance it overrides.
+                    // Exceptions, the per-app groups, were a tab of their own here;
+                    // they are now edited in Banner, beside the settings they change.
                     sidebarItem("Position",   systemImage: "rectangle.inset.topright.filled", tab: .position)
                     sidebarItem("Banner",     systemImage: "paintpalette",            tab: .banner)
-                    sidebarItem("Notification Center", systemImage: "list.bullet.rectangle", tab: .notificationCenter)
-                    sidebarItem("Exceptions", systemImage: "app.badge.checkmark",     tab: .exceptions)
+                    sidebarItem("Notification Center", systemImage: "rectangle.rightthird.inset.filled", tab: .notificationCenter)
+                    sidebarItem("Sounds",     systemImage: "speaker.wave.2",          tab: .sounds)
                     sidebarItem("Presets",    systemImage: "rectangle.stack",         tab: .presets)
                     sidebarItem("General",    systemImage: "gearshape",               tab: .general)
                     Spacer()
@@ -139,7 +141,7 @@ package struct SettingsView: View {
                         case .position:   PositionTabView()
                         case .banner:     BannerTabView()
                         case .notificationCenter: NotificationCenterTabView()
-                        case .exceptions: ExceptionsTabView()
+                        case .sounds:     SoundsTabView()
                         case .presets:    PresetsTabView()
                         case .general:    GeneralTabView()
                         case .help:       HelpTabView()
@@ -147,6 +149,10 @@ package struct SettingsView: View {
                         }
                     }
                     .padding(16)
+                    // A readable column on a wide window: past this, cards, menus and
+                    // buttons only stretched while the previews kept their size.
+                    .frame(maxWidth: Self.contentMaxWidth)
+                    .frame(maxWidth: .infinity)
                 }
                 .id(activeTab)
             }
@@ -211,7 +217,7 @@ package struct SettingsView: View {
             Spacer()
             if !granted {
                 Button(loc.string("Grant Access")) { repositioner.requestAccessibilityPermission() }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(.nannyProminent)
                     .controlSize(.small)
             }
         }
@@ -277,23 +283,23 @@ package struct SettingsView: View {
             case .idle:
                 if InstallSource.current == .homebrew {
                     Button(loc.string("Update Now")) { brewUpdater.start() }
-                        .buttonStyle(.borderedProminent).controlSize(.small)
+                        .buttonStyle(.nannyProminent).controlSize(.small)
                 } else {
                     Button(loc.string("View Release")) {
                         NSWorkspace.shared.open(URL(string: "https://github.com/chessper53/NotificationNanny/releases/latest")!)
                     }
-                    .buttonStyle(.borderedProminent).controlSize(.small)
+                    .buttonStyle(.nannyProminent).controlSize(.small)
                 }
             case .running:
                 EmptyView()
             case .succeeded:
                 Button(loc.string("Relaunch")) { brewUpdater.relaunch() }
-                    .buttonStyle(.borderedProminent).controlSize(.small)
+                    .buttonStyle(.nannyProminent).controlSize(.small)
             case .failed:
                 Button(loc.string("View Release")) {
                     NSWorkspace.shared.open(URL(string: "https://github.com/chessper53/NotificationNanny/releases/latest")!)
                 }
-                .buttonStyle(.borderedProminent).controlSize(.small)
+                .buttonStyle(.nannyProminent).controlSize(.small)
             }
 
             // Dismiss — hidden while update is in progress

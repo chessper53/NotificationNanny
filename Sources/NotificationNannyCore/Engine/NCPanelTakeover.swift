@@ -34,6 +34,8 @@ struct NCPanelOptions: Equatable {
     var side: NCPanelSide = .right
     /// How much lower than the system's it starts, in points.
     var topOffset: CGFloat = 0
+    /// How far across from its side's place, right being positive.
+    var xOffset: CGFloat = 0
     /// Pictures of the real widgets; only acted on with Screen Recording allowed.
     var widgets = false
     /// The banners' text colour, nil for the system's.

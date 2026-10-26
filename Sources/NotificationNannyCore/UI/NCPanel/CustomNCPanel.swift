@@ -52,6 +52,22 @@ final class CustomNCPanelController {
         return NSRect(x: x, y: frame.minY, width: width, height: top - frame.minY)
     }
 
+    /// The offset across that the screen has room for: the rows never come closer to
+    /// either edge than the system's do to the right one. Clamped here rather than when
+    /// it is set, as the same offset is used on screens of every width.
+    static func xOffset(_ o: NCPanelOptions, on frame: NSRect) -> CGFloat {
+        let width = rowWidth * o.scale
+        let base: CGFloat
+        switch o.side {
+        case .right: base = frame.maxX - rightInset - width
+        case .center: base = frame.midX - width / 2
+        case .left: base = frame.minX + rightInset
+        }
+        let lowest = frame.minX + rightInset
+        let highest = max(lowest, frame.maxX - rightInset - width)
+        return min(max(base + o.xOffset, lowest), highest) - base
+    }
+
     private var options: NCPanelOptions { takeover?.options ?? NCPanelOptions() }
 
     /// Whether the panel is in or out, which its animation follows.
@@ -121,12 +137,13 @@ final class CustomNCPanelController {
         let height = min(contentHeight, maxHeight)
         let width = Self.width(o)
         let top = screen.frame.maxY - Self.topInset - o.topOffset + Self.chrome * o.scale
-        let x: CGFloat
+        var x: CGFloat
         switch o.side {
         case .right: x = screen.frame.maxX - width
         case .center: x = screen.frame.midX - width / 2
         case .left: x = screen.frame.minX
         }
+        x += Self.xOffset(o, on: screen.frame)
         let frame = NSRect(x: x, y: top - height, width: width, height: height)
         window.setFrame(frame, display: true)
     }

@@ -4,176 +4,86 @@ import AppKit
 struct BannerTabView: View {
     @EnvironmentObject var settings: AppSettings
     @EnvironmentObject var repositioner: NotificationRepositioner
-    @ObservedObject private var loc = LocalizationManager.shared
-
     @State private var previewReplay = 0
 
-    /// Shared with the Notification Center tab, whose colours work the same.
-    static let colorPresets: [(String, Color)] = [
-        ("Red",    Color(red: 1.0,  green: 0.23, blue: 0.19)),
-        ("Orange", Color(red: 1.0,  green: 0.58, blue: 0.0)),
-        ("Yellow", Color(red: 1.0,  green: 0.80, blue: 0.0)),
-        ("Green",  Color(red: 0.20, green: 0.78, blue: 0.35)),
-        ("Teal",   Color(red: 0.18, green: 0.67, blue: 0.78)),
-        ("Blue",   Color(red: 0.0,  green: 0.48, blue: 1.0)),
-        ("Purple", Color(red: 0.69, green: 0.32, blue: 0.87)),
-        ("Pink",   Color(red: 1.0,  green: 0.18, blue: 0.33)),
-    ]
+    /// The group being edited, nil for All apps.
+    @State private var scope: UUID?
+
+    init(initialScope: UUID? = nil) {
+        _scope = State(initialValue: initialScope)
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            VStack(alignment: .leading, spacing: 10) {
-                HStack {
-                    LocalizedText("Default Scale").font(.caption.weight(.medium)).foregroundStyle(.secondary)
-                    Spacer()
-                    Button(loc.string("Reset")) { settings.bannerScale = 1.0 }
-                        .buttonStyle(.borderless).font(.caption).foregroundStyle(Color.nannyAccent)
-                        .disabled(abs(settings.bannerScale - 1.0) < 0.01)
-                }
-                HStack(spacing: 8) {
-                    Text("A").font(.caption2).foregroundStyle(.secondary)
-                    Slider(value: $settings.bannerScale, in: 0.5...2.5)
-                        .onChange(of: settings.bannerScale) { _, v in if abs(v - 1.0) < 0.02 { settings.bannerScale = 1.0 } }
-                        .controlSize(.mini)
-                    Text("A").font(.body.weight(.medium)).foregroundStyle(.secondary)
-                    Text("\(Int(settings.bannerScale * 100))%")
-                        .font(.caption2.monospacedDigit()).foregroundStyle(.secondary).frame(width: 38, alignment: .trailing)
-                }
+            BannerScopeBar(groupID: $scope)
+            if let scope, settings.group(by: scope) != nil {
+                // Its own identity per group, so nothing carries over from one to the next.
+                BannerGroupEditor(groupID: scope).id(scope)
+            } else {
+                allApps
             }
-            .padding(12)
-            .background(Color.nannyRaised(0.06), in: RoundedRectangle(cornerRadius: 10))
+        }
+        .onChange(of: settings.appGroups) { _, groups in
+            if let id = scope, !groups.contains(where: { $0.id == id }) { scope = nil }
+        }
+    }
 
-            VStack(alignment: .leading, spacing: 10) {
-                HStack {
-                    LocalizedText("Background Color").font(.caption.weight(.medium)).foregroundStyle(.secondary)
-                    Spacer()
-                    Button(loc.string("Clear")) { settings.clearBannerColor() }
-                        .buttonStyle(.borderless).font(.caption).foregroundStyle(Color.nannyAccent)
-                        .disabled(!settings.hasBannerColor)
-                }
-                HStack(spacing: 6) {
-                    ForEach(Self.colorPresets, id: \.0) { name, color in
-                        Button { settings.bannerColor = color } label: {
-                            Circle().fill(color).frame(width: 22, height: 22)
-                                .overlay(Circle().strokeBorder(
-                                    settings.hasBannerColor && Self.isColorMatch(color, settings.bannerColor)
-                                        ? Color.nannyStrong : Color.clear,
-                                    lineWidth: 2))
-                        }
-                        .buttonStyle(.plain).help(name)
+    private var allApps: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            SettingsCard {
+                SettingsCardHeader(titleKey: "Default Scale") {
+                    SettingsTextButton(titleKey: "Reset", disabled: abs(settings.bannerScale - 1.0) < 0.01) {
+                        settings.bannerScale = 1.0
                     }
-                    Spacer()
-                    HStack(spacing: 4) {
-                        LocalizedText("Custom").font(.system(size: 9)).foregroundStyle(.tertiary)
-                        ColorPicker("", selection: Binding(
-                            get: { settings.bannerColor },
-                            set: { settings.bannerColor = $0 }
-                        ), supportsOpacity: false).labelsHidden()
-                    }
-                    .help(loc.string("Pick any custom color"))
                 }
-                LocalizedText(settings.hasBannerColor ? "Tint active. Custom renderer on" : "No tint")
-                    .font(.caption2).foregroundStyle(.tertiary)
+                SettingsScaleSlider(value: $settings.bannerScale, range: 0.5...2.5)
             }
-            .padding(12)
-            .background(Color.nannyRaised(0.06), in: RoundedRectangle(cornerRadius: 10))
 
-            VStack(alignment: .leading, spacing: 10) {
-                HStack {
-                    LocalizedText("Text Color").font(.caption.weight(.medium)).foregroundStyle(.secondary)
-                    Spacer()
-                    Button(loc.string("Reset")) { settings.clearBannerTextColor() }
-                        .buttonStyle(.borderless).font(.caption).foregroundStyle(Color.nannyAccent)
-                        .disabled(!settings.hasBannerTextColor)
-                }
-                HStack(spacing: 8) {
-                    ColorPicker("Text", selection: Binding(
-                        get: { settings.bannerTextTint?.color ?? .black },
-                        set: { newColor in
-                            let color = NSColor(newColor).usingColorSpace(.sRGB) ?? .black
-                            settings.bannerTextTint = BannerTint(
-                                r: Double(color.redComponent),
-                                g: Double(color.greenComponent),
-                                b: Double(color.blueComponent))
-                        }
-                    ), supportsOpacity: false)
-                    Spacer()
-                }
-                LocalizedText(settings.hasBannerTextColor
-                     ? "Custom text color active. Custom renderer on"
-                     : "Default. Follows system appearance")
-                    .font(.caption2).foregroundStyle(.tertiary)
+            SettingsCard {
+                SettingsCardHeader("Background Color")
+                ColorSwatchRow(isDefault: !settings.hasBannerColor,
+                               current: settings.hasBannerColor ? settings.bannerColor : nil,
+                               onDefault: { settings.clearBannerColor() },
+                               onPick: { settings.bannerColor = $0 })
+                SettingsNote(settings.hasBannerColor ? "Tint active. Custom renderer on" : "No tint")
             }
-            .padding(12)
-            .background(Color.nannyRaised(0.06), in: RoundedRectangle(cornerRadius: 10))
 
-            VStack(alignment: .leading, spacing: 10) {
-                HStack {
-                    LocalizedText("Animation").font(.caption.weight(.medium)).foregroundStyle(.secondary)
-                    Spacer()
-                    Button {
-                        previewReplay &+= 1
-                    } label: {
-                        Label {
-                            LocalizedText("Replay")
-                        } icon: {
-                            Image(systemName: "arrow.clockwise")
-                        }
-                        .font(.caption2)
-                    }
-                    .buttonStyle(.borderless).foregroundStyle(Color.nannyAccent)
+            SettingsCard {
+                SettingsCardHeader("Text Color")
+                ColorSwatchRow(isDefault: !settings.hasBannerTextColor,
+                               current: settings.bannerTextTint?.color,
+                               showsPresets: false,
+                               onDefault: { settings.clearBannerTextColor() },
+                               onPick: { settings.bannerTextTint = SettingsColors.tint(of: $0) })
+                SettingsNote(settings.hasBannerTextColor
+                             ? "Custom text color active. Custom renderer on"
+                             : "Default. Follows system appearance")
+            }
+
+            SettingsCard {
+                SettingsCardHeader(titleKey: "Animation") {
+                    CardActionButton.replay { previewReplay &+= 1 }
                 }
-
                 AnimationPreviewPane(animation: settings.bannerAnimation, replay: previewReplay,
                                      tint: settings.hasBannerColor ? settings.bannerColor : .clear,
                                      textColor: settings.effectiveBannerTextColor ?? .primary)
-                    .frame(height: 64)
-                    .frame(maxWidth: .infinity)
-                    .background(Color.nannyInset(0.22), in: RoundedRectangle(cornerRadius: 10))
-                    .clipShape(RoundedRectangle(cornerRadius: 10))
-                    .contentShape(Rectangle())
-                    .onTapGesture { previewReplay &+= 1 }
-
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: 94), spacing: 8)], spacing: 8) {
-                    ForEach(BannerAnimation.allCases, id: \.self) { anim in
-                        animationChip(anim)
-                    }
+                    .animationPreviewWell { previewReplay &+= 1 }
+                AnimationChipGrid(selected: settings.bannerAnimation) {
+                    settings.bannerAnimation = $0
+                    previewReplay &+= 1
                 }
-
-                LocalizedText(settings.bannerAnimation == .default
-                     ? "System-style slide-in. Other animations activate the custom renderer."
-                     : "Custom animation active. Replaces the system banner.")
-                    .font(.caption2).foregroundStyle(.tertiary)
+                SettingsNote(settings.bannerAnimation == .default
+                             ? "System-style slide-in. Other animations activate the custom renderer."
+                             : "Custom animation active. Replaces the system banner.")
             }
-            .padding(12)
-            .background(Color.nannyRaised(0.06), in: RoundedRectangle(cornerRadius: 10))
 
-            VStack(alignment: .leading, spacing: 10) {
-                LocalizedText("Stacking").font(.caption.weight(.medium)).foregroundStyle(.secondary)
-                Picker("", selection: $settings.newestBannerAtBottom) {
-                    LocalizedText("Newest on top").tag(false)
-                    LocalizedText("Newest at the bottom").tag(true)
-                }
-                .pickerStyle(.segmented)
-                .labelsHidden()
-                LocalizedText("Order of notifications that are up together. Custom banner only: macOS stacks its own banner newest on top.")
-                    .font(.caption2).foregroundStyle(.tertiary)
-            }
-            .padding(12)
-            .background(Color.nannyRaised(0.06), in: RoundedRectangle(cornerRadius: 10))
-
-            // Per-group overrides used to be listed here, one row per group. They
-            // now live with the rest of that group's settings in the Exceptions
-            // tab, so this tab is purely the defaults those overrides apply on top
-            // of — and it no longer grows with the number of groups.
-            if !settings.appGroups.isEmpty {
-                HStack(spacing: 6) {
-                    Image(systemName: "app.badge.checkmark")
-                        .font(.caption2).foregroundStyle(.tertiary)
-                    LocalizedText("Individual groups can override these in the Exceptions tab.")
-                        .font(.caption2).foregroundStyle(.tertiary)
-                    Spacer()
-                }
+            SettingsCard {
+                SettingsCardHeader("Stacking")
+                NannySegmentedPicker(selection: $settings.newestBannerAtBottom, options: [
+                    .init(value: false, titleKey: "Newest on top", systemImage: "arrow.up.to.line"),
+                    .init(value: true, titleKey: "Newest at the bottom", systemImage: "arrow.down.to.line"),
+                ])
+                SettingsNote("Order of notifications that are up together. Custom banner only: macOS stacks its own banner newest on top.")
             }
 
             Button { repositioner.sendTestNotification(groupID: nil) } label: {
@@ -184,38 +94,20 @@ struct BannerTabView: View {
                 }
                 .frame(maxWidth: .infinity)
             }
-            .buttonStyle(.borderedProminent).controlSize(.regular)
+            .buttonStyle(.nannyProminent).controlSize(.regular)
         }
     }
+}
 
-    @ViewBuilder
-    private func animationChip(_ anim: BannerAnimation) -> some View {
-        let selected = settings.bannerAnimation == anim
-        Button {
-            settings.bannerAnimation = anim
-            previewReplay &+= 1
-        } label: {
-            HStack(spacing: 5) {
-                Image(systemName: anim.iconName).font(.system(size: 10))
-                Text(anim.label).font(.caption)
-                Spacer(minLength: 0)
-            }
-            .padding(.horizontal, 10).padding(.vertical, 7)
+extension AnimationPreviewPane {
+    /// The recessed well the sample plays in; a click plays it again.
+    func animationPreviewWell(replay: @escaping () -> Void) -> some View {
+        frame(height: 64)
             .frame(maxWidth: .infinity)
-            .background(selected ? Color.nannyProminent.opacity(0.9) : Color.nannyRaised(0.06),
-                        in: RoundedRectangle(cornerRadius: 8))
-            .foregroundStyle(selected ? Color.white : Color.secondary)
-        }
-        .buttonStyle(.plain)
-    }
-
-    static func isColorMatch(_ a: Color, _ b: Color) -> Bool {
-        let ca = NSColor(a).usingColorSpace(.sRGB)
-        let cb = NSColor(b).usingColorSpace(.sRGB)
-        guard let ca, let cb else { return false }
-        return abs(ca.redComponent   - cb.redComponent)   < 0.03 &&
-               abs(ca.greenComponent - cb.greenComponent) < 0.03 &&
-               abs(ca.blueComponent  - cb.blueComponent)  < 0.03
+            .background(Color.nannyInset(0.22), in: RoundedRectangle(cornerRadius: 10))
+            .clipShape(RoundedRectangle(cornerRadius: 10))
+            .contentShape(Rectangle())
+            .onTapGesture(perform: replay)
     }
 }
 

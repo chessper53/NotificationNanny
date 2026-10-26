@@ -60,6 +60,24 @@ extension Color {
                       dark: .white.withAlphaComponent(opacity))
     }
 
+    /// A Settings card. White on the light window, as macOS's own settings lay theirs
+    /// out: the lighter shade of grey it used to be left cards and window one flat sheet.
+    /// Dark keeps its white lift.
+    static let nannyCard = nannyAdaptive(light: .white, dark: .white.withAlphaComponent(0.06))
+
+    /// The chosen segment of a segmented control: a white pill on light, as the system
+    /// draws one; grey on grey there all but hid it.
+    static let nannySegment = nannyAdaptive(light: .white, dark: .white.withAlphaComponent(0.14))
+
+    /// The small print under a setting. One step darker on light, where tertiary grey
+    /// on a light card read too faint.
+    static let nannyNote = nannyAdaptive(light: .secondaryLabelColor, dark: .tertiaryLabelColor)
+
+    /// A switch that is on: amber in both appearances. It has no text on it, so the
+    /// amber that turns brown under dark text on light is fine here, and it carries the
+    /// accent the graphite chips on light don't.
+    static let nannySwitchOn = Color(nsColor: .nannyAmber)
+
     /// Recessed wells such as log views: black on both, much fainter on light.
     static func nannyInset(_ opacity: CGFloat) -> Color {
         nannyAdaptive(light: .black.withAlphaComponent(opacity * 0.35),

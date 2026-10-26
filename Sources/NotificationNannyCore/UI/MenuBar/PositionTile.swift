@@ -2,6 +2,39 @@ import SwiftUI
 import AppKit
 import UserNotifications
 
+// MARK: - Preview colours
+
+/// The colours the screen previews are drawn in. Dark keeps the dark device and desktop
+/// they always had. Light draws them light and flat, silver on a pale desktop: a dark
+/// monitor sat heavy on the light window.
+enum ScreenPreview {
+    /// A grey, at `dark` in Dark and `light` in Light.
+    static func tone(_ dark: CGFloat, light: CGFloat, alpha: CGFloat = 1) -> Color {
+        Color.nannyAdaptive(light: NSColor(white: light, alpha: alpha), dark: NSColor(white: dark, alpha: alpha))
+    }
+
+    /// From one grey to another in Dark; one flat grey in Light.
+    static func shade(_ top: CGFloat, _ bottom: CGFloat, light: CGFloat,
+                      start: UnitPoint = .top, end: UnitPoint = .bottom) -> LinearGradient {
+        LinearGradient(colors: [tone(top, light: light), tone(bottom, light: light)], startPoint: start, endPoint: end)
+    }
+
+    /// Stands in for the desktop picture so the banner chips read as sitting on a
+    /// screen rather than floating in an empty box.
+    static let wallpaper = LinearGradient(
+        colors: [Color.nannyAdaptive(light: NSColor(srgbRed: 0.87, green: 0.89, blue: 0.93, alpha: 1),
+                                     dark: NSColor(srgbRed: 0.13, green: 0.15, blue: 0.20, alpha: 1)),
+                 Color.nannyAdaptive(light: NSColor(srgbRed: 0.87, green: 0.89, blue: 0.93, alpha: 1),
+                                     dark: NSColor(srgbRed: 0.08, green: 0.09, blue: 0.12, alpha: 1))],
+        startPoint: .topLeading, endPoint: .bottomTrailing
+    )
+    static let menuBar = Color.nannyAdaptive(light: .white.withAlphaComponent(0.8), dark: .white.withAlphaComponent(0.16))
+    static let dock = Color.nannyAdaptive(light: .black.withAlphaComponent(0.07), dark: .white.withAlphaComponent(0.10))
+    /// The device's edge highlight, and its shadow on the card.
+    static let edge = Color.nannyAdaptive(light: .black.withAlphaComponent(0.14), dark: .white.withAlphaComponent(0.22))
+    static let shadow = Color.nannyAdaptive(light: .black.withAlphaComponent(0.12), dark: .black.withAlphaComponent(0.45))
+}
+
 // MARK: - Device chassis
 
 /// Draws the screen preview inside a physical-looking display: a laptop lid and
@@ -26,8 +59,7 @@ struct DeviceChrome<Content: View>: View {
     // Not `static` — DeviceChrome is generic over its content, and generic types
     // can't hold static stored properties.
     private var shell: LinearGradient {
-        LinearGradient(colors: [Color(white: 0.42), Color(white: 0.26)],
-                       startPoint: .top, endPoint: .bottom)
+        ScreenPreview.shade(0.42, 0.26, light: 0.84)
     }
 
     var body: some View {
@@ -37,7 +69,7 @@ struct DeviceChrome<Content: View>: View {
                     .fill(shell)
                     .overlay(
                         RoundedRectangle(cornerRadius: isLaptop ? 11 : 8, style: .continuous)
-                            .stroke(Color.white.opacity(0.22), lineWidth: 0.8)
+                            .stroke(ScreenPreview.edge, lineWidth: 0.8)
                     )
                 VStack(spacing: 0) {
                     ZStack(alignment: .top) {
@@ -64,35 +96,32 @@ struct DeviceChrome<Content: View>: View {
             if isLaptop { laptopBase } else { monitorStand }
         }
         // Sits the whole device on the panel rather than letting it float.
-        .shadow(color: .black.opacity(0.45), radius: 6, y: 3)
+        .shadow(color: ScreenPreview.shadow, radius: 6, y: 3)
     }
 
     /// Wedge under the lid, with the finger recess Apple puts on the front edge.
     private var laptopBase: some View {
         ZStack(alignment: .top) {
             UnevenRoundedRectangle(bottomLeadingRadius: 4, bottomTrailingRadius: 4, style: .continuous)
-                .fill(LinearGradient(colors: [Color(white: 0.34), Color(white: 0.20)],
-                                     startPoint: .top, endPoint: .bottom))
+                .fill(ScreenPreview.shade(0.34, 0.20, light: 0.78))
                 .frame(width: screenSize.width + bezel * 2 + 16, height: 9)
             Capsule()
-                .fill(Color.black.opacity(0.30))
+                .fill(ScreenPreview.tone(0, light: 0, alpha: 0.18))
                 .frame(width: screenSize.width * 0.16, height: 3)
                 .offset(y: 0.5)
         }
         .overlay(alignment: .top) {
-            Rectangle().fill(Color.white.opacity(0.18)).frame(height: 0.8)
+            Rectangle().fill(ScreenPreview.tone(1, light: 1, alpha: 0.18)).frame(height: 0.8)
         }
     }
 
     private var monitorStand: some View {
         VStack(spacing: 0) {
             Rectangle()
-                .fill(LinearGradient(colors: [Color(white: 0.30), Color(white: 0.22)],
-                                     startPoint: .leading, endPoint: .trailing))
+                .fill(ScreenPreview.shade(0.30, 0.22, light: 0.76, start: .leading, end: .trailing))
                 .frame(width: 26, height: 12)
             Capsule()
-                .fill(LinearGradient(colors: [Color(white: 0.36), Color(white: 0.22)],
-                                     startPoint: .top, endPoint: .bottom))
+                .fill(ScreenPreview.shade(0.36, 0.22, light: 0.80))
                 .frame(width: screenSize.width * 0.34, height: 6)
         }
     }
@@ -163,6 +192,10 @@ struct DraggableScreenTile: View {
     var maxWidth: CGFloat = 430
     var maxHeight: CGFloat = 280
 
+    /// How far from the banner's middle the pointer took hold of it, so it moves with
+    /// the pointer rather than jumping its middle under it.
+    @State private var grab: CGSize?
+
     private static let realBannerSize = CGSize(width: 372, height: 100)
 
     var body: some View {
@@ -197,13 +230,13 @@ struct DraggableScreenTile: View {
         return DeviceChrome(screen: screen,
                             screenSize: CGSize(width: tileWidth, height: tileHeight)) {
             ZStack(alignment: .topLeading) {
-                Rectangle().fill(Self.wallpaper)
+                Rectangle().fill(ScreenPreview.wallpaper)
                 Rectangle()
-                    .fill(Color.white.opacity(0.16))
+                    .fill(ScreenPreview.menuBar)
                     .frame(height: menuBarHeight * scale)
                 if dockHeight > 2 {
                     Rectangle()
-                        .fill(Color.white.opacity(0.10))
+                        .fill(ScreenPreview.dock)
                         .frame(height: dockHeight * scale)
                         .offset(y: tileHeight - dockHeight * scale)
                 }
@@ -220,9 +253,19 @@ struct DraggableScreenTile: View {
             .gesture(
                 DragGesture(minimumDistance: 0, coordinateSpace: .local)
                     .onChanged { value in
-                        commitDrag(at: value.location, scale: scale, visible: visible,
+                        let chip = CGRect(x: bannerCenterTile.x - bannerWidth / 2,
+                                          y: bannerCenterTile.y - bannerHeight / 2,
+                                          width: bannerWidth, height: bannerHeight)
+                        let start = value.startLocation
+                        let hold = grab ?? (chip.contains(start)
+                            ? CGSize(width: start.x - bannerCenterTile.x, height: start.y - bannerCenterTile.y)
+                            : .zero)
+                        if grab == nil { grab = hold }
+                        commitDrag(at: CGPoint(x: value.location.x - hold.width, y: value.location.y - hold.height),
+                                   scale: scale, visible: visible,
                                    visibleLeft: visibleLeft, menuBarHeight: menuBarHeight)
                     }
+                    .onEnded { _ in grab = nil }
             )
             .onTapGesture { tap in
                 commitDrag(at: tap, scale: scale, visible: visible,
@@ -239,13 +282,6 @@ struct DraggableScreenTile: View {
                         visible: visible)
     }
 
-    /// Stands in for the desktop picture so the banner chips read as sitting on a
-    /// screen rather than floating in an empty box.
-    private static let wallpaper = LinearGradient(
-        colors: [Color(red: 0.13, green: 0.15, blue: 0.20),
-                 Color(red: 0.08, green: 0.09, blue: 0.12)],
-        startPoint: .topLeading, endPoint: .bottomTrailing
-    )
 
     /// Banner centre in visible-frame coordinates, top-left origin — the same
     /// frame of reference the repositioner uses when it places the real window.
