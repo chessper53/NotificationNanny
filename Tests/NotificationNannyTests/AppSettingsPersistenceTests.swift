@@ -44,6 +44,25 @@ struct AppSettingsPersistenceTests {
         #expect(store.make().newestBannerAtBottom == true)
     }
 
+    /// A Notification Center placed before it could move across keeps its side and height,
+    /// and opens with no offset across: where it always did.
+    @Test func ncPanelXOffset_missingKey_keepsSavedPlace() {
+        let store = Store(); defer { store.cleanup() }
+        let defaults = UserDefaults(suiteName: store.suiteName)!
+        defaults.set("left", forKey: "customNotificationCenterSide")
+        defaults.set(40.0, forKey: "customNotificationCenterTopOffset")
+        let s = store.make()
+        #expect(s.customNotificationCenterSide == .left)
+        #expect(s.customNotificationCenterTopOffset == 40)
+        #expect(s.customNotificationCenterXOffset == 0)
+    }
+
+    @Test func ncPanelXOffset_persistsAcrossInit() {
+        let store = Store(); defer { store.cleanup() }
+        store.make().customNotificationCenterXOffset = -120
+        #expect(store.make().customNotificationCenterXOffset == -120)
+    }
+
     @Test func autoDismissSeconds_persistsAcrossInit() {
         let store = Store(); defer { store.cleanup() }
         store.make().autoDismissSeconds = 42

@@ -72,7 +72,7 @@ package struct MenuBarContent: View {
             Spacer()
             Toggle("", isOn: $settings.isEnabled)
                 .labelsHidden()
-                .toggleStyle(.switch)
+                .toggleStyle(.nannySwitch)
                 .controlSize(.small)
         }
     }
@@ -135,15 +135,9 @@ package struct MenuBarContent: View {
             Text("Show on")
                 .font(.caption)
                 .foregroundStyle(.secondary)
-            Picker("", selection: $settings.targetDisplayID) {
-                Text("Auto").tag(CGDirectDisplayID(0))
-                ForEach(screens, id: \.displayID) { screen in
-                    Text(screen.nannyDisplayName).tag(screen.displayID)
-                }
-            }
-            .labelsHidden()
-            .pickerStyle(.menu)
-            .controlSize(.small)
+            DisplayPicker(selection: $settings.targetDisplayID,
+                          resolved: settings.resolvedTargetScreen(), zeroLabelKey: "Auto")
+                .controlSize(.small)
             Spacer()
         }
     }
@@ -180,7 +174,7 @@ package struct MenuBarContent: View {
                 Label("Extended Settings", systemImage: "slider.horizontal.3")
                     .frame(maxWidth: .infinity)
             }
-            .buttonStyle(.borderedProminent)
+            .buttonStyle(.nannyProminent)
             .controlSize(.regular)
 
             Button {

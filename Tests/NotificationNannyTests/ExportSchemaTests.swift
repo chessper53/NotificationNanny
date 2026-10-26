@@ -43,6 +43,60 @@ struct ExportSchemaTests {
         #expect(s.avoidNCPanel == true)
     }
 
+    /// The Notification Center's offset across survives a backup, and one made before it
+    /// existed imports as none, leaving the panel at its side's place.
+    @Test func ncPanelXOffset_roundTrips_andDefaultsToZero() throws {
+        let s = makeSettings()
+        s.customNotificationCenterXOffset = 85
+        let restored = makeSettings()
+        try restored.importData(try s.exportData())
+        #expect(restored.customNotificationCenterXOffset == 85)
+
+        let backup = """
+        {"placements": {}, "targetDisplayID": 0, "autoDismissSeconds": 0, "bannerScale": 1.0,
+         "pauseWhileStreaming": false, "customNotificationCenterSide": "left",
+         "customNotificationCenterTopOffset": 30, "appGroups": [], "presets": []}
+        """.data(using: .utf8)!
+        try restored.importData(backup)
+        #expect(restored.customNotificationCenterSide == .left)
+        #expect(restored.customNotificationCenterTopOffset == 30)
+        #expect(restored.customNotificationCenterXOffset == 0)
+    }
+
+    /// Groups saved before they moved from the Exceptions tab into the Banner tab read
+    /// back unchanged: apps, screen, place, and which settings are their own.
+    @Test func groupsSavedForExceptionsTab_readBackUnchanged() throws {
+        let backup = """
+        {"placements": {}, "targetDisplayID": 0, "autoDismissSeconds": 0, "bannerScale": 1.0,
+         "pauseWhileStreaming": false, "presets": [], "appGroups": [
+          {"id":"D9F9B277-0783-49F6-9B3B-F3D6B8C55828","name":"Prio","targetDisplayID":0,
+           "bannerTint":{"r":1,"g":0,"b":0.79},"bannerScale":1.19,"appNames":["Microsoft Teams","WhatsApp"],
+           "placement":{"position":"topLeft","yOffset":0,"xOffset":241.5}},
+          {"bannerAnimation":"Rise","id":"7D66090F-CB99-4F34-BCC2-C1271EAAA687","name":"Outlook",
+           "targetDisplayID":3,"bannerScale":1,"appNames":["Code","Microsoft Outlook"],
+           "placement":{"position":"bottomRight","yOffset":0,"xOffset":0}}]}
+        """.data(using: .utf8)!
+        let s = makeSettings()
+        try s.importData(backup)
+        #expect(s.appGroups.count == 2)
+        let prio = try #require(s.appGroups.first { $0.name == "Prio" })
+        #expect(prio.appNames == ["Microsoft Teams", "WhatsApp"])
+        #expect(prio.bannerScale == 1.19)
+        #expect(prio.bannerTint == BannerTint(r: 1, g: 0, b: 0.79))
+        #expect(prio.bannerAnimation == nil)
+        #expect(prio.placement.position == .topLeft && prio.placement.xOffset == 241.5)
+        let outlook = try #require(s.appGroups.first { $0.name == "Outlook" })
+        #expect(outlook.targetDisplayID == 3)
+        #expect(outlook.bannerScale == 1)
+        #expect(outlook.bannerTint == nil)
+        #expect(outlook.bannerAnimation == .rise)
+        #expect(outlook.placement.position == .bottomRight)
+
+        let again = makeSettings()
+        try again.importData(try s.exportData())
+        #expect(again.appGroups == s.appGroups)
+    }
+
     @Test func roundTrip_preservesToggles() throws {
         let s = makeSettings()
         s.bannerScale = 1.8

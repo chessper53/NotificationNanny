@@ -15,6 +15,9 @@ package final class AppSettings: ObservableObject {
         static let targetDisplayUUID    = "targetDisplayUUID"
         static let presets              = "presets"
         static let appGroups            = "appGroups"
+        static let soundGroups          = "soundGroups"
+        static let allAppsSound         = "allAppsSound"
+        static let allAppsSoundVolume   = "allAppsSoundVolume"
         static let knownApps            = "knownAppNames"
         static let pauseWhileStreaming  = "pauseWhileStreaming"
         static let avoidNCPanel         = "avoidNCPanel"
@@ -27,6 +30,7 @@ package final class AppSettings: ObservableObject {
         static let customNotificationCenterSide = "customNotificationCenterSide"
         static let customNotificationCenterDisplayID = "customNotificationCenterDisplayID"
         static let customNotificationCenterTopOffset = "customNotificationCenterTopOffset"
+        static let customNotificationCenterXOffset = "customNotificationCenterXOffset"
         static let customNotificationCenterOwnBackground = "customNotificationCenterOwnBackground"
         static let customNotificationCenterTint = "customNotificationCenterTint"
         static let customNotificationCenterOwnText = "customNotificationCenterOwnText"
@@ -157,6 +161,13 @@ package final class AppSettings: ObservableObject {
     /// How much lower than the system's it starts, in points.
     @Published package var customNotificationCenterTopOffset: Double {
         didSet { defaults.set(customNotificationCenterTopOffset, forKey: Key.customNotificationCenterTopOffset) }
+    }
+
+    /// How far across from its side's place it opens, in points, right being positive.
+    /// Added after side and top offset, so a setup saved before it reads 0 and opens
+    /// where it always did.
+    @Published package var customNotificationCenterXOffset: Double {
+        didSet { defaults.set(customNotificationCenterXOffset, forKey: Key.customNotificationCenterXOffset) }
     }
 
     /// Off: rows take the banners' background colour. On: `customNotificationCenterTint`,
@@ -380,8 +391,27 @@ package final class AppSettings: ObservableObject {
         didSet { appGroupsSaver.schedule { [weak self] in self?.saveAppGroups() } }
     }
 
+    /// Edited at slider speed too: a group's volume.
+    @Published package var soundGroups: [SoundGroup] {
+        didSet { soundGroupsSaver.schedule { [weak self] in self?.saveSoundGroups() } }
+    }
+
+    /// The sound every app outside a sound group plays, by name or path; nil for each
+    /// app's own, as macOS plays it.
+    @Published package var allAppsSound: String? {
+        didSet {
+            if let allAppsSound { defaults.set(allAppsSound, forKey: Key.allAppsSound) }
+            else { defaults.removeObject(forKey: Key.allAppsSound) }
+        }
+    }
+
+    @Published package var allAppsSoundVolume: Double {
+        didSet { defaults.set(allAppsSoundVolume, forKey: Key.allAppsSoundVolume) }
+    }
+
     private let placementsSaver = SaveCoalescer()
     private let appGroupsSaver  = SaveCoalescer()
+    private let soundGroupsSaver = SaveCoalescer()
 
     /// Collapses a burst of writes into one, `delay` after the last of them.
     @MainActor
@@ -423,6 +453,7 @@ package final class AppSettings: ObservableObject {
     package func flushPendingSaves() {
         placementsSaver.flush()
         appGroupsSaver.flush()
+        soundGroupsSaver.flush()
     }
 
     @Published private(set) var knownAppNames: [String] {
@@ -452,6 +483,7 @@ package final class AppSettings: ObservableObject {
             .flatMap(NCPanelSide.init(rawValue:)) ?? .right
         self.customNotificationCenterDisplayID = CGDirectDisplayID(defaults.integer(forKey: Key.customNotificationCenterDisplayID))
         self.customNotificationCenterTopOffset = defaults.double(forKey: Key.customNotificationCenterTopOffset)
+        self.customNotificationCenterXOffset = defaults.double(forKey: Key.customNotificationCenterXOffset)
         self.customNotificationCenterOwnBackground = defaults.bool(forKey: Key.customNotificationCenterOwnBackground)
         self.customNotificationCenterTint = Self.loadTint(Key.customNotificationCenterTint, from: defaults)
         self.customNotificationCenterOwnText = defaults.bool(forKey: Key.customNotificationCenterOwnText)
@@ -504,6 +536,15 @@ package final class AppSettings: ObservableObject {
         } else {
             self.appGroups = []
         }
+
+        if let data = defaults.data(forKey: Key.soundGroups),
+           let decoded = try? JSONDecoder().decode([SoundGroup].self, from: data) {
+            self.soundGroups = decoded
+        } else {
+            self.soundGroups = []
+        }
+        self.allAppsSound = defaults.string(forKey: Key.allAppsSound)
+        self.allAppsSoundVolume = (defaults.object(forKey: Key.allAppsSoundVolume) as? Double) ?? 1
 
         if let data = try? Data(contentsOf: self.knownAppsFileURL),
            let names = try? JSONDecoder().decode([String].self, from: data) {
@@ -622,6 +663,70 @@ package final class AppSettings: ObservableObject {
         appGroups = updated
     }
 
+    // MARK: - Sound groups
+
+    package func soundGroup(for appName: String) -> SoundGroup? {
+        soundGroups.first { $0.appNames.contains(appName) }
+    }
+
+    /// What a notification from the app plays, if anything besides macOS's own: its
+    /// group's sound, or All apps' for an app outside a group or a group following it.
+    package func notificationSound(for appName: String) -> (sound: String, volume: Double)? {
+        guard let group = soundGroup(for: appName) else {
+            return allAppsSound.map { ($0, allAppsSoundVolume) }
+        }
+        switch group.sound {
+        case nil: return allAppsSound.map { ($0, allAppsSoundVolume) }
+        case .macOS: return nil
+        case .sound(let name): return (name, group.volume)
+        }
+    }
+
+    /// Whether any app plays a sound of NotificationNanny's, so a sweep can skip looking.
+    package var playsAnySound: Bool {
+        allAppsSound != nil || soundGroups.contains { $0.sound?.soundName != nil }
+    }
+
+    func soundGroup(by id: UUID) -> SoundGroup? {
+        soundGroups.first { $0.id == id }
+    }
+
+    @discardableResult
+    func addSoundGroup(name: String) -> UUID {
+        let g = SoundGroup(name: name)
+        soundGroups.append(g)
+        return g.id
+    }
+
+    func deleteSoundGroup(_ id: UUID) {
+        soundGroups.removeAll { $0.id == id }
+    }
+
+    /// One assignment per edit, as `addApp(_:toGroup:)` does for exception groups.
+    func updateSoundGroup(_ id: UUID, _ mutate: (inout SoundGroup) -> Void) {
+        guard let i = soundGroups.firstIndex(where: { $0.id == id }) else { return }
+        var updated = soundGroups
+        mutate(&updated[i])
+        guard updated != soundGroups else { return }
+        soundGroups = updated
+    }
+
+    /// Moves the app here: a notification plays one sound, so membership is exclusive.
+    func addApp(_ appName: String, toSoundGroup groupID: UUID) {
+        guard soundGroups.contains(where: { $0.id == groupID }) else { return }
+        var updated = soundGroups
+        for i in updated.indices { updated[i].appNames.removeAll { $0 == appName } }
+        if let i = updated.firstIndex(where: { $0.id == groupID }) {
+            updated[i].appNames.append(appName)
+            updated[i].appNames.sort { $0.localizedStandardCompare($1) == .orderedAscending }
+        }
+        soundGroups = updated
+    }
+
+    func removeApp(_ appName: String, fromSoundGroup groupID: UUID) {
+        updateSoundGroup(groupID) { $0.appNames.removeAll { $0 == appName } }
+    }
+
     package func effectiveBannerScale(for appName: String?) -> Double {
         appName.flatMap { group(for: $0) }?.bannerScale ?? bannerScale
     }
@@ -705,6 +810,7 @@ package final class AppSettings: ObservableObject {
         var customNotificationCenterSide: NCPanelSide?
         var customNotificationCenterDisplayID: CGDirectDisplayID?
         var customNotificationCenterTopOffset: Double?
+        var customNotificationCenterXOffset: Double?
         var customNotificationCenterOwnBackground: Bool?
         var customNotificationCenterTint: BannerTint?
         var customNotificationCenterOwnText: Bool?
@@ -715,6 +821,10 @@ package final class AppSettings: ObservableObject {
         var redactBannerContent: Bool?
         var newestBannerAtBottom: Bool?
         var appGroups: [AppGroup]
+        /// Optional: backups from before sound groups import with none.
+        var soundGroups: [SoundGroup]?
+        var allAppsSound: String?
+        var allAppsSoundVolume: Double?
         var presets: [Preset]
     }
 
@@ -736,6 +846,7 @@ package final class AppSettings: ObservableObject {
             customNotificationCenterSide: customNotificationCenterSide,
             customNotificationCenterDisplayID: customNotificationCenterDisplayID,
             customNotificationCenterTopOffset: customNotificationCenterTopOffset,
+            customNotificationCenterXOffset: customNotificationCenterXOffset,
             customNotificationCenterOwnBackground: customNotificationCenterOwnBackground,
             customNotificationCenterTint: customNotificationCenterTint,
             customNotificationCenterOwnText: customNotificationCenterOwnText,
@@ -746,6 +857,9 @@ package final class AppSettings: ObservableObject {
             redactBannerContent: redactBannerContent,
             newestBannerAtBottom: newestBannerAtBottom,
             appGroups: appGroups,
+            soundGroups: soundGroups,
+            allAppsSound: allAppsSound,
+            allAppsSoundVolume: allAppsSoundVolume,
             presets: presets
         )
         let encoder = JSONEncoder()
@@ -776,6 +890,7 @@ package final class AppSettings: ObservableObject {
         customNotificationCenterSide = imported.customNotificationCenterSide ?? .right
         customNotificationCenterDisplayID = imported.customNotificationCenterDisplayID ?? 0
         customNotificationCenterTopOffset = imported.customNotificationCenterTopOffset ?? 0
+        customNotificationCenterXOffset = imported.customNotificationCenterXOffset ?? 0
         customNotificationCenterOwnBackground = imported.customNotificationCenterOwnBackground ?? false
         customNotificationCenterTint = imported.customNotificationCenterTint
         customNotificationCenterOwnText = imported.customNotificationCenterOwnText ?? false
@@ -786,6 +901,9 @@ package final class AppSettings: ObservableObject {
         redactBannerContent = imported.redactBannerContent ?? false
         newestBannerAtBottom = imported.newestBannerAtBottom ?? false
         appGroups           = imported.appGroups
+        soundGroups         = imported.soundGroups ?? []
+        allAppsSound        = imported.allAppsSound
+        allAppsSoundVolume  = imported.allAppsSoundVolume ?? 1
         presets             = imported.presets
         flushPendingSaves()
     }
@@ -830,6 +948,9 @@ package final class AppSettings: ObservableObject {
         placements         = [:]
         presets            = []
         appGroups          = []
+        soundGroups        = []
+        allAppsSound       = nil
+        allAppsSoundVolume = 1
         bannerScale        = 1.0
         holdWhileAsleep    = false
         bannerTint         = nil
@@ -851,6 +972,10 @@ package final class AppSettings: ObservableObject {
 
     private func saveAppGroups() {
         if let data = try? JSONEncoder().encode(appGroups) { defaults.set(data, forKey: Key.appGroups) }
+    }
+
+    private func saveSoundGroups() {
+        if let data = try? JSONEncoder().encode(soundGroups) { defaults.set(data, forKey: Key.soundGroups) }
     }
 
     private func saveKnownApps() {

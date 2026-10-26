@@ -25,7 +25,7 @@ struct BackupTabView: View {
                         }
                         Spacer()
                     }
-                    .padding(.horizontal, 14).padding(.vertical, 10).contentShape(Rectangle())
+                    .settingsListRow().contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
 
@@ -40,11 +40,11 @@ struct BackupTabView: View {
                         }
                         Spacer()
                     }
-                    .padding(.horizontal, 14).padding(.vertical, 10).contentShape(Rectangle())
+                    .settingsListRow().contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
             }
-            .background(Color.nannyRaised(0.06), in: RoundedRectangle(cornerRadius: 10))
+            .settingsCardBackground()
             .confirmationDialog(loc.string("Replace all settings?"),
                                 isPresented: $showImportConfirmation,
                                 titleVisibility: .visible) {

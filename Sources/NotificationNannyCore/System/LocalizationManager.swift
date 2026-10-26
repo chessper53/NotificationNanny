@@ -9,6 +9,18 @@ package enum AppLanguage: String, CaseIterable, Identifiable {
 
     /// Language names are shown in their own language, not translated — the standard
     /// convention for language pickers (a French speaker still recognizes "Français").
+    /// `displayName` as a string, for menus that take one.
+    @MainActor package var title: String {
+        switch self {
+        case .system: return LocalizationManager.shared.string("System Default")
+        case .en:     return "English"
+        case .fr:     return "Français"
+        case .es:     return "Español"
+        case .de:     return "Deutsch"
+        case .it:     return "Italiano"
+        }
+    }
+
     package var displayName: LocalizedStringKey {
         switch self {
         case .system: return "System Default"

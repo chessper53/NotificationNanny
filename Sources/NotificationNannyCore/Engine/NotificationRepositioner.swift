@@ -46,6 +46,7 @@ package final class NotificationRepositioner: ObservableObject {
     /// Whether banners already up have been noted as such. Until then, the first sweep's
     /// banners count as already there rather than arriving: alerts stay up for hours.
     private var timesBaselineTaken = false
+    private lazy var sounds = NotificationSounds(logger: logger)
 
     private lazy var panelTakeover: NCPanelTakeover = {
         let takeover = NCPanelTakeover(logger: logger, times: notificationTimes)
@@ -62,6 +63,7 @@ package final class NotificationRepositioner: ObservableObject {
                                   scale: CGFloat(s.customNotificationCenterScale),
                                   side: s.customNotificationCenterSide,
                                   topOffset: CGFloat(s.customNotificationCenterTopOffset),
+                                  xOffset: CGFloat(s.customNotificationCenterXOffset),
                                   widgets: s.customNotificationCenterWidgets,
                                   textColor: s.customNotificationCenterOwnText
                                       ? s.customNotificationCenterTextTint?.color : s.effectiveBannerTextColor,
@@ -159,6 +161,7 @@ package final class NotificationRepositioner: ObservableObject {
         }
         teardownObserver()
         timesBaselineTaken = false
+        sounds.reset()
 
         guard axController.start(onEvent: { [weak self] element, notification in
             self?.handleAXEvent(element: element, notification: notification)
@@ -601,6 +604,7 @@ package final class NotificationRepositioner: ObservableObject {
         sweepBanners = [:]
         defer { sweepBanners = nil }
         noteBannerArrivals(in: windows)
+        playSounds(in: windows)
         if !dismissTimers.armedIDs.isEmpty || !closedBannerIDs.isEmpty || !unreadableBannerSweeps.isEmpty
             || !bannerFirstSeen.isEmpty {
             let present = Set(windows.flatMap { banners(in: $0) }.compactMap(\.id))
@@ -640,6 +644,27 @@ package final class NotificationRepositioner: ObservableObject {
             }
         }
         timesBaselineTaken = true
+    }
+
+    /// Plays sound groups' sounds for banners that just arrived. Not for the open panel's
+    /// rows, which look just like banners, and not while paused or disabled: then the
+    /// notifications are left to macOS entirely, and what came in meanwhile stays unheard.
+    private func playSounds(in windows: [AXUIElement]) {
+        guard let settings, settings.isActive, settings.playsAnySound else {
+            sounds.reset()
+            return
+        }
+        let up = windows.filter { !isNCPanelOpen($0) }.flatMap { window in
+            banners(in: window).compactMap { ref in
+                ref.id.map { id in
+                    (id: id, appName: {
+                        ref.element.stringAttribute("AXAttributedDescription")
+                            .flatMap(AppNameResolver.appName(fromDescription:))
+                    })
+                }
+            }
+        }
+        sounds.sweep(up, soundFor: settings.notificationSound(for:))
     }
 
     /// A banner and its identifier, read once.

@@ -45,13 +45,12 @@ struct DebugTabView: View {
                     }
                     .frame(maxWidth: .infinity)
                 }
-                .buttonStyle(.borderedProminent)
-                .tint(diagCopied ? .green : Color.nannyProminent)
+                .buttonStyle(NannyProminentButtonStyle(fill: diagCopied ? .green : .nannyProminent))
                 .animation(.easeInOut(duration: 0.15), value: diagCopied)
             }
             .padding(14)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Color.nannyRaised(0.06), in: RoundedRectangle(cornerRadius: 10))
+            .settingsCardBackground()
 
             // MARK: Developer — repro a pasted report, inspect logs, drive edge cases.
             CollapsibleSection(title: "Developer", systemImage: "hammer") {
@@ -75,7 +74,7 @@ struct DebugTabView: View {
             LocalizedText("Apply a report")
                 .font(.caption.weight(.medium)).foregroundStyle(.secondary)
             LocalizedText("Paste a diagnostics report to take over its settings (position, behavior toggles, auto-dismiss, scale) for local reproduction.")
-                .font(.caption2).foregroundStyle(.tertiary).fixedSize(horizontal: false, vertical: true)
+                .font(.caption2).foregroundStyle(Color.nannyNote).fixedSize(horizontal: false, vertical: true)
             TextEditor(text: $pasteText)
                 .font(.caption2.monospaced())
                 .frame(height: 110)
@@ -97,7 +96,7 @@ struct DebugTabView: View {
                 } label: {
                     Label { LocalizedText("Apply Settings") } icon: { Image(systemName: "arrow.down.circle") }
                 }
-                    .buttonStyle(.borderedProminent).controlSize(.small).tint(Color.nannyAccent)
+                    .buttonStyle(.nannyProminent).controlSize(.small)
                     .disabled(pasteText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
             if let applyResult {
@@ -156,10 +155,10 @@ struct DebugTabView: View {
                 LazyVStack(alignment: .leading, spacing: 1) {
                     if logger.entries.isEmpty {
                         LocalizedText("No entries yet. Trigger a notification to start logging.")
-                            .font(.caption2).foregroundStyle(.tertiary).padding(10)
+                            .font(.caption2).foregroundStyle(Color.nannyNote).padding(10)
                     } else if filteredLogEntries.isEmpty {
                         LocalizedText("No entries match the current filter.")
-                            .font(.caption2).foregroundStyle(.tertiary).padding(10)
+                            .font(.caption2).foregroundStyle(Color.nannyNote).padding(10)
                     } else {
                         ForEach(filteredLogEntries.reversed()) { LogEntryRow(entry: $0) }
                     }
@@ -218,7 +217,7 @@ struct DebugTabView: View {
         HStack(spacing: 10) {
             VStack(alignment: .leading, spacing: 1) {
                 LocalizedText(title).font(.callout)
-                LocalizedText(subtitle).font(.caption2).foregroundStyle(.tertiary)
+                LocalizedText(subtitle).font(.caption2).foregroundStyle(Color.nannyNote)
                     .fixedSize(horizontal: false, vertical: true)
             }
             Spacer()
@@ -273,6 +272,6 @@ private struct CollapsibleSection<Trailing: View, Content: View>: View {
         }
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.nannyRaised(0.06), in: RoundedRectangle(cornerRadius: 10))
+        .settingsCardBackground()
     }
 }
