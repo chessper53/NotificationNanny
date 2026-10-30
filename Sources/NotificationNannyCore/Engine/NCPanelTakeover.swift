@@ -20,8 +20,8 @@ import SwiftUI
 /// - A click on any window of ours closes the real panel. `PanelClickRouter` takes those
 ///   clicks before Notification Center can see them.
 ///
-/// Widgets are left out: they are drawn by their own processes and Accessibility
-/// doesn't describe them.
+/// Widgets are pictures of the real ones, behind their own setting; see WidgetCapture.
+
 /// What the user chose for the custom panel, in the Notification Center tab, and how
 /// banners look, which the panel's rows follow.
 struct NCPanelOptions: Equatable {
@@ -64,6 +64,8 @@ final class NCPanelTakeover: ObservableObject {
     @Published private(set) var snapshot: NCPanelSnapshot = .empty
     @Published private(set) var options = NCPanelOptions()
     @Published private(set) var widgets: [NCWidget] = []
+    /// What Notification Center shows under its list.
+    @Published private(set) var footer = NCPanelFooter()
     private(set) var isActive = false
 
     /// The options as set now; read when the panel opens and when settings change.
@@ -78,15 +80,9 @@ final class NCPanelTakeover: ObservableObject {
     var onEnd: (() -> Void)?
     /// The tint a banner from the app gets, clear for none. Read by the panel's view.
     var tint: (String) -> Color = { _ in .clear }
-    /// Whether rows show when they arrived.
-    var showTimes: () -> Bool = { false }
 
-    private let times: NotificationTimes
-    /// When the panel opened. Rows listed then came in before it; rows that appear later
-    /// arrive while it is open. The list can be empty for a moment after opening, so
-    /// "listed then" lasts until it has rows or briefly after.
-    private var openedAt: Double = 0
-    private var listedBaselineTaken = false
+    /// A menu of Notification Center's open in our panel, nil while none is.
+    @Published private(set) var menu: NCPanelMenu?
 
     private let logger: NannyLogger
     private let router = PanelClickRouter()
@@ -113,6 +109,17 @@ final class NCPanelTakeover: ObservableObject {
     private let actions = NotificationActions()
     /// Mirrors a reply while one is open: the typing goes to Notification Center's field.
     private var replyTimer: Timer?
+    /// The footer's Edit Widgets and Clear Notifications, while the panel shows them.
+    private var editWidgetsButton: AXUIElement?
+    private var clearMenuButton: AXUIElement?
+    /// After the panel closes, its window goes home only once Notification Center has
+    /// drawn the panel's way out, which it does wherever the window is: about 0.6 s after
+    /// it says it closed (filmed on 27.0, scripts/panel-lab `native-close`). Moved back at
+    /// once, the real panel was seen leaving.
+    /// When the panel opened, system uptime.
+    private var openedAt: Double = 0
+    private var goingHome: (window: AXUIElement, home: CGPoint, work: DispatchWorkItem)?
+    private static let closeAnimation: TimeInterval = 0.8
 
     /// NN_LAB_PANEL_FILTER=prefix (scripts/panel-lab) lists only apps whose name starts with
     /// it, so a lab run's screenshots never show the user's own notifications.
@@ -121,27 +128,23 @@ final class NCPanelTakeover: ObservableObject {
     /// y of the parked window: far above any screen arrangement.
     private static let parkedY: CGFloat = -9999
 
-    init(logger: NannyLogger, times: NotificationTimes) {
+    init(logger: NannyLogger) {
         self.logger = logger
-        self.times = times
     }
 
-    /// When the row's notification arrived, if known and times are on.
-    func arrival(of row: NCPanelRow) -> Date? {
-        showTimes() ? times.arrival(of: row.id) : nil
-    }
-
-    /// Whether `window` is the one this has taken over; the repositioner leaves it alone.
+    /// Whether `window` is the one this has taken over, or is still putting back; the
+    /// repositioner leaves it alone.
     func owns(_ window: AXUIElement) -> Bool {
-        guard isActive, let mine = self.window else { return false }
-        return CFEqual(mine, window)
+        if isActive, let mine = self.window { return CFEqual(mine, window) }
+        if let going = goingHome { return CFEqual(going.window, window) }
+        return false
     }
 
     /// Looks at every Notification Center event before the repositioner does. Returns
     /// true when the event belongs to the taken-over panel and needs nothing else.
     func handle(notification: String, ncApp: AXUIElement, enabled: Bool) -> Bool {
         guard enabled else {
-            if isActive { end(reason: "turned off") }
+            if isActive { end(reason: "turned off", stillOpen: isPanelOpen()) }
             return false
         }
         self.ncApp = ncApp
@@ -153,9 +156,12 @@ final class NCPanelTakeover: ObservableObject {
 
     /// Settings changed: stop if the feature was turned off while the panel is open.
     func settingsChanged(enabled: Bool) {
-        if !enabled, isActive { end(reason: "turned off") }
+        if !enabled, isActive { end(reason: "turned off", stillOpen: isPanelOpen()) }
         let next = readOptions()
-        if next != options { options = next }
+        guard next != options else { return }
+        options = next
+        // Open while its place or size is changed in Settings: it moves there at once.
+        if isActive { panel.relayout() }
     }
 
     private func evaluate(trigger: String) {
@@ -192,10 +198,18 @@ final class NCPanelTakeover: ObservableObject {
     private func begin() {
         guard let host = hostWindow(), let origin = host.point() else { return }
         window = host
-        home = origin
+        // Opened again before the window went home: it is still parked, and home is where
+        // it was going.
+        if let going = goingHome, CFEqual(going.window, host) {
+            going.work.cancel()
+            home = going.home
+        } else {
+            home = origin
+        }
+        goingHome?.work.cancel()
+        goingHome = nil
         isActive = true
         openedAt = ProcessInfo.processInfo.systemUptime
-        listedBaselineTaken = false
         // First, before anything else: every millisecond here is a frame of the real panel.
         desiredOrigin = CGPoint(x: origin.x, y: Self.parkedY)
         keepInPlace()
@@ -203,11 +217,15 @@ final class NCPanelTakeover: ObservableObject {
         let screen = preferredScreen() ?? Self.screen(atAXPoint: origin) ?? NSScreen.main ?? NSScreen.screens[0]
         onBegin?()
         refresh()
+        // Clicks in Settings too: dragging the panel's place there would close it otherwise.
+        router.otherWindows = { [weak self] in
+            NSApp.windows.filter { $0.isVisible && $0.level == .normal && $0 !== self?.panel.window }
+        }
         guard router.start(for: panel.window) else {
             // Without the router the first click on our panel would close the real one.
             logger.log("Custom Notification Center needs an event tap, which macOS refused — showing the real one",
                        level: .warn, tag: "Panel")
-            end(reason: "no event tap")
+            end(reason: "no event tap", stillOpen: true)
             return
         }
         let timer = Timer(timeInterval: 0.25, repeats: true) { [weak self] _ in
@@ -236,7 +254,7 @@ final class NCPanelTakeover: ObservableObject {
         startWidgets()
     }
 
-    private func end(reason: String) {
+    private func end(reason: String, stillOpen: Bool = false) {
         router.stop()
         panel.hide(after: options.animation.outroDuration)
         stopWidgets()
@@ -245,7 +263,27 @@ final class NCPanelTakeover: ObservableObject {
         watchdog?.invalidate()
         watchdog = nil
         pendingRefresh?.cancel()
-        if let window, let home { _ = setPosition(window, home) }
+        refreshBurst.forEach { $0.cancel() }
+        refreshBurst = []
+        menu = nil
+        if let window, let home {
+            if stillOpen {
+                // Turned off with the panel open: the real one is what should show now.
+                _ = setPosition(window, home)
+                onEnd?()
+            } else {
+                let work = DispatchWorkItem { [weak self] in
+                    guard let self, let going = self.goingHome else { return }
+                    self.goingHome = nil
+                    _ = self.setPosition(going.window, going.home)
+                    self.onEnd?()
+                }
+                goingHome = (window, home, work)
+                DispatchQueue.main.asyncAfter(deadline: .now() + Self.closeAnimation, execute: work)
+            }
+        } else {
+            onEnd?()
+        }
         isActive = false
         window = nil
         home = nil
@@ -253,9 +291,18 @@ final class NCPanelTakeover: ObservableObject {
         rowElements = [:]
         groupButtons = [:]
         sectionButtons = [:]
+        editWidgetsButton = nil
+        clearMenuButton = nil
         snapshot = .empty
         logger.log("Custom Notification Center closed (\(reason))", tag: "Panel")
-        onEnd?()
+    }
+
+    /// Sends the window home now rather than after the panel's way out, when the app quits.
+    func finishClosing() {
+        guard let going = goingHome else { return }
+        going.work.cancel()
+        goingHome = nil
+        _ = setPosition(going.window, going.home)
     }
 
     /// Notification Center moves its window back when the panel opens, and may again.
@@ -286,15 +333,26 @@ final class NCPanelTakeover: ObservableObject {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.04, execute: item)
     }
 
+    /// NN_TIMING=1 (scripts/notify-lab, panel-lab) writes how long each read of the list took.
+    private static let timing = ProcessInfo.processInfo.environment["NN_TIMING"] == "1"
+
     private func refresh() {
+        let started = ProcessInfo.processInfo.systemUptime
+        defer {
+            if Self.timing {
+                let ms = Int((ProcessInfo.processInfo.systemUptime - started) * 1000)
+                FileHandle.standardError.write(Data("[timing] panel refresh \(ms) ms, \(snapshot.rowCount) rows\n".utf8))
+            }
+        }
         readWidgets()
+        // With no notifications there may be no list, and the footer is all there is.
+        if let window { readFooter(in: window) }
         guard let window, let list = Self.findList(in: window) else {
             if snapshot != .empty { snapshot = .empty }
             return
         }
         var entries: [NCListEntry] = []
         var elements: [AXUIElement] = []
-        var allIDs: Set<String> = []
         // In a lab run, a header of an app filtered out goes with its buttons.
         var skippingHeader = false
         for child in Self.visualOrder(list.children()) {
@@ -303,7 +361,6 @@ final class NCPanelTakeover: ObservableObject {
             skippingHeader = false
             if let sub = child.stringAttribute(kAXSubroleAttribute as String), AppNameResolver.bannerSubroles.contains(sub) {
                 guard let row = Self.readRow(child, subrole: sub) else { continue }
-                allIDs.insert(row.id)
                 if let only = Self.labFilter, !row.appName.hasPrefix(only) { continue }
                 entries.append(.row(row))
             } else if role == "AXHeading" {
@@ -321,23 +378,28 @@ final class NCPanelTakeover: ObservableObject {
             }
             elements.append(child)
         }
-        noteTimes(allIDs)
         let next = NCPanelSnapshot.build(from: entries)
         mapElements(entries: entries, elements: elements)
-        if next != snapshot { snapshot = next }
+        if next != snapshot {
+            if Self.timing { // DEBUG-CLICK
+                let rows = next.sections.flatMap(\.groups).flatMap(\.rows).map { "\($0.title):\($0.isStack ? "stack" : "row"):\(Int($0.height))" }
+                FileHandle.standardError.write(Data("[snapshot] \(rows) uptime \(ProcessInfo.processInfo.systemUptime)\n".utf8))
+            }
+            snapshot = next
+        }
     }
 
-    private func noteTimes(_ ids: Set<String>) {
-        let settled = ProcessInfo.processInfo.systemUptime - openedAt > 0.3
-        if !listedBaselineTaken {
-            guard !ids.isEmpty || settled else { return }
-            ids.forEach { times.noteAlreadyListed($0) }
-            listedBaselineTaken = true
-        } else {
-            ids.forEach { times.noteArrival($0) }
-        }
-        // The open panel lists every notification there is.
-        if !ids.isEmpty { times.prune(keeping: ids) }
+    /// The buttons under the list: Edit Widgets, and the ✕ with its Clear Notifications
+    /// menu, which is only there while there is something to clear (measured on 27.0).
+    private func readFooter(in window: AXUIElement) {
+        guard let scroll = Self.find(in: window, depth: 0, { $0.stringAttribute(kAXRoleAttribute as String) == (kAXScrollAreaRole as String) })
+        else { return }
+        let kids = scroll.children()
+        editWidgetsButton = kids.first { $0.identifier == "widget-editor-button" }
+        clearMenuButton = kids.first { $0.stringAttribute(kAXRoleAttribute as String) == "AXMenuButton" && $0.identifier == "xmark" }
+        let next = NCPanelFooter(editWidgets: editWidgetsButton.flatMap { $0.stringAttribute("AXAttributedDescription") },
+                                 clear: clearMenuButton.flatMap { $0.stringAttribute(kAXTitleAttribute as String) })
+        if next != footer { footer = next }
     }
 
     /// Records which element answers for which row and header button, the same way
@@ -406,13 +468,17 @@ final class NCPanelTakeover: ObservableObject {
         let appName = AppNameResolver.appName(fromDescription: description) ?? "Notification"
         let lines = el.identifiedTextValues()
         let field = NotificationActions.replyField(in: el)
+        // The time is the one text without an identifier; title, subtitle and body have one.
+        let time = el.children().first {
+            $0.stringAttribute(kAXRoleAttribute as String) == (kAXStaticTextRole as String) && $0.identifier == nil
+        }.flatMap { $0.stringAttribute(kAXValueAttribute as String) }.map(cleanAXString).flatMap { $0.isEmpty ? nil : $0 }
         return NCPanelRow(id: id, appName: appName, title: lines["title"] ?? "", subtitle: lines["subtitle"] ?? "",
                           body: lines["body"] ?? "", isStack: subrole.hasSuffix("Stack"),
                           actions: NotificationActions.appActions(of: el),
                           reply: field.map { $0.stringAttribute(kAXValueAttribute as String) ?? "" },
                           replyPlaceholder: field?.stringAttribute(kAXPlaceholderValueAttribute as String) ?? "",
                           expanded: NotificationActions.isExpanded(el),
-                          height: el.size()?.height ?? 58)
+                          height: el.size()?.height ?? 58, time: time)
     }
 
     // MARK: - Widgets
@@ -579,15 +645,44 @@ final class NCPanelTakeover: ObservableObject {
 
     // MARK: - Actions, passed back to Notification Center
 
+    private var refreshBurst: [DispatchWorkItem] = []
+
+    /// Reads the list again a few times after an action: Notification Center animates what
+    /// an action changes, and its tree can catch up after the first read with no further
+    /// event to say so. Expanding a stack read once looked like it did nothing.
+    private func refreshSoon() {
+        refreshBurst.forEach { $0.cancel() }
+        refreshBurst = [0.05, 0.2, 0.45, 0.9].map { delay in
+            let item = DispatchWorkItem { [weak self] in self?.refresh() }
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: item)
+            return item
+        }
+    }
+
     /// What a click on the row does in Notification Center: opens the notification, or
     /// expands a collapsed stack.
     func activate(_ row: NCPanelRow) {
+        menu = nil
         guard let el = rowElements[row.id] else { return }
         if !row.isStack, let app = NSWorkspace.shared.runningApplications.first(where: { $0.localizedName == row.appName }) {
             app.activate()
         }
-        AXUIElementPerformAction(el, kAXPressAction as CFString)
-        guard !row.isStack else { scheduleRefresh(); return }
+        let pressed = AXUIElementPerformAction(el, kAXPressAction as CFString)
+        let sinceOpen = Int((ProcessInfo.processInfo.systemUptime - openedAt) * 1000)
+        logger.log("Row pressed \(sinceOpen) ms after opening: \(pressed.rawValue), \(rowElements.count) rows known", tag: "Panel")
+        guard !row.isStack else {
+            refreshSoon()
+            // With a reply open, Notification Center spends the first press on closing it
+            // and only the second expands the stack (measured on 27.0, scripts/panel-lab
+            // `real-expand-while-reply`). One click should do what it says.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [weak self] in
+                guard let self, self.isActive, let el = self.rowElements[row.id],
+                      el.stringAttribute(kAXSubroleAttribute as String)?.hasSuffix("Stack") == true else { return }
+                AXUIElementPerformAction(el, kAXPressAction as CFString)
+                self.refreshSoon()
+            }
+            return
+        }
         // Opening a notification closes Notification Center's panel when you click it there;
         // parked, nothing it watches for happens, so it stays open. Close it as the clock does.
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
@@ -618,10 +713,11 @@ final class NCPanelTakeover: ObservableObject {
     /// One of the app's buttons on the row. A reply opens Notification Center's own field
     /// and gives it the focus: what you type goes there, and ours shows it.
     func perform(_ action: String, on row: NCPanelRow) {
+        menu = nil
         guard let el = rowElements[row.id] else { return }
         actions.perform(action, id: row.id, on: el) { [weak self] opensReply in
             guard let self else { return }
-            self.refresh()
+            self.refreshSoon()
             if opensReply { self.mirrorReplies() }
         }
         logger.log("Action \(action) on \(row.appName)", tag: "Panel")
@@ -629,64 +725,198 @@ final class NCPanelTakeover: ObservableObject {
 
     /// The row's chevron: shows or hides its buttons, in Notification Center too.
     func toggleDetails(_ row: NCPanelRow) {
+        menu = nil
         guard let el = rowElements[row.id] else { return }
         actions.toggleDetails(of: el)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in self?.refresh() }
+        refreshSoon()
     }
 
     func sendReply(_ row: NCPanelRow) {
         guard let el = rowElements[row.id] else { return }
         actions.send(id: row.id, on: el)
-        scheduleRefresh()
+        refreshSoon()
     }
 
+    /// While a reply is open, what is typed shows in ours: only the replying rows are read
+    /// again, ten times a second. Reading the whole list each time took 11 to 22 ms on the
+    /// main thread (NN_TIMING=1), and the panel stuttered as the reply opened.
     private func mirrorReplies() {
         guard replyTimer == nil else { return }
         let timer = Timer(timeInterval: 0.1, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated {
                 guard let self else { return }
-                self.refresh()
-                let replying = self.snapshot.sections.contains { $0.groups.contains { $0.rows.contains { $0.reply != nil } } }
-                if !replying {
+                let replying = self.snapshot.sections.flatMap(\.groups).flatMap(\.rows).filter { $0.reply != nil }
+                guard !replying.isEmpty else {
                     self.replyTimer?.invalidate()
                     self.replyTimer = nil
+                    self.refresh()
+                    return
                 }
+                for row in replying { self.refreshRow(row.id) }
             }
         }
         RunLoop.main.add(timer, forMode: .common)
         replyTimer = timer
     }
 
+    /// Reads one row again and puts it in place, the rest of the list as it was.
+    private func refreshRow(_ id: String) {
+        guard let el = rowElements[id], let sub = el.stringAttribute(kAXSubroleAttribute as String),
+              let fresh = Self.readRow(el, subrole: sub) else { return }
+        var next = snapshot
+        for s in next.sections.indices {
+            for g in next.sections[s].groups.indices {
+                if let r = next.sections[s].groups[g].rows.firstIndex(where: { $0.id == id }) {
+                    next.sections[s].groups[g].rows[r] = fresh
+                }
+            }
+        }
+        if next != snapshot { snapshot = next }
+    }
+
     /// The row's ✕: Close for one notification, Clear All for a collapsed stack.
     func close(_ row: NCPanelRow) {
+        menu = nil
         guard let el = rowElements[row.id] else { return }
         let done = el.performCustomAction(namedAnyOf: row.isStack ? NCActionNames.clearAll : NCActionNames.close)
             || el.performCustomAction(namedAnyOf: NCActionNames.close.union(NCActionNames.clearAll))
         if !done { logger.log("Notification has no Close action", level: .warn, tag: "Panel") }
-        scheduleRefresh()
+        refreshSoon()
     }
 
     func collapse(_ group: NCPanelSnapshot.Group) {
+        menu = nil
         guard let showLess = groupButtons[group.id]?.first else { return }
         AXUIElementPerformAction(showLess, kAXPressAction as CFString)
-        scheduleRefresh()
+        refreshSoon()
     }
 
     func clear(_ group: NCPanelSnapshot.Group) {
+        menu = nil
         if group.expanded, let clear = groupButtons[group.id]?.last {
             AXUIElementPerformAction(clear, kAXPressAction as CFString)
         } else {
             for row in group.rows { close(row) }
         }
-        scheduleRefresh()
+        refreshSoon()
     }
 
     func clearAll(_ section: NCPanelSnapshot.Section) {
+        menu = nil
         if let button = sectionButtons[section.id] {
             AXUIElementPerformAction(button, kAXPressAction as CFString)
         } else {
             for group in section.groups { clear(group) }
         }
-        scheduleRefresh()
+        refreshSoon()
     }
+
+    /// Edit Widgets under the list, as Notification Center's own: it closes the panel and
+    /// opens the widget gallery.
+    func editWidgets() {
+        menu = nil
+        guard let button = editWidgetsButton else { return }
+        AXUIElementPerformAction(button, kAXPressAction as CFString)
+        refreshSoon()
+    }
+
+    // MARK: - Notification Center's menus
+
+    /// A row's menu, as its ⋯ or a right click opens it in Notification Center: the app's
+    /// buttons unless they are shown already, then Mute for 1 Hour, Mute for Today, Turn
+    /// Off, Dismiss, Notification Settings… `anchor` is where it opens in the panel's view.
+    ///
+    /// Notification Center builds the menu, so it is asked for it: the real one is opened
+    /// on the parked row, read, and closed again at once. It opens at the parked row's
+    /// place pulled onto the screen, not where it was asked for, which is why ours is drawn
+    /// instead; used at once, no frame of it was filmed (scripts/panel-lab `parked-menu`).
+    func showMenu(for row: NCPanelRow, withAppActions: Bool, at anchor: CGPoint, trailing: Bool) {
+        guard let el = rowElements[row.id] else { return }
+        let target = NCMenus.target(of: el)
+        readRealMenu(of: target) { [weak self] items in
+            guard let self, self.isActive, var items else { return }
+            if !withAppActions {
+                // The buttons come first, then a separator.
+                while let first = items.first, first.kind == .action, row.actions.contains(first.title) { items.removeFirst() }
+                if items.first?.kind == .separator { items.removeFirst() }
+            }
+            guard !items.isEmpty else { return }
+            self.menu = NCPanelMenu(target: .row(row.id), items: items, anchor: anchor, trailing: trailing)
+        }
+    }
+
+    /// The app's buttons alone, as the Options pill of a hovered row lists them. Known
+    /// already, so Notification Center isn't asked.
+    func showOptions(for row: NCPanelRow, at anchor: CGPoint) {
+        let items = row.actions.enumerated().map { NCMenuItem(kind: .action, title: $1, occurrence: 0) }
+        guard !items.isEmpty else { return }
+        menu = NCPanelMenu(target: .options(row.id), items: items, anchor: anchor, trailing: true)
+    }
+
+    /// The footer ✕: Clear Banners Only, Clear All Notifications.
+    func showClearMenu(at anchor: CGPoint) {
+        guard let button = clearMenuButton else { return }
+        readRealMenu(of: button) { [weak self] items in
+            guard let self, self.isActive, let items, !items.isEmpty else { return }
+            self.menu = NCPanelMenu(target: .clear, items: items, anchor: anchor)
+        }
+    }
+
+    func dismissMenu() { menu = nil }
+
+    /// An item of a menu open in ours: the app's own buttons are used as their buttons are,
+    /// so a reply opens; everything else is pressed in Notification Center's menu.
+    func choose(_ item: NCMenuItem) {
+        guard let open = menu else { return }
+        menu = nil
+        let rowID: String?
+        switch open.target {
+        case .row(let id), .options(let id): rowID = id
+        case .clear: rowID = nil
+        }
+        if let rowID, let row = snapshot.sections.lazy.flatMap({ $0.groups }).flatMap({ $0.rows }).first(where: { $0.id == rowID }),
+           item.kind == .action, row.actions.contains(item.title) {
+            perform(item.title, on: row)
+            return
+        }
+        let element: AXUIElement?
+        switch open.target {
+        case .row(let id), .options(let id): element = rowElements[id].map(NCMenus.target)
+        case .clear: element = clearMenuButton
+        }
+        guard let element else { return }
+        readRealMenu(of: element, press: item) { [weak self] _ in self?.refreshSoon() }
+        logger.log("Menu item \(item.title)", tag: "Panel")
+    }
+
+    private func readRealMenu(of el: AXUIElement, press: NCMenuItem? = nil, _ done: @escaping ([NCMenuItem]?) -> Void) {
+        guard let window else { done(nil); return }
+        NCMenus.read(of: el, in: window, press: press, logger: logger, done)
+    }
+}
+
+/// What Notification Center shows under its list, by its own names; nil where it shows
+/// nothing.
+struct NCPanelFooter: Equatable {
+    var editWidgets: String?
+    var clear: String?
+}
+
+/// A menu open in our panel.
+struct NCPanelMenu: Identifiable, Equatable {
+    enum Target: Equatable {
+        /// A row's ⋯ or right click.
+        case row(String)
+        /// A hovered row's Options pill: the app's buttons.
+        case options(String)
+        /// The footer ✕.
+        case clear
+    }
+    let id = UUID()
+    let target: Target
+    let items: [NCMenuItem]
+    /// Where it hangs from in the panel's view: its top left corner, or with `trailing`
+    /// its top right, as a button's menu at the right of a row opens.
+    let anchor: CGPoint
+    var trailing = false
 }

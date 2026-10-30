@@ -63,6 +63,20 @@ struct ExportSchemaTests {
         #expect(restored.customNotificationCenterXOffset == 0)
     }
 
+    /// Backups from when the custom Notification Center noted times of its own still carry
+    /// that switch; macOS's times are shown now, and the rest of the backup applies.
+    @Test func import_withOldTimesSwitch_appliesTheRest() throws {
+        let backup = """
+        {"placements": {}, "targetDisplayID": 0, "autoDismissSeconds": 0, "bannerScale": 1.0,
+         "pauseWhileStreaming": false, "customNotificationCenter": true, "customNotificationCenterTimes": true,
+         "customNotificationCenterAppFilter": true, "appGroups": [], "presets": []}
+        """.data(using: .utf8)!
+        let s = makeSettings()
+        try s.importData(backup)
+        #expect(s.customNotificationCenter)
+        #expect(s.customNotificationCenterAppFilter)
+    }
+
     /// Groups saved before they moved from the Exceptions tab into the Banner tab read
     /// back unchanged: apps, screen, place, and which settings are their own.
     @Test func groupsSavedForExceptionsTab_readBackUnchanged() throws {

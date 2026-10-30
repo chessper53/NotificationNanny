@@ -24,6 +24,42 @@ struct NCPanelRow: Equatable, Identifiable {
     /// Its height in Notification Center, which grows with details and a reply: ours is
     /// drawn the same.
     var height: CGFloat = 58
+    /// The time Notification Center draws on it ("17:46", "2 days ago"): the row's one
+    /// text without an identifier. Alerts still up have none (measured on 27.0,
+    /// scripts/panel-lab `real-times`).
+    var time: String? = nil
+}
+
+/// One item of a menu Notification Center shows, read from it: a row's (⋯, right click)
+/// or the footer's Clear Notifications.
+struct NCMenuItem: Equatable, Identifiable {
+    enum Kind: Equatable { case action, header, separator }
+    let kind: Kind
+    let title: String
+    /// Which of the menu's items with this title it is, to find it again.
+    let occurrence: Int
+    var id: String { "\(kind)-\(title)-\(occurrence)" }
+
+    /// The menu's items from its AX children, as (title, height) in order. Separators are
+    /// short untitled items; untitled full height items are containers and are left out;
+    /// a titled item that isn't a `menuAction:` is a section heading (measured on 27.0:
+    /// "Lab Bravo Notifications" over Mute for 1 Hour…).
+    static func build(from children: [(title: String, height: CGFloat, isAction: Bool)]) -> [NCMenuItem] {
+        var items: [NCMenuItem] = []
+        var seen: [String: Int] = [:]
+        for child in children {
+            if child.title.isEmpty {
+                guard child.height > 0, child.height < 16, !items.isEmpty, items.last?.kind != .separator else { continue }
+                items.append(NCMenuItem(kind: .separator, title: "", occurrence: 0))
+                continue
+            }
+            let n = seen[child.title, default: 0]
+            seen[child.title] = n + 1
+            items.append(NCMenuItem(kind: child.isAction ? .action : .header, title: child.title, occurrence: n))
+        }
+        while items.last?.kind == .separator { items.removeLast() }
+        return items
+    }
 }
 
 /// A child of the panel's `AXNotificationListItems` list, reduced to what decides the

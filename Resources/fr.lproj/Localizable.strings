@@ -62,7 +62,6 @@
 "px" = "px";
 
 /* Custom banner overlay chrome */
-"now" = "maintenant";
 
 /* Exceptions tab */
 "Create groups of apps and give each group its own rules: position, screen, banner type, and scale. Apps not in any group use the defaults." = "Créez des groupes d'apps et donnez à chacun ses propres règles : position, écran, type de bannière et échelle. Les apps hors groupe utilisent les réglages par défaut.";
@@ -188,13 +187,12 @@
 "All" = "Toutes";
 "Clear All" = "Tout effacer";
 "Show less" = "Afficher moins";
-"Show when notifications arrived" = "Afficher l'heure d'arrivée des notifications";
 "Notification Center doesn't share its times, so NotificationNanny notes when each banner appears. Notifications that came in while it wasn't running have no time." = "Le Centre de notifications ne partage pas ses heures, alors NotificationNanny note l'apparition de chaque bannière. Les notifications arrivées pendant qu'il ne tournait pas n'ont pas d'heure.";
 "NotificationNanny can show its own list when you click the clock, in place of the Notification Center panel. Your notifications stay in Notification Center: this is another view of them, and everything you do in it goes back there." = "NotificationNanny peut afficher sa propre liste quand vous cliquez sur l'horloge, à la place du Centre de notifications. Vos notifications restent dans le Centre de notifications : c'est une autre vue de celles-ci, et tout ce que vous y faites y est renvoyé.";
 "Notification Center" = "Centre de notifications";
 "Use NotificationNanny's Notification Center (experimental)" = "Utiliser le Centre de notifications de NotificationNanny (expérimental)";
 "List" = "Liste";
-"Filter by app" = "Filtrer par app";
+"App filter above your notifications" = "Filtre par app au-dessus des notifications";
 "A row of apps above the list; click one to see only its notifications." = "Une rangée d'apps au-dessus de la liste ; cliquez sur l'une pour ne voir que ses notifications.";
 "Widgets" = "Widgets";
 "Widgets are drawn by their own apps, so NotificationNanny can only show them as live pictures of the real ones. That needs Screen Recording. Leave this off and widgets are simply left out." = "Les widgets sont dessinés par leurs propres apps, NotificationNanny ne peut donc les montrer que comme des images en direct des vrais. Cela demande l'enregistrement de l'écran. Laissez ceci désactivé et les widgets sont simplement omis.";
@@ -214,12 +212,13 @@
 "Where you click the clock" = "Là où vous cliquez sur l'horloge";
 "Where your banners go" = "Là où vont vos bannières";
 "Extras" = "Extras";
+"More" = "Plus";
 "Open Notification Center" = "Ouvrir le Centre de notifications";
 "As macOS: on the right, on the screen whose clock you click." = "Comme macOS : à droite, sur l'écran dont vous cliquez l'horloge.";
 "The side of the screen, and which screen it opens on." = "Le côté de l'écran, et l'écran sur lequel il s'ouvre.";
 "As macOS: in from the edge of the screen." = "Comme macOS : depuis le bord de l'écran.";
 "How it comes in when you click the clock, and goes when it closes." = "Comment il apparaît quand vous cliquez l'horloge, et part quand il se ferme.";
-"Not part of macOS's Notification Center, so off unless you turn them on. Times are noted when each banner appears; notifications that came in while NotificationNanny wasn't running have none." = "Absents du Centre de notifications de macOS, donc désactivés tant que vous ne les activez pas. Les heures sont notées à l'apparition de chaque bannière ; les notifications arrivées quand NotificationNanny ne tournait pas n'en ont pas.";
+"Adds a row of app buttons above your notifications, to show one app at a time. macOS's Notification Center doesn't have this, so it starts off." = "Ajoute au-dessus de vos notifications une rangée de boutons, un par app, pour n'en afficher qu'une à la fois. Le Centre de notifications de macOS ne le propose pas, c'est donc désactivé au départ.";
 "Same as banners" = "Comme les bannières";
 "As macOS. Drag it anywhere on the preview." = "Comme macOS. Faites-le glisser n'importe où dans l'aperçu.";
 "Drag it anywhere on the preview." = "Faites-le glisser n'importe où dans l'aperçu.";

@@ -62,7 +62,6 @@
 "px" = "px";
 
 /* Custom banner overlay chrome */
-"now" = "ora";
 
 /* Exceptions tab */
 "Create groups of apps and give each group its own rules: position, screen, banner type, and scale. Apps not in any group use the defaults." = "Crea gruppi di app e assegna a ciascuno le proprie regole: posizione, schermo, tipo di banner e scala. Le app senza gruppo usano le impostazioni predefinite.";
@@ -188,13 +187,12 @@
 "All" = "Tutte";
 "Clear All" = "Cancella tutto";
 "Show less" = "Mostra meno";
-"Show when notifications arrived" = "Mostra quando sono arrivate le notifiche";
 "Notification Center doesn't share its times, so NotificationNanny notes when each banner appears. Notifications that came in while it wasn't running have no time." = "Il Centro Notifiche non condivide i suoi orari, quindi NotificationNanny annota quando appare ogni banner. Le notifiche arrivate mentre non era in esecuzione non hanno un orario.";
 "NotificationNanny can show its own list when you click the clock, in place of the Notification Center panel. Your notifications stay in Notification Center: this is another view of them, and everything you do in it goes back there." = "NotificationNanny può mostrare il proprio elenco quando fai clic sull'orologio, al posto del Centro Notifiche. Le tue notifiche restano nel Centro Notifiche: questa è un'altra vista, e tutto ciò che fai qui viene inoltrato lì.";
 "Notification Center" = "Centro Notifiche";
 "Use NotificationNanny's Notification Center (experimental)" = "Usa il Centro Notifiche di NotificationNanny (sperimentale)";
 "List" = "Elenco";
-"Filter by app" = "Filtra per app";
+"App filter above your notifications" = "Filtro per app sopra le notifiche";
 "A row of apps above the list; click one to see only its notifications." = "Una riga di app sopra l'elenco; fai clic su una per vedere solo le sue notifiche.";
 "Widgets" = "Widget";
 "Widgets are drawn by their own apps, so NotificationNanny can only show them as live pictures of the real ones. That needs Screen Recording. Leave this off and widgets are simply left out." = "I widget sono disegnati dalle loro app, quindi NotificationNanny può mostrarli solo come immagini dal vivo di quelli reali. Serve la Registrazione schermo. Lascialo disattivato e i widget vengono semplicemente omessi.";
@@ -214,12 +212,13 @@
 "Where you click the clock" = "Dove fai clic sull'orologio";
 "Where your banners go" = "Dove vanno i tuoi banner";
 "Extras" = "Extra";
+"More" = "Altro";
 "Open Notification Center" = "Apri il Centro Notifiche";
 "As macOS: on the right, on the screen whose clock you click." = "Come macOS: a destra, sullo schermo di cui fai clic sull'orologio.";
 "The side of the screen, and which screen it opens on." = "Il lato dello schermo e su quale schermo si apre.";
 "As macOS: in from the edge of the screen." = "Come macOS: entra dal bordo dello schermo.";
 "How it comes in when you click the clock, and goes when it closes." = "Come entra quando fai clic sull'orologio e come esce quando si chiude.";
-"Not part of macOS's Notification Center, so off unless you turn them on. Times are noted when each banner appears; notifications that came in while NotificationNanny wasn't running have none." = "Non fanno parte del Centro Notifiche di macOS, quindi sono disattivati finché non li attivi. Gli orari vengono annotati quando appare ogni banner; le notifiche arrivate mentre NotificationNanny non era in esecuzione non ne hanno.";
+"Adds a row of app buttons above your notifications, to show one app at a time. macOS's Notification Center doesn't have this, so it starts off." = "Aggiunge sopra le notifiche una fila di pulsanti, uno per app, per mostrarne una alla volta. Il Centro Notifiche di macOS non lo prevede, quindi parte disattivato.";
 "Same as banners" = "Come i banner";
 "As macOS. Drag it anywhere on the preview." = "Come macOS. Trascinalo in qualsiasi punto dell'anteprima.";
 "Drag it anywhere on the preview." = "Trascinalo in qualsiasi punto dell'anteprima.";
