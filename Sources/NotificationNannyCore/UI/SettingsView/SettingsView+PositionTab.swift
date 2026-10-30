@@ -17,37 +17,16 @@ struct PositionTabView: View {
     }
 
     var body: some View {
-        let visible = defaultScreen.visibleFrame
-
         VStack(alignment: .leading, spacing: 14) {
             LocalizedText("Choose where banners appear. Drag the banner on the preview. It matches your real screen exactly.")
                 .font(.callout)
                 .foregroundStyle(Color.nannyMuted(0.55))
                 .fixedSize(horizontal: false, vertical: true)
 
-            HStack {
-                VStack(alignment: .leading, spacing: 2) {
-                    LocalizedText("Default Position").font(.subheadline.weight(.semibold))
-                    Text("\(Int(visible.width)) × \(Int(visible.height))")
-                        .font(.caption2.monospacedDigit())
-                        .foregroundStyle(.tertiary)
-                }
-                Spacer()
-                if screens.count > 1 {
-                    Picker("", selection: $settings.targetDisplayID) {
-                        LocalizedText("Auto").tag(CGDirectDisplayID(0))
-                        ForEach(screens, id: \.displayID) { screen in
-                            Text(screen.nannyDisplayName).tag(screen.displayID)
-                        }
-                    }
-                    .labelsHidden()
-                    .pickerStyle(.menu)
-                    .controlSize(.small)
-                }
-            }
-
-            PlacementEditor(screen: defaultScreen, placement: defaultPlacementBinding,
-                            maxWidth: 438, maxHeight: 300)
+            PositionCard(titleKey: "Default Position", screen: defaultScreen,
+                         display: $settings.targetDisplayID, resolvedDisplay: settings.resolvedTargetScreen(),
+                         zeroLabelKey: "Auto", placement: defaultPlacementBinding,
+                         noteKey: "Every app outside an exception group shows its banners here.")
 
             Button {
                 repositioner.sendTestNotification(groupID: nil)
@@ -59,7 +38,7 @@ struct PositionTabView: View {
                 }
                 .frame(maxWidth: .infinity)
             }
-            .buttonStyle(.borderedProminent)
+            .buttonStyle(.nannyProminent)
             .controlSize(.regular)
         }
     }

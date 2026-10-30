@@ -31,7 +31,10 @@ mkdir -p "$OUT/src"
 echo "==> Building lab"
 python3 "$LAB/expand_state.py" Sources/NotificationNannyCore/UI/Overlay/CustomOverlay.swift "$OUT/src/CustomOverlay.swift"
 cp "$LAB/lab.swift" "$OUT/src/main.swift"
-swiftc -O -D PROD -package-name NotificationNanny -o "$OUT/lab" "$OUT/src/main.swift" "$OUT/src/CustomOverlay.swift"
+# What the overlay uses from the rest of the app: hover, its strings, the colour tokens.
+CORE=Sources/NotificationNannyCore
+swiftc -O -D PROD -package-name NotificationNanny -o "$OUT/lab" "$OUT/src/main.swift" "$OUT/src/CustomOverlay.swift" \
+    "$CORE/UI/ActiveHover.swift" "$CORE/System/LocalizationManager.swift" "$CORE/UI/NannyColors.swift"
 
 measure() {
     local appearance=$1

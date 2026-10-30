@@ -46,7 +46,10 @@ struct SettingsSnapshotTests {
         let tabs: [(name: String, view: AnyView, clicks: [NSPoint])] = [
             ("position", AnyView(PositionTabView()), []),
             ("banner", AnyView(BannerTabView()), []),
-            ("exceptions", AnyView(ExceptionsTabView()), []),
+            // Groups, once their own Exceptions tab, are the Banner tab with one picked.
+            ("exceptions", AnyView(BannerTabView(initialScope: settings.appGroups.first?.id)), []),
+            ("notification-center", AnyView(NotificationCenterTabView()), []),
+            ("sounds", AnyView(SoundsTabView()), []),
             ("presets", AnyView(PresetsTabView()), []),
             ("general", AnyView(GeneralTabView()), []),
             ("diagnostics", AnyView(DebugTabView()), Self.diagnosticsClicks),

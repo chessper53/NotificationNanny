@@ -9,6 +9,18 @@ package enum AppLanguage: String, CaseIterable, Identifiable {
 
     /// Language names are shown in their own language, not translated — the standard
     /// convention for language pickers (a French speaker still recognizes "Français").
+    /// `displayName` as a string, for menus that take one.
+    @MainActor package var title: String {
+        switch self {
+        case .system: return LocalizationManager.shared.string("System Default")
+        case .en:     return "English"
+        case .fr:     return "Français"
+        case .es:     return "Español"
+        case .de:     return "Deutsch"
+        case .it:     return "Italiano"
+        }
+    }
+
     package var displayName: LocalizedStringKey {
         switch self {
         case .system: return "System Default"
@@ -58,6 +70,11 @@ package final class LocalizationManager: ObservableObject {
         } else {
             UserDefaults.standard.set([lang.rawValue], forKey: Self.defaultsKey)
         }
+    }
+
+    /// The locale dates and times are written in: the chosen language, or the system's.
+    package var locale: Locale {
+        language == .system ? .current : Locale(identifier: language.rawValue)
     }
 
     /// Looks up `key` in the active language's `Localizable.strings`, falling back to the

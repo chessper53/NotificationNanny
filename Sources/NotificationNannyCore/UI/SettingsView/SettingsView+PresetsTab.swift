@@ -23,8 +23,8 @@ struct PresetsTabView: View {
             VStack(alignment: .leading, spacing: 0) {
                 if settings.presets.isEmpty {
                     LocalizedText("No presets yet.")
-                        .font(.caption2).foregroundStyle(.tertiary)
-                        .padding(.horizontal, 14).padding(.vertical, 10)
+                        .font(.caption2).foregroundStyle(Color.nannyNote)
+                        .settingsListRow()
                 } else {
                     ForEach(Array(settings.presets.enumerated()), id: \.element.id) { index, preset in
                         presetRow(preset, index: index)
@@ -41,19 +41,19 @@ struct PresetsTabView: View {
                             .textFieldStyle(.roundedBorder).controlSize(.small).font(.caption)
                             .onSubmit { commitPreset() }
                         Button(loc.string("Save"), action: commitPreset)
-                            .buttonStyle(.borderedProminent).controlSize(.mini)
+                            .buttonStyle(.nannyProminent).controlSize(.mini)
                             .disabled(pendingName.trimmingCharacters(in: .whitespaces).isEmpty)
                         Button(loc.string("Cancel")) { pendingName = "" }.buttonStyle(.borderless).controlSize(.mini)
                     }
-                    .padding(.horizontal, 14).padding(.vertical, 10)
+                    .settingsListRow()
                 } else {
                     Divider().padding(.leading, 14)
                     LocalizedText("5 preset limit reached")
-                        .font(.caption2).foregroundStyle(.tertiary)
-                        .padding(.horizontal, 14).padding(.vertical, 10)
+                        .font(.caption2).foregroundStyle(Color.nannyNote)
+                        .settingsListRow()
                 }
             }
-            .background(Color.nannyRaised(0.06), in: RoundedRectangle(cornerRadius: 10))
+            .settingsCardBackground()
         }
         .confirmationDialog(
             loc.string("Replace your current exception groups?"),
@@ -85,12 +85,12 @@ struct PresetsTabView: View {
                     .textFieldStyle(.roundedBorder).controlSize(.small).font(.caption)
                     .onSubmit { commitRename(preset) }
                 Button(loc.string("Done")) { commitRename(preset) }
-                    .buttonStyle(.borderedProminent).controlSize(.mini)
+                    .buttonStyle(.nannyProminent).controlSize(.mini)
                     .disabled(pendingName.trimmingCharacters(in: .whitespaces).isEmpty)
                 Button { cancelRename() } label: { Image(systemName: "xmark").font(.caption2) }
                     .buttonStyle(.borderless).foregroundStyle(.secondary)
             }
-            .padding(.horizontal, 14).padding(.vertical, 10)
+            .settingsListRow()
         } else {
             HStack(spacing: 4) {
                 Button {
@@ -126,7 +126,7 @@ struct PresetsTabView: View {
                 Button { settings.deletePreset(preset) } label: { Image(systemName: "xmark").font(.caption2) }
                     .buttonStyle(.borderless).foregroundStyle(.secondary)
             }
-            .padding(.horizontal, 14).padding(.vertical, 10)
+            .settingsListRow()
         }
     }
 

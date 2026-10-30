@@ -5,6 +5,20 @@ All notable changes to NotificationNanny are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- **A Notification Center of its own (experimental).** With it on, clicking the clock opens NotificationNanny's list of your notifications in place of the system's panel. It is drawn like the system's, in Light and Dark Mode, with stacks, expanded groups, Show Less, Clear and Clear All, and everything you do in it goes to the real Notification Center, which stays open off screen. Rows take your banners' colour, text colour and privacy blur, and the panel has its own size, side of the screen, screen and animation. It can show when each notification arrived, filter by app, and show the real widgets, which needs Screen Recording and is off unless you turn it on. Widgets are left out otherwise.
+- **The app's own buttons and inline replies on custom banners and in the custom Notification Center.** Hovering a custom banner shows the system's Options menu and chevron; opening its details shows the buttons, such as Reply, Archive or Snooze. A reply is typed into Notification Center's own field, so the app receives it as from a system banner.
+- **A Notification Center tab in Settings** for all of the above.
+
+### Changed
+- **Custom banners look like the system's in every state:** hovered, with details shown, and with a reply open. The close button appears where the system's does, and an app without an icon gets the system's generic one instead of a bell.
+
+### Fixed
+- **Custom banners in Light Mode were darker than the system's on light backgrounds and lighter on dark ones.** The glass now lets as much of the background through as the system's and brightens it the same way. Measured against the real banner, the difference over eight backgrounds went from 6.2 to 3.3 levels, and from 3.3 to 3.0 in Dark Mode, where the edge now catches the light like the system's.
+- **Hovering a custom banner is noticed reliably.** NotificationNanny is never the active app, and the hover macOS reports can miss an app that isn't. The close button and the new controls now follow the pointer itself.
+
 ## [8.0.4] — 2026-10-25
 
 ### Added

@@ -62,7 +62,6 @@
 "px" = "px";
 
 /* Custom banner overlay chrome */
-"now" = "now";
 
 /* Exceptions tab */
 "Create groups of apps and give each group its own rules: position, screen, banner type, and scale. Apps not in any group use the defaults." = "Create groups of apps and give each group its own rules: position, screen, banner type, and scale. Apps not in any group use the defaults.";
@@ -181,3 +180,84 @@
 "Newest on top" = "Newest on top";
 "Newest at the bottom" = "Newest at the bottom";
 "Order of notifications that are up together. Custom banner only: macOS stacks its own banner newest on top." = "Order of notifications that are up together. Custom banner only: macOS stacks its own banner newest on top.";
+
+/* Custom Notification Center */
+"Notifications" = "Notifications";
+"No notifications" = "No notifications";
+"All" = "All";
+"Clear All" = "Clear All";
+"Show less" = "Show less";
+"Notification Center doesn't share its times, so NotificationNanny notes when each banner appears. Notifications that came in while it wasn't running have no time." = "Notification Center doesn't share its times, so NotificationNanny notes when each banner appears. Notifications that came in while it wasn't running have no time.";
+"NotificationNanny can show its own list when you click the clock, in place of the Notification Center panel. Your notifications stay in Notification Center: this is another view of them, and everything you do in it goes back there." = "NotificationNanny can show its own list when you click the clock, in place of the Notification Center panel. Your notifications stay in Notification Center: this is another view of them, and everything you do in it goes back there.";
+"Notification Center" = "Notification Center";
+"Use NotificationNanny's Notification Center (experimental)" = "Use NotificationNanny's Notification Center (experimental)";
+"List" = "List";
+"App filter above your notifications" = "App filter above your notifications";
+"A row of apps above the list; click one to see only its notifications." = "A row of apps above the list; click one to see only its notifications.";
+"Widgets" = "Widgets";
+"Widgets are drawn by their own apps, so NotificationNanny can only show them as live pictures of the real ones. That needs Screen Recording. Leave this off and widgets are simply left out." = "Widgets are drawn by their own apps, so NotificationNanny can only show them as live pictures of the real ones. That needs Screen Recording. Leave this off and widgets are simply left out.";
+"Show widgets" = "Show widgets";
+"Screen Recording is allowed" = "Screen Recording is allowed";
+"Screen Recording isn't allowed yet" = "Screen Recording isn't allowed yet";
+"Allow NotificationNanny in System Settings. If you just did, quit and reopen NotificationNanny: macOS only applies it after a restart." = "Allow NotificationNanny in System Settings. If you just did, quit and reopen NotificationNanny: macOS only applies it after a restart.";
+"Open System Settings" = "Open System Settings";
+"Options" = "Options";
+"Look" = "Look";
+"Rows look like your banners: their colour, text colour and privacy blur come from the Banner tab and your exceptions." = "Rows look like your banners: their colour, text colour and privacy blur come from the Banner tab and your exceptions.";
+"Size" = "Size";
+"Side" = "Side";
+"Right" = "Right";
+"Left" = "Left";
+"Opens on" = "Opens on";
+"Where you click the clock" = "Where you click the clock";
+"Where your banners go" = "Where your banners go";
+"Extras" = "Extras";
+"More" = "More";
+"Open Notification Center" = "Open Notification Center";
+"As macOS: on the right, on the screen whose clock you click." = "As macOS: on the right, on the screen whose clock you click.";
+"The side of the screen, and which screen it opens on." = "The side of the screen, and which screen it opens on.";
+"As macOS: in from the edge of the screen." = "As macOS: in from the edge of the screen.";
+"How it comes in when you click the clock, and goes when it closes." = "How it comes in when you click the clock, and goes when it closes.";
+"Adds a row of app buttons above your notifications, to show one app at a time. macOS's Notification Center doesn't have this, so it starts off." = "Adds a row of app buttons above your notifications, to show one app at a time. macOS's Notification Center doesn't have this, so it starts off.";
+"Same as banners" = "Same as banners";
+"As macOS. Drag it anywhere on the preview." = "As macOS. Drag it anywhere on the preview.";
+"Drag it anywhere on the preview." = "Drag it anywhere on the preview.";
+"Same as your banners, and per app where your exception groups set one." = "Same as your banners, and per app where your exception groups set one.";
+"No tint: the system's look." = "No tint: the system's look.";
+"One tint for every row." = "One tint for every row.";
+"Same as your banners." = "Same as your banners.";
+"Custom text color active." = "Custom text color active.";
+"Center" = "Center";
+"Disconnected display" = "Disconnected display";
+"All apps" = "All apps";
+"Same as All apps" = "Same as All apps";
+"Scale" = "Scale";
+"New exception group" = "New exception group";
+"Delete exception group" = "Delete exception group";
+"This exception group's own place, on the screen picked above. Default is the screen All apps use." = "This exception group's own place, on the screen picked above. Default is the screen All apps use.";
+"Apps in an exception group use its settings below instead of All apps'. An app is in one exception group at most." = "Apps in an exception group use its settings below instead of All apps'. An app is in one exception group at most.";
+"Want different settings for some apps? Make an exception group of them, and pick what's different." = "Want different settings for some apps? Make an exception group of them, and pick what's different.";
+"Every app outside an exception group shows its banners here." = "Every app outside an exception group shows its banners here.";
+
+/* Sounds tab */
+"Sounds" = "Sounds";
+"New sound group" = "New sound group";
+"Delete sound group" = "Delete sound group";
+"Want some apps to sound different? Make a sound group of them, and pick its sound." = "Want some apps to sound different? Make a sound group of them, and pick its sound.";
+"macOS sounds" = "macOS sounds";
+"macOS still plays each app's own sound, and nothing outside it can hold that back. To hear only the sound picked here, open System Settings › Notifications, click the app under Application Notifications, and turn off \"Play sound for notification\"." = "macOS still plays each app's own sound, and nothing outside it can hold that back. To hear only the sound picked here, open System Settings › Notifications, click the app under Application Notifications, and turn off \"Play sound for notification\".";
+"Open Notification Settings" = "Open Notification Settings";
+"Notifications from these apps play the sound below. An app is in one sound group at most." = "Notifications from these apps play the sound below. An app is in one sound group at most.";
+"Sound" = "Sound";
+"Play" = "Play";
+"Choose File…" = "Choose File…";
+"Plays when a banner from one of these apps appears. Sounds you add to the Sounds folder in your Library show up here too." = "Plays when a banner from one of these apps appears. Sounds you add to the Sounds folder in your Library show up here too.";
+"Volume" = "Volume";
+"Relative to your Mac's volume." = "Relative to your Mac's volume.";
+"Default. Every app plays its own sound, as macOS does." = "Default. Every app plays its own sound, as macOS does.";
+"Every app outside a sound group plays this when its banner appears." = "Every app outside a sound group plays this when its banner appears.";
+"Same as All apps." = "Same as All apps.";
+"Default. These apps play their own sound, as macOS does." = "Default. These apps play their own sound, as macOS does.";
+"Each app's own sound, as macOS plays it" = "Each app's own sound, as macOS plays it";
+"Pick a sound for all apps" = "Pick a sound for all apps";
+"Pick a sound for this sound group" = "Pick a sound for this sound group";

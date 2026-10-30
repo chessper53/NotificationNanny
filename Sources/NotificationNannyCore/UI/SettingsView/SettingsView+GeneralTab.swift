@@ -20,31 +20,24 @@ struct GeneralTabView: View {
                 HStack {
                     LocalizedText("App Language").font(.callout)
                     Spacer()
-                    Picker("", selection: Binding(
+                    NannyMenuPicker(selection: Binding(
                         get: { loc.language },
                         set: { loc.setLanguage($0) }
-                    )) {
-                        ForEach(AppLanguage.allCases) { lang in
-                            Text(lang.displayName).tag(lang)
-                        }
-                    }
-                    .labelsHidden().pickerStyle(.menu).controlSize(.small).fixedSize()
+                    ), options: AppLanguage.allCases.map { .init(value: $0, title: $0.title) },
+                       systemImage: "globe")
                 }
-                .padding(.horizontal, 14).padding(.vertical, 10)
+                .settingsListRow()
             }
 
             section("Appearance") {
                 HStack {
                     LocalizedText("Settings window").font(.callout)
                     Spacer()
-                    Picker("", selection: $settings.settingsAppearance) {
-                        ForEach(SettingsAppearance.allCases) { mode in
-                            Text(loc.string(mode.labelKey)).tag(mode)
-                        }
-                    }
-                    .labelsHidden().pickerStyle(.segmented).controlSize(.small).fixedSize()
+                    NannySegmentedPicker(selection: $settings.settingsAppearance,
+                                         options: SettingsAppearance.allCases.map { .init(value: $0, titleKey: $0.labelKey) },
+                                         compact: true)
                 }
-                .padding(.horizontal, 14).padding(.vertical, 10)
+                .settingsListRow()
             }
 
             section("Startup") {
@@ -144,24 +137,12 @@ struct GeneralTabView: View {
                 .font(.caption2.weight(.semibold)).foregroundStyle(.tertiary).kerning(0.5)
                 .padding(.leading, 4)
             VStack(spacing: 0) { content() }
-                .background(Color.nannyRaised(0.06), in: RoundedRectangle(cornerRadius: 10))
+                .settingsCardBackground()
         }
     }
 
     private func toggleRow(_ labelKey: String, isOn: Binding<Bool>, detail: String? = nil) -> some View {
-        HStack {
-            VStack(alignment: .leading, spacing: 2) {
-                LocalizedText(labelKey).font(.callout)
-                if let detail {
-                    LocalizedText(detail).font(.caption).foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            }
-            Spacer()
-            Toggle("", isOn: isOn).labelsHidden().toggleStyle(.switch).controlSize(.small)
-        }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 10)
+        SettingsToggleRow(labelKey, isOn: isOn, detail: detail).settingsListRow()
     }
 
     private var autoDismissRow: some View {
@@ -182,9 +163,8 @@ struct GeneralTabView: View {
                 get: { settings.autoDismissSeconds > 0 },
                 set: { settings.autoDismissSeconds = $0 ? 10 : 0 }
             ))
-            .labelsHidden().toggleStyle(.switch).controlSize(.small)
+            .labelsHidden().toggleStyle(.nannySwitch).controlSize(.small)
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 10)
+        .settingsListRow()
     }
 }
