@@ -69,4 +69,32 @@ struct NCPanelModelTests {
     @Test func emptyList_isEmpty() {
         #expect(NCPanelSnapshot.build(from: []) == .empty)
     }
+
+    /// A Lab row's menu as Notification Center's tree had it on 27.0 (`real-hover menu`):
+    /// untitled full height containers, 11 point separators, a section heading.
+    @Test func rowMenu_keepsItemsSeparatorsAndHeading() {
+        let items = NCMenuItem.build(from: [
+            ("", 24, false), ("Reply", 24, true), ("Archive", 24, true), ("Snooze", 24, true),
+            ("", 11, false), ("", 24, false), ("Lab Bravo Notifications", 24, false),
+            ("Mute for 1 Hour", 24, true), ("Mute for Today", 24, true), ("Turn Off", 24, true),
+            ("", 11, false), ("", 24, false), ("Dismiss", 24, true),
+            ("", 11, false), ("Notification Settings…", 24, true), ("", 0, false),
+        ])
+        #expect(items.map(\.kind) == [.action, .action, .action, .separator, .header, .action, .action, .action,
+                                      .separator, .action, .separator, .action])
+        #expect(items[4].title == "Lab Bravo Notifications")
+        #expect(items.last?.title == "Notification Settings…")
+    }
+
+    @Test func menu_sameTitleTwice_isToldApart() {
+        let items = NCMenuItem.build(from: [("Clear", 24, true), ("", 11, false), ("Clear", 24, true)])
+        #expect(items.filter { $0.kind == .action }.map(\.occurrence) == [0, 1])
+        #expect(Set(items.map(\.id)).count == items.count)
+    }
+
+    @Test func menu_noLeadingOrDoubledSeparators() {
+        let items = NCMenuItem.build(from: [("", 11, false), ("A", 24, true), ("", 11, false), ("", 11, false),
+                                            ("B", 24, true), ("", 11, false)])
+        #expect(items.map(\.kind) == [.action, .separator, .action])
+    }
 }

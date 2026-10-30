@@ -22,7 +22,6 @@ package final class AppSettings: ObservableObject {
         static let pauseWhileStreaming  = "pauseWhileStreaming"
         static let avoidNCPanel         = "avoidNCPanel"
         static let customNotificationCenter = "customNotificationCenter"
-        static let customNotificationCenterTimes = "customNotificationCenterTimes"
         static let customNotificationCenterWidgets = "customNotificationCenterWidgets"
         static let customNotificationCenterAppFilter = "customNotificationCenterAppFilter"
         static let customNotificationCenterAnimation = "customNotificationCenterAnimation"
@@ -119,11 +118,6 @@ package final class AppSettings: ObservableObject {
     /// NotificationNanny shows its own list of the same notifications instead.
     @Published package var customNotificationCenter: Bool {
         didSet { defaults.set(customNotificationCenter, forKey: Key.customNotificationCenter) }
-    }
-
-    /// Times on the custom Notification Center's rows, noted when each banner arrived.
-    @Published package var customNotificationCenterTimes: Bool {
-        didSet { defaults.set(customNotificationCenterTimes, forKey: Key.customNotificationCenterTimes) }
     }
 
     /// Pictures of the real widgets in the custom Notification Center. Needs Screen
@@ -473,7 +467,6 @@ package final class AppSettings: ObservableObject {
         self.avoidNCPanel           = (defaults.object(forKey: Key.avoidNCPanel) as? Bool) ?? true
         self.customNotificationCenter = (defaults.object(forKey: Key.customNotificationCenter) as? Bool) ?? false
         // macOS shows no times, so neither does ours unless asked to.
-        self.customNotificationCenterTimes = (defaults.object(forKey: Key.customNotificationCenterTimes) as? Bool) ?? false
         self.customNotificationCenterWidgets = (defaults.object(forKey: Key.customNotificationCenterWidgets) as? Bool) ?? false
         self.customNotificationCenterAppFilter = (defaults.object(forKey: Key.customNotificationCenterAppFilter) as? Bool) ?? false
         self.customNotificationCenterAnimation = defaults.string(forKey: Key.customNotificationCenterAnimation)
@@ -802,7 +795,6 @@ package final class AppSettings: ObservableObject {
         /// and one without it imports as on.
         var avoidNCPanel: Bool?
         var customNotificationCenter: Bool?
-        var customNotificationCenterTimes: Bool?
         var customNotificationCenterWidgets: Bool?
         var customNotificationCenterAppFilter: Bool?
         var customNotificationCenterAnimation: BannerAnimation?
@@ -838,7 +830,6 @@ package final class AppSettings: ObservableObject {
             pauseWhileStreaming: pauseWhileStreaming,
             avoidNCPanel: avoidNCPanel,
             customNotificationCenter: customNotificationCenter,
-            customNotificationCenterTimes: customNotificationCenterTimes,
             customNotificationCenterWidgets: customNotificationCenterWidgets,
             customNotificationCenterAppFilter: customNotificationCenterAppFilter,
             customNotificationCenterAnimation: customNotificationCenterAnimation,
@@ -882,7 +873,6 @@ package final class AppSettings: ObservableObject {
         pauseWhileStreaming  = imported.pauseWhileStreaming
         avoidNCPanel        = imported.avoidNCPanel ?? true
         customNotificationCenter = imported.customNotificationCenter ?? false
-        customNotificationCenterTimes = imported.customNotificationCenterTimes ?? false
         customNotificationCenterWidgets = imported.customNotificationCenterWidgets ?? false
         customNotificationCenterAppFilter = imported.customNotificationCenterAppFilter ?? false
         customNotificationCenterAnimation = imported.customNotificationCenterAnimation ?? .default

@@ -41,16 +41,11 @@ package final class NotificationRepositioner: ObservableObject {
 
     private let axController = AXObserverController()
 
-    /// Experimental custom Notification Center; see NCPanelTakeover.
-    private let notificationTimes = NotificationTimes(fileURL: NotificationTimes.defaultFileURL)
-    /// Whether banners already up have been noted as such. Until then, the first sweep's
-    /// banners count as already there rather than arriving: alerts stay up for hours.
-    private var timesBaselineTaken = false
     private lazy var sounds = NotificationSounds(logger: logger)
 
+    /// Experimental custom Notification Center; see NCPanelTakeover.
     private lazy var panelTakeover: NCPanelTakeover = {
-        let takeover = NCPanelTakeover(logger: logger, times: notificationTimes)
-        takeover.showTimes = { [weak self] in self?.settings?.customNotificationCenterTimes == true }
+        let takeover = NCPanelTakeover(logger: logger)
         // A display chosen in Settings; otherwise the one whose clock was clicked.
         takeover.preferredScreen = { [weak self] in
             guard let id = self?.settings?.customNotificationCenterDisplayID, id != 0 else { return nil }
@@ -160,7 +155,6 @@ package final class NotificationRepositioner: ObservableObject {
             return
         }
         teardownObserver()
-        timesBaselineTaken = false
         sounds.reset()
 
         guard axController.start(onEvent: { [weak self] element, notification in
@@ -603,7 +597,6 @@ package final class NotificationRepositioner: ObservableObject {
         log.debug("repositionVisibleWindows: \(windows.count) window(s) from ncApp")
         sweepBanners = [:]
         defer { sweepBanners = nil }
-        noteBannerArrivals(in: windows)
         playSounds(in: windows)
         if !dismissTimers.armedIDs.isEmpty || !closedBannerIDs.isEmpty || !unreadableBannerSweeps.isEmpty
             || !bannerFirstSeen.isEmpty {
@@ -628,22 +621,6 @@ package final class NotificationRepositioner: ObservableObject {
             snapWindow(window, stackIndex: idx, precomputed: idx == 0 ? base : nil)
         }
         return !baseTargets.isEmpty
-    }
-
-    /// Notes when each banner first shows, for the custom Notification Center's times. Not
-    /// while the real panel is open: its rows look just like banners.
-    private func noteBannerArrivals(in windows: [AXUIElement]) {
-        guard settings?.customNotificationCenter == true else {
-            timesBaselineTaken = false
-            return
-        }
-        guard !panelTakeover.isActive, ncExpandedState() != .open else { return }
-        for window in windows {
-            for id in banners(in: window).compactMap(\.id) {
-                if timesBaselineTaken { notificationTimes.noteArrival(id) } else { notificationTimes.noteAlreadyListed(id) }
-            }
-        }
-        timesBaselineTaken = true
     }
 
     /// Plays sound groups' sounds for banners that just arrived. Not for the open panel's
@@ -948,6 +925,12 @@ package final class NotificationRepositioner: ObservableObject {
     private var scaleTimer: DispatchSourceTimer?
     private var activeBannerElement: AXUIElement? = nil
     private var targetBannerSize: CGSize = .zero
+
+    /// Puts back what can't wait for later: Notification Center's window, if the custom
+    /// panel just closed and is still waiting for the real one to finish leaving.
+    package func prepareForQuit() {
+        panelTakeover.finishClosing()
+    }
 
     func sendTestNotification(groupID: UUID?) {
         guard testGroupID == nil else { return }
@@ -1857,8 +1840,49 @@ package final class NotificationRepositioner: ObservableObject {
             onUnderlyingDismiss: { [weak self] in self?.closeBanner(id: id, reason: "Custom banner dismissed") },
             onAction: { [weak self] name in self?.performBannerAction(name, id: id) },
             onDetails: { [weak self] in self?.toggleBannerDetails(id: id) },
+            menuSource: bannerMenu(id: id),
             key: overlayKey(id)
         )
+    }
+
+    /// The real banner's own menu for its custom one's ⋯ and right click; see NCMenus. The
+    /// banner stays up while it is in use.
+    private func bannerMenu(id: String) -> BannerMenuSource {
+        BannerMenuSource(
+            items: { [weak self] withAppActions, done in
+                guard let self, let el = self.bannerElement(id: id), let window = Self.window(of: el) else { return }
+                self.interactingBanners.insert(id)
+                self.customBannerManager.holdOpen(key: self.overlayKey(id))
+                let appActions = NotificationActions.appActions(of: el)
+                NCMenus.read(of: NCMenus.target(of: el), in: window, logger: self.logger) { items in
+                    guard var items else { return }
+                    if !withAppActions {
+                        while let first = items.first, first.kind == .action, appActions.contains(first.title) { items.removeFirst() }
+                        if items.first?.kind == .separator { items.removeFirst() }
+                    }
+                    if !items.isEmpty { done(items) }
+                }
+            },
+            choose: { [weak self] item in
+                guard let self, let el = self.bannerElement(id: id) else { return }
+                // The app's own buttons go the way their buttons do, so a reply opens.
+                if item.kind == .action, NotificationActions.appActions(of: el).contains(item.title) {
+                    self.performBannerAction(item.title, id: id)
+                    return
+                }
+                guard let window = Self.window(of: el) else { return }
+                self.logger.log("Banner menu item \(item.title)", tag: "Custom")
+                NCMenus.read(of: NCMenus.target(of: el), in: window, press: item, logger: self.logger) { [weak self] _ in
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { self?.refreshBannerContent(id: id) }
+                }
+            })
+    }
+
+    private static func window(of el: AXUIElement) -> AXUIElement? {
+        var value: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(el, kAXWindowAttribute as CFString, &value) == .success, let value,
+              CFGetTypeID(value) == AXUIElementGetTypeID() else { return nil }
+        return (value as! AXUIElement)
     }
 
     // MARK: - The app's buttons on custom banners

@@ -239,9 +239,8 @@ struct NotificationCenterTabView: View {
     private var extrasCard: some View {
         SettingsCard {
             SettingsCardHeader("Extras")
-            SettingsToggleRow("Show when notifications arrived", isOn: $settings.customNotificationCenterTimes)
-            SettingsToggleRow("Filter by app", isOn: $settings.customNotificationCenterAppFilter)
-            SettingsNote("Not part of macOS's Notification Center, so off unless you turn them on. Times are noted when each banner appears; notifications that came in while NotificationNanny wasn't running have none.")
+            SettingsToggleRow("App filter above your notifications", isOn: $settings.customNotificationCenterAppFilter)
+            SettingsNote("Adds a row of app buttons above your notifications, to show one app at a time. macOS's Notification Center doesn't have this, so it starts off.")
         }
     }
 }

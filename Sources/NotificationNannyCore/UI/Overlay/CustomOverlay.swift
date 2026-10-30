@@ -179,6 +179,7 @@ struct CustomBannerView: View {
     let onOpen: () -> Void
     let onAction: (String) -> Void
     let onDetails: () -> Void
+    var menuSource: BannerMenuSource? = nil
 
     @State private var animX: CGFloat
     @State private var animY: CGFloat
@@ -278,7 +279,7 @@ struct CustomBannerView: View {
     private var banner: some View {
         BannerCard(content: content, scale: scale, tint: tint, textColor: textColor,
                    redactContent: redactContent, hovered: isHovered,
-                   onOpen: onOpen, onAction: onAction, onDetails: onDetails)
+                   onOpen: onOpen, onAction: onAction, onDetails: onDetails, menuSource: menuSource)
     }
 
     private var closeButton: some View {
@@ -339,10 +340,21 @@ struct BannerCard: View {
     var onOpen: () -> Void = {}
     var onAction: (String) -> Void = { _ in }
     var onDetails: () -> Void = {}
+    /// The ⋯ of a card with its details shown, and the Options pill of a hovered one, open
+    /// a menu drawn by whoever shows the card, given the button's frame in the card. The
+    /// custom Notification Center does: a menu window of ours would close the real panel
+    /// at the first click. Without them the pill opens a menu of its own and the ⋯ is only
+    /// drawn (custom banners).
+    var onMore: ((CGRect) -> Void)? = nil
+    var onOptions: ((CGRect) -> Void)? = nil
+    /// A custom banner's ⋯ opens Notification Center's own menu, from here.
+    var menuSource: BannerMenuSource? = nil
 
     @Environment(\.colorScheme) private var colorScheme
     private var isLight: Bool { colorScheme == .light }
     @State private var menuAnchor: MenuAnchor = MenuAnchor()
+    @State private var pillFrame: CGRect = .zero
+    @State private var moreAnchor: MenuAnchor = MenuAnchor()
 
     typealias Metrics = CustomBannerView.Metrics
 
@@ -365,14 +377,37 @@ struct BannerCard: View {
                 .accessibilityLabel(LocalizationManager.shared.string("Options"))
                 .offset(x: chevron.minX * scale, y: chevron.minY * scale)
                 if content.expanded {
-                    Image(systemName: "ellipsis")
-                        .font(.system(size: 11 * scale, weight: .semibold))
-                        .foregroundStyle(.secondary)
-                        .frame(width: Expanded.moreFrame.width * scale, height: Expanded.moreFrame.height * scale)
-                        .offset(x: Expanded.moreFrame.minX * scale, y: Expanded.moreFrame.minY * scale)
+                    let more = Expanded.moreFrame
+                    let moreFrame = CGRect(x: more.minX * scale, y: more.minY * scale,
+                                           width: more.width * scale, height: more.height * scale)
+                    Button {
+                        if let onMore {
+                            onMore(moreFrame)
+                        } else if let menuSource {
+                            menuSource.items(false) { [moreAnchor] items in moreAnchor.popUp(items, menuSource.choose) }
+                        }
+                    } label: {
+                        Image(systemName: "ellipsis")
+                            .font(.system(size: 11 * scale, weight: .semibold))
+                            .foregroundStyle(.secondary)
+                            .frame(width: moreFrame.width, height: moreFrame.height)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(LocalizationManager.shared.string("More"))
+                    .background(MenuAnchorView(anchor: moreAnchor))
+                    .offset(x: moreFrame.minX, y: moreFrame.minY)
                 } else {
+                    // Bottom right, on the last line of text, whatever the card's height.
                     optionsMenu
-                        .offset(x: Hovered.options.minX * scale, y: Hovered.options.minY * scale)
+                        .background(GeometryReader { g in
+                            Color.clear
+                                .onAppear { pillFrame = g.frame(in: .named(Self.space)) }
+                                .onChange(of: g.frame(in: .named(Self.space))) { _, f in pillFrame = f }
+                        })
+                        .padding(.trailing, Hovered.optionsInset * scale)
+                        .padding(.bottom, Hovered.optionsInset * scale)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
                 }
             }
             .transition(.opacity)
@@ -383,25 +418,34 @@ struct BannerCard: View {
 
     /// Options and the app's buttons in a menu; with a single button, that button itself.
     @ViewBuilder private var optionsMenu: some View {
-        let pill = Capsule().fill(Color.primary.opacity(BannerLook.pill))
-        let size = CGSize(width: Hovered.options.width * scale, height: Hovered.options.height * scale)
+        let height = Hovered.optionsSize.height * scale
+        let minWidth = Hovered.optionsSize.width * scale
         if content.actions.count == 1, let only = content.actions.first {
             Button { onAction(only) } label: {
                 Text(only).font(.system(size: Metrics.fontSize * scale)).foregroundStyle(titleStyle)
-                    .frame(width: size.width, height: size.height).background(pill)
+                    .lineLimit(1)
+                    .padding(.horizontal, 12 * scale)
+                    .frame(minWidth: minWidth)
+                    .frame(height: height)
+                    .background(pillBackground)
+                    .contentShape(Capsule())
             }
             .buttonStyle(.plain)
         } else {
             // A plain button opening the menu itself: SwiftUI's Menu restyles its label,
             // moving the arrow in front and dropping the pill.
-            Button { menuAnchor.popUp(content.actions, onAction) } label: {
+            Button {
+                if let onOptions { onOptions(pillFrame) } else { menuAnchor.popUp(content.actions, onAction) }
+            } label: {
                 HStack(spacing: 3 * scale) {
                     Text(SystemStrings.options).font(.system(size: Metrics.fontSize * scale))
                     Image(systemName: "chevron.down").font(.system(size: 8 * scale, weight: .bold))
                 }
                 .foregroundStyle(titleStyle)
-                .frame(width: size.width, height: size.height)
-                .background(pill)
+                .padding(.horizontal, 10 * scale)
+                .frame(minWidth: minWidth)
+                .frame(height: height)
+                .background(pillBackground)
                 .contentShape(Capsule())
             }
             .buttonStyle(.plain)
@@ -409,10 +453,26 @@ struct BannerCard: View {
         }
     }
 
-    /// Hovered, from a real banner's frames.
+    /// The pill hides the text under it, as the system's does: on a row of 51 it is a flat
+    /// 71 with nothing showing through (measured on 27.0, scripts/panel-lab `real-hover`).
+    /// Its own glass blurs the text away; the lift goes on top.
+    private var pillBackground: some View {
+        ZStack {
+            BannerGlass(shape: Capsule(), cornerRadius: Hovered.optionsSize.height * scale / 2, scale: scale, tint: tint)
+            Capsule().fill(Color.primary.opacity(BannerLook.pill))
+        }
+    }
+
+    /// The card's coordinate space, which the pill's frame is reported in.
+    static let space = "bannerCard"
+
+    /// Hovered, from real frames: the chevron at the top right; the Options pill 10 points
+    /// in from the right and up from the bottom, which is on the last line of text, on a
+    /// one line banner and on a four line panel row alike (scripts/panel-lab `real-hover`).
     enum Hovered {
         static let chevron = CGRect(x: 319, y: 7, width: 17, height: 19)
-        static let options = CGRect(x: 254, y: 26, width: 80, height: 22)
+        static let optionsSize = CGSize(width: 80, height: 22)
+        static let optionsInset: CGFloat = 10
     }
 
     /// The system banner with its details shown, from a real one's frames: the text where
@@ -448,6 +508,7 @@ struct BannerCard: View {
         }
         .contentShape(shape)
         .onTapGesture { onOpen() }
+        .coordinateSpace(name: Self.space)
     }
 
     /// The app's buttons and an open reply, as the system banner shows them with its
@@ -688,6 +749,24 @@ enum PanelRowLook {
     static var lightOuterLine: Double { value("LIGHT_OUTER_LINE", 0.18) }
 }
 
+/// A custom banner's hosting view, which hands on right clicks.
+final class BannerHostingView<Content: View>: NSHostingView<Content> {
+    var onRightClick: ((NSPoint) -> Void)?
+
+    override func rightMouseDown(with event: NSEvent) {
+        guard let onRightClick else { return super.rightMouseDown(with: event) }
+        onRightClick(convert(event.locationInWindow, from: nil))
+    }
+}
+
+/// Where a custom banner gets Notification Center's own menu (its ⋯, a right click): read
+/// from the real banner, with the app's buttons first unless asked without them, and an
+/// item chosen in it used on the real one. See NCMenus.
+struct BannerMenuSource {
+    let items: (_ withAppActions: Bool, _ done: @escaping ([NCMenuItem]) -> Void) -> Void
+    let choose: (NCMenuItem) -> Void
+}
+
 /// Where a menu of the app's buttons opens: under the Options pill, as the system's does.
 @MainActor
 final class MenuAnchor {
@@ -705,6 +784,32 @@ final class MenuAnchor {
             menu.addItem(item)
         }
         menu.popUp(positioning: nil, at: NSPoint(x: 0, y: view.isFlipped ? view.bounds.maxY + 4 : -4), in: view)
+    }
+
+    /// Notification Center's own menu items, headings and separators included, under the
+    /// anchor or at `point` in `view` (a right click).
+    func popUp(_ items: [NCMenuItem], at point: NSPoint? = nil, in other: NSView? = nil,
+               _ choose: @escaping (NCMenuItem) -> Void) {
+        guard let view = other ?? view else { return }
+        let menu = NSMenu()
+        menu.autoenablesItems = false
+        handlers = []
+        for item in items {
+            switch item.kind {
+            case .separator:
+                menu.addItem(.separator())
+            case .header:
+                menu.addItem(.sectionHeader(title: item.title))
+            case .action:
+                let entry = NSMenuItem(title: item.title, action: #selector(self.choose(_:)), keyEquivalent: "")
+                entry.target = self
+                entry.tag = handlers.count
+                handlers.append { choose(item) }
+                menu.addItem(entry)
+            }
+        }
+        let at = point ?? NSPoint(x: 0, y: view.isFlipped ? view.bounds.maxY + 4 : -4)
+        menu.popUp(positioning: nil, at: at, in: view)
     }
 
     @objc private func choose(_ item: NSMenuItem) {
@@ -824,6 +929,7 @@ final class CustomBannerManager {
         onUnderlyingDismiss: (() -> Void)? = nil,
         onAction: @escaping (String) -> Void = { _ in },
         onDetails: @escaping () -> Void = {},
+        menuSource: BannerMenuSource? = nil,
         key: CFHashCode
     ) {
         dismiss(key: key)
@@ -836,12 +942,22 @@ final class CustomBannerManager {
         let frame  = Self.panelFrame(axOrigin: axTopLeft, size: CGSize(width: width, height: height), scale: s)
         let bounds = CGRect(origin: .zero, size: frame.size)
 
-        let bannerView = CustomBannerView(
+        var bannerView = CustomBannerView(
             content: content, scale: s, animation: animation, tint: backgroundColor,
             textColor: textColor, redactContent: redactContent,
             controller: controller, onDismiss: onDismissAction, onOpen: onOpenAction,
             onAction: onAction, onDetails: onDetails)
-        let hosting = NSHostingView(rootView: bannerView)
+        bannerView.menuSource = menuSource
+        let hosting = BannerHostingView(rootView: bannerView)
+        // A right click opens Notification Center's menu where it was clicked, as on a
+        // system banner, with the app's buttons first.
+        if let menuSource {
+            let anchor = MenuAnchor()
+            hosting.onRightClick = { [weak hosting] point in
+                guard let hosting else { return }
+                menuSource.items(true) { items in anchor.popUp(items, at: point, in: hosting, menuSource.choose) }
+            }
+        }
         // The panel's size comes from the real banner, never from SwiftUI. Left
         // to its default, the hosting view grows the panel to its own minimum
         // size, which pushes the banner off the spot it is meant to cover.

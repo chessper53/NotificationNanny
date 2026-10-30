@@ -9,6 +9,9 @@
 //                                                         with the app's own buttons:
 //                                                         Archive, Snooze, and Reply
 //                                                         with a text field
+//   "Lab Alpha.app/Contents/MacOS/notifier" "Title" "Body" --reply
+//                                                         with Reply as its only
+//                                                         button, as a chat app has
 //   "Lab Alpha.app/Contents/MacOS/notifier" --clear      removes everything this
 //                                                         app has delivered, e.g. a
 //                                                         backlog queued while locked
@@ -24,6 +27,7 @@ import AppKit
 import UserNotifications
 
 let categoryID = "lab.actions"
+let replyCategoryID = "lab.reply"
 
 final class Delegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelegate {
     private var handledResponse = false
@@ -37,6 +41,7 @@ final class Delegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterD
         let snooze = UNNotificationAction(identifier: "snooze", title: "Snooze", options: [])
         UNUserNotificationCenter.current().setNotificationCategories([
             UNNotificationCategory(identifier: categoryID, actions: [reply, archive, snooze], intentIdentifiers: []),
+            UNNotificationCategory(identifier: replyCategoryID, actions: [reply], intentIdentifiers: []),
         ])
     }
 
@@ -54,10 +59,10 @@ final class Delegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterD
             return
         }
         let title = args[0]
-        let body = args.count > 1 && args[1] != "--actions" ? args[1] : "Sent by notify-lab"
-        let withActions = args.contains("--actions")
+        let body = args.count > 1 && !args[1].hasPrefix("--") ? args[1] : "Sent by notify-lab"
+        let category = args.contains("--actions") ? categoryID : args.contains("--reply") ? replyCategoryID : nil
         Task { @MainActor in
-            await post(title: title, body: body, withActions: withActions)
+            await post(title: title, body: body, category: category)
             // Stay a moment, in case the response arrives while still running.
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
                 if !self.handledResponse { NSApp.terminate(nil) }
@@ -85,7 +90,7 @@ final class Delegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterD
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { NSApp.terminate(nil) }
     }
 
-    private func post(title: String, body: String, withActions: Bool) async {
+    private func post(title: String, body: String, category: String?) async {
         let center = UNUserNotificationCenter.current()
         var status = await center.notificationSettings().authorizationStatus
         if status == .notDetermined {
@@ -99,7 +104,7 @@ final class Delegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterD
         let content = UNMutableNotificationContent()
         content.title = title
         content.body = body
-        if withActions { content.categoryIdentifier = categoryID }
+        if let category { content.categoryIdentifier = category }
         let request = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil)
         do {
             try await center.add(request)

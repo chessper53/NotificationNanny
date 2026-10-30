@@ -62,7 +62,6 @@
 "px" = "px";
 
 /* Custom banner overlay chrome */
-"now" = "now";
 
 /* Exceptions tab */
 "Create groups of apps and give each group its own rules: position, screen, banner type, and scale. Apps not in any group use the defaults." = "Create groups of apps and give each group its own rules: position, screen, banner type, and scale. Apps not in any group use the defaults.";
@@ -188,13 +187,12 @@
 "All" = "All";
 "Clear All" = "Clear All";
 "Show less" = "Show less";
-"Show when notifications arrived" = "Show when notifications arrived";
 "Notification Center doesn't share its times, so NotificationNanny notes when each banner appears. Notifications that came in while it wasn't running have no time." = "Notification Center doesn't share its times, so NotificationNanny notes when each banner appears. Notifications that came in while it wasn't running have no time.";
 "NotificationNanny can show its own list when you click the clock, in place of the Notification Center panel. Your notifications stay in Notification Center: this is another view of them, and everything you do in it goes back there." = "NotificationNanny can show its own list when you click the clock, in place of the Notification Center panel. Your notifications stay in Notification Center: this is another view of them, and everything you do in it goes back there.";
 "Notification Center" = "Notification Center";
 "Use NotificationNanny's Notification Center (experimental)" = "Use NotificationNanny's Notification Center (experimental)";
 "List" = "List";
-"Filter by app" = "Filter by app";
+"App filter above your notifications" = "App filter above your notifications";
 "A row of apps above the list; click one to see only its notifications." = "A row of apps above the list; click one to see only its notifications.";
 "Widgets" = "Widgets";
 "Widgets are drawn by their own apps, so NotificationNanny can only show them as live pictures of the real ones. That needs Screen Recording. Leave this off and widgets are simply left out." = "Widgets are drawn by their own apps, so NotificationNanny can only show them as live pictures of the real ones. That needs Screen Recording. Leave this off and widgets are simply left out.";
@@ -214,12 +212,13 @@
 "Where you click the clock" = "Where you click the clock";
 "Where your banners go" = "Where your banners go";
 "Extras" = "Extras";
+"More" = "More";
 "Open Notification Center" = "Open Notification Center";
 "As macOS: on the right, on the screen whose clock you click." = "As macOS: on the right, on the screen whose clock you click.";
 "The side of the screen, and which screen it opens on." = "The side of the screen, and which screen it opens on.";
 "As macOS: in from the edge of the screen." = "As macOS: in from the edge of the screen.";
 "How it comes in when you click the clock, and goes when it closes." = "How it comes in when you click the clock, and goes when it closes.";
-"Not part of macOS's Notification Center, so off unless you turn them on. Times are noted when each banner appears; notifications that came in while NotificationNanny wasn't running have none." = "Not part of macOS's Notification Center, so off unless you turn them on. Times are noted when each banner appears; notifications that came in while NotificationNanny wasn't running have none.";
+"Adds a row of app buttons above your notifications, to show one app at a time. macOS's Notification Center doesn't have this, so it starts off." = "Adds a row of app buttons above your notifications, to show one app at a time. macOS's Notification Center doesn't have this, so it starts off.";
 "Same as banners" = "Same as banners";
 "As macOS. Drag it anywhere on the preview." = "As macOS. Drag it anywhere on the preview.";
 "Drag it anywhere on the preview." = "Drag it anywhere on the preview.";
