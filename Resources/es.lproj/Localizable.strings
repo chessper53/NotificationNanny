@@ -62,7 +62,6 @@
 "px" = "px";
 
 /* Custom banner overlay chrome */
-"now" = "ahora";
 
 /* Exceptions tab */
 "Create groups of apps and give each group its own rules: position, screen, banner type, and scale. Apps not in any group use the defaults." = "Crea grupos de apps y asigna a cada uno sus propias reglas: posición, pantalla, tipo de banner y escala. Las apps sin grupo usan los valores predeterminados.";
@@ -181,3 +180,84 @@
 "Newest on top" = "Las más recientes arriba";
 "Newest at the bottom" = "Las más recientes abajo";
 "Order of notifications that are up together. Custom banner only: macOS stacks its own banner newest on top." = "Orden de las notificaciones que se muestran a la vez. Solo para el banner personalizado: macOS apila su propio banner con la más reciente arriba.";
+
+/* Custom Notification Center */
+"Notifications" = "Notificaciones";
+"No notifications" = "No hay notificaciones";
+"All" = "Todas";
+"Clear All" = "Borrar todo";
+"Show less" = "Mostrar menos";
+"Notification Center doesn't share its times, so NotificationNanny notes when each banner appears. Notifications that came in while it wasn't running have no time." = "El Centro de notificaciones no comparte sus horas, así que NotificationNanny anota cuándo aparece cada aviso. Las notificaciones que llegaron mientras no se ejecutaba no tienen hora.";
+"NotificationNanny can show its own list when you click the clock, in place of the Notification Center panel. Your notifications stay in Notification Center: this is another view of them, and everything you do in it goes back there." = "NotificationNanny puede mostrar su propia lista al hacer clic en el reloj, en lugar del Centro de notificaciones. Tus notificaciones siguen en el Centro de notificaciones: esto es otra vista de ellas, y todo lo que hagas aquí se envía allí.";
+"Notification Center" = "Centro de notificaciones";
+"Use NotificationNanny's Notification Center (experimental)" = "Usar el Centro de notificaciones de NotificationNanny (experimental)";
+"List" = "Lista";
+"App filter above your notifications" = "Filtro por app sobre las notificaciones";
+"A row of apps above the list; click one to see only its notifications." = "Una fila de apps sobre la lista; haz clic en una para ver solo sus notificaciones.";
+"Widgets" = "Widgets";
+"Widgets are drawn by their own apps, so NotificationNanny can only show them as live pictures of the real ones. That needs Screen Recording. Leave this off and widgets are simply left out." = "Los widgets los dibujan sus propias apps, así que NotificationNanny solo puede mostrarlos como imágenes en vivo de los reales. Eso necesita Grabación de pantalla. Déjalo desactivado y los widgets simplemente se omiten.";
+"Show widgets" = "Mostrar widgets";
+"Screen Recording is allowed" = "La grabación de pantalla está permitida";
+"Screen Recording isn't allowed yet" = "La grabación de pantalla aún no está permitida";
+"Allow NotificationNanny in System Settings. If you just did, quit and reopen NotificationNanny: macOS only applies it after a restart." = "Permite NotificationNanny en Ajustes del Sistema. Si acabas de hacerlo, cierra y vuelve a abrir NotificationNanny: macOS solo lo aplica tras reiniciarlo.";
+"Open System Settings" = "Abrir Ajustes del Sistema";
+"Options" = "Opciones";
+"Look" = "Aspecto";
+"Rows look like your banners: their colour, text colour and privacy blur come from the Banner tab and your exceptions." = "Las filas se ven como tus avisos: su color, el color del texto y el desenfoque vienen de la pestaña Aviso y de tus excepciones.";
+"Size" = "Tamaño";
+"Side" = "Lado";
+"Right" = "Derecha";
+"Left" = "Izquierda";
+"Opens on" = "Se abre";
+"Where you click the clock" = "Donde haces clic en el reloj";
+"Where your banners go" = "Donde van tus avisos";
+"Extras" = "Extras";
+"More" = "Más";
+"Open Notification Center" = "Abrir el Centro de notificaciones";
+"As macOS: on the right, on the screen whose clock you click." = "Como macOS: a la derecha, en la pantalla cuyo reloj pulsas.";
+"The side of the screen, and which screen it opens on." = "El lado de la pantalla y en qué pantalla se abre.";
+"As macOS: in from the edge of the screen." = "Como macOS: desde el borde de la pantalla.";
+"How it comes in when you click the clock, and goes when it closes." = "Cómo entra al pulsar el reloj y cómo sale al cerrarse.";
+"Adds a row of app buttons above your notifications, to show one app at a time. macOS's Notification Center doesn't have this, so it starts off." = "Añade sobre tus notificaciones una fila de botones, uno por app, para mostrar una app a la vez. El Centro de notificaciones de macOS no lo tiene, así que empieza desactivado.";
+"Same as banners" = "Como los avisos";
+"As macOS. Drag it anywhere on the preview." = "Como macOS. Arrástralo a cualquier lugar de la vista previa.";
+"Drag it anywhere on the preview." = "Arrástralo a cualquier lugar de la vista previa.";
+"Same as your banners, and per app where your exception groups set one." = "Como tus avisos, y por app donde tus grupos de excepción definan uno.";
+"No tint: the system's look." = "Sin tinte: el aspecto del sistema.";
+"One tint for every row." = "Un tinte para cada fila.";
+"Same as your banners." = "Como tus avisos.";
+"Custom text color active." = "Color de texto personalizado activo.";
+"Center" = "Centro";
+"Disconnected display" = "Pantalla desconectada";
+"All apps" = "Todas las apps";
+"Same as All apps" = "Igual que todas las apps";
+"Scale" = "Tamaño";
+"New exception group" = "Nuevo grupo de excepción";
+"Delete exception group" = "Eliminar grupo de excepción";
+"This exception group's own place, on the screen picked above. Default is the screen All apps use." = "El lugar propio de este grupo de excepción, en la pantalla elegida arriba. Predeterminado es la pantalla que usan todas las apps.";
+"Apps in an exception group use its settings below instead of All apps'. An app is in one exception group at most." = "Las apps de un grupo de excepción usan sus ajustes de abajo en lugar de los de todas las apps. Una app está como mucho en un grupo de excepción.";
+"Want different settings for some apps? Make an exception group of them, and pick what's different." = "¿Ajustes distintos para algunas apps? Ponlas en un grupo de excepción y elige qué cambia.";
+"Every app outside an exception group shows its banners here." = "Toda app fuera de un grupo de excepción muestra sus avisos aquí.";
+
+/* Sounds tab */
+"Sounds" = "Sonidos";
+"New sound group" = "Nuevo grupo de sonido";
+"Delete sound group" = "Eliminar grupo de sonido";
+"Want some apps to sound different? Make a sound group of them, and pick its sound." = "¿Quieres que algunas apps suenen distinto? Ponlas en un grupo de sonido y elige su sonido.";
+"macOS sounds" = "Sonidos de macOS";
+"macOS still plays each app's own sound, and nothing outside it can hold that back. To hear only the sound picked here, open System Settings › Notifications, click the app under Application Notifications, and turn off \"Play sound for notification\"." = "macOS sigue reproduciendo el sonido propio de cada app, y nada externo puede evitarlo. Para oír solo el sonido elegido aquí, abre Ajustes del Sistema › Notificaciones, haz clic en la app en Notificaciones de apps y desactiva «Reproducir sonido para notificaciones».";
+"Open Notification Settings" = "Abrir ajustes de notificaciones";
+"Notifications from these apps play the sound below. An app is in one sound group at most." = "Las notificaciones de estas apps reproducen el sonido de abajo. Una app está como mucho en un grupo de sonido.";
+"Sound" = "Sonido";
+"Play" = "Reproducir";
+"Choose File…" = "Elegir archivo…";
+"Plays when a banner from one of these apps appears. Sounds you add to the Sounds folder in your Library show up here too." = "Suena cuando aparece un banner de una de estas apps. Los sonidos que añadas a la carpeta Sounds de tu Biblioteca también aparecen aquí.";
+"Volume" = "Volumen";
+"Relative to your Mac's volume." = "Respecto al volumen de tu Mac.";
+"Default. Every app plays its own sound, as macOS does." = "Por omisión. Cada app reproduce su propio sonido, como en macOS.";
+"Every app outside a sound group plays this when its banner appears." = "Cada app fuera de un grupo de sonido reproduce este sonido cuando aparece su banner.";
+"Same as All apps." = "Igual que Todas las apps.";
+"Default. These apps play their own sound, as macOS does." = "Por omisión. Estas apps reproducen su propio sonido, como en macOS.";
+"Each app's own sound, as macOS plays it" = "El sonido propio de cada app, como lo reproduce macOS";
+"Pick a sound for all apps" = "Elige un sonido para todas las apps";
+"Pick a sound for this sound group" = "Elige un sonido para este grupo de sonidos";

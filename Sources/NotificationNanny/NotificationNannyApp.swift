@@ -210,7 +210,11 @@ final class AppCoordinator: NSObject, ObservableObject, NSApplicationDelegate, N
             .environmentObject(settings)
             .environmentObject(repositioner)
             .environmentObject(launchAtLogin)
-        let hosting = NSHostingController(rootView: rootView)
+        let hosting = NSViewController()
+        // Takes the first click: while Notification Center's panel is open Settings isn't
+        // the key window, and dragging the custom panel's place would only make it key.
+        let hostingView = FirstClickHostingView(rootView: rootView)
+        hosting.view = hostingView
         // The window's size is AppKit's: the default below, minSize, and whatever
         // the user saved. Left to its default, the hosting controller resizes the
         // window to the SwiftUI content's preferred size, which for a scrolling tab
@@ -220,7 +224,7 @@ final class AppCoordinator: NSObject, ObservableObject, NSApplicationDelegate, N
         // the content reported it could shrink to nothing, every tab being flexible or
         // scrolling, and the window could be dragged so small the sidebar and the tab
         // were cut off.
-        hosting.sizingOptions = [.minSize]
+        hostingView.sizingOptions = [.minSize]
         let window = NSWindow(contentViewController: hosting)
         window.title = "NotificationNanny Settings"
         // Resizable, with only a floor. It was pinned to exactly 660x640 by
@@ -334,6 +338,7 @@ final class AppCoordinator: NSObject, ObservableObject, NSApplicationDelegate, N
 
     func applicationWillTerminate(_ notification: Notification) {
         settings.flushPendingSaves()
+        repositioner.prepareForQuit()
     }
 
     private func autoEnableLoginItemIfNeeded() {

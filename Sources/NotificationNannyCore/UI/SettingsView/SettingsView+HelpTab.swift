@@ -39,7 +39,7 @@ struct HelpTabView: View {
                     open("https://github.com/chessper53/NotificationNanny")
                 }
             }
-            .background(Color.nannyRaised(0.06), in: RoundedRectangle(cornerRadius: 10))
+            .settingsCardBackground()
 
             HStack(alignment: .top, spacing: 8) {
                 // Matches the Diagnostics tab's own icon, since that's what this
@@ -103,7 +103,7 @@ struct HelpTabView: View {
                 Spacer()
                 Image(systemName: "arrow.up.right").font(.caption2).foregroundStyle(.tertiary)
             }
-            .padding(.horizontal, 14).padding(.vertical, 10).contentShape(Rectangle())
+            .settingsListRow().contentShape(Rectangle())
         }
         .buttonStyle(.plain)
     }

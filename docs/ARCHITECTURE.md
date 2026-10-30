@@ -1,7 +1,7 @@
 # NotificationNanny — Architecture Documentation
 
 **Project:** notification-nanny  
-**Last Updated:** 2026-09-23  
+**Last Updated:** 2026-10-25  
 **Language:** English
 
 ---
@@ -23,6 +23,7 @@
 | 1.8     | 2026-08-10 | Claude   | Global custom-banner text color (`bannerTextTint`, `effectiveBannerTextColor: Color?` — nil means adaptive `.primary`/`.secondary`/`.tertiary`, deliberately not a hardcoded default, so it can't regress the 1.7 appearance fix); universal (arm64+x86_64) release builds verified via `lipo` in `release.yml` + `scripts/test-release-workflow.sh` |
 | 1.9     | 2026-08-10 | Claude   | `AXObserverController` extracted from `NotificationRepositioner` (§11 P1#1); `AppIconCache` (persistent, shared between the repositioner's hot path and the Exceptions tab); menu-bar right-click quick actions (pause 15/30/60, Settings, Quit — separate from the left-click Settings window); privacy redaction toggle (`redactBannerContent`, blurs custom-banner title/body); `BannerAnimation.Spec` consolidates the four per-case switches into one; Preset-apply confirmation when it would overwrite different exception groups (§11 P2#4); debounced `appGroups` persistence + `flushPendingSaves()` (§11 P3#9); per-tag/search log filtering in the Diagnostics tab; conditional `UNUserNotificationCenter` path for test notifications (§11 P2#6); `FocusModeMonitor`'s Focus-file read moved to a background-refreshing task, off the main actor; String Catalog scaffolding (`Resources/Localizable.xcstrings`, inert until populated); `AXIntegrationTests.swift` (conditionally-enabled live AX pipeline test); CI `release-consistency` job (`scripts/test-version-consistency.sh` + wires the previously-unused `test-release-workflow.sh` into `ci.yml`) |
 | 2.0     | 2026-09-23 | Claude   | Custom banner rebuilt as a measured replica of the macOS 26+ banner: `NSGlassEffectView` background with a 5% white wash (HUD material kept as the pre-26 fallback), system banner geometry in `CustomBannerView.Metrics`, height taken from the real banner's AX size, subtitle read from the banner's labelled AX lines, close button over the leading corner. `scripts/banner-lab` measures the replica against the real banner pixel by pixel |
+| 2.1     | 2026-10-25 | Claude   | Custom Notification Center (experimental): `NCPanelTakeover`, `PanelClickRouter`, `NCPanelModel`, `NotificationTimes`, `NotificationActions`, `WidgetCapture`, `CustomNCPanel`; the banner's card extracted as `BannerCard` and its glass as `BannerGlass`, shared by banners and panel rows; app actions and inline replies on custom banners; Light Mode measured for the custom banner; Notification Center settings tab. Measurements in [INVESTIGATION-nc-panel.md](INVESTIGATION-nc-panel.md); tools `scripts/panel-probe.swift` and `scripts/panel-lab` |
 
 **Status:** CURRENT
 
@@ -761,6 +762,18 @@ sequenceDiagram
 - **Purpose:** Replaces the `bannerColorR/G/B: Double?` triple-optional anti-pattern with a single optional value, reducing mis-use surface and making "color is set" states unambiguous.
 - **Migration:** Both `AppGroup` and `Preset` have custom Codable decoders that read the new `bannerTint` key OR fall back to the legacy separate `bannerColorR/G/B` keys. Old data is silently upgraded on first read; new data is written using only `bannerTint`. `AppSettings` retains the raw R/G/B UserDefaults keys for storage but exposes only `bannerTint: BannerTint?` externally.
 
+### 9. Custom Notification Center (`NCPanelTakeover`)
+
+- **Purpose:** Replace the Notification Center panel with NotificationNanny's own, the way the custom banner replaces a banner: the real panel stays the source of truth, ours is a view of it.
+- **Flow:** `NotificationRepositioner.handleAXEvent` hands every Notification Center event to `NCPanelTakeover` first. When `AXExpanded` turns true it parks the panel's window off screen (Notification Center moves it back when the panel opens, so it can't be parked beforehand), reads the list in drawn order into `NCPanelSnapshot` (`NCPanelModel.swift`, tested in `NCPanelModelTests`), and shows `CustomNCPanel`. `targetOrigin` leaves a taken-over window alone.
+- **Clicks:** a click on any window of ours closes the real panel. `PanelClickRouter`, a session event tap active only while our panel is up, takes the mouse events that start inside it and sends them to our window directly. Everything else passes, so a click outside still closes both.
+- **Actions:** rows are found again by `AXIdentifier`, which a notification keeps from banner to panel row. Open, close, expand, Show Less, Clear and Clear All are the real elements' actions. The app's own buttons go through `NotificationActions`, shared with custom banners: a reply opens Notification Center's own field and gives it the focus, so typing goes there while the frontmost app stays frontmost; ours mirrors it, and its send action is whichever appeared with the field.
+- **Look:** rows are `BannerCard`, the custom banner's own card, with `GlassEdge.panelRow`. The panel darkens the column behind its list and the rows behind them as Notification Center does (`NCPanelMetrics`). Size, side, screen and animation come from the Notification Center tab; tint, text colour and blur from the banner settings.
+- **Times:** `NotificationTimes` notes when each banner first shows, by identifier; rows already listed when first seen get none.
+- **Widgets:** optional, Screen Recording. Once ours is up, the real panel is moved under it behind an opaque `NCPanelCover`, where it is drawn, and `WidgetCapture` takes pictures of the widgets every two seconds. A click on one is a real click on the real widget, with our panel and the router letting it through.
+- **Hover:** our windows never belong to the active app, where neither `onHover` nor tracking areas report; `activeHover` (`ActiveHover.swift`) reads the pointer position.
+- **Testing:** `scripts/panel-lab/app.sh` drives a debug build step by step, with only the Lab apps listed and every setting it touches restored and checked; `compare.sh` puts the real panel and ours side by side in both appearances.
+
 ### Coding Conventions
 
 - Match the surrounding code: `@MainActor` throughout, Combine `@Published` for
@@ -1071,6 +1084,8 @@ The per-entry log row (timestamp, level capsule, tag capsule, message) was extra
 - [dev.sh](../scripts/dev.sh) — Debug build + relaunch loop
 - [scripts/assemble-bundle.sh](../scripts/assemble-bundle.sh) — Shared `.app` assembly and signing
 - [scripts/banner-lab/run.sh](../scripts/banner-lab/run.sh) — Measures the custom banner against the real one, pixel by pixel
+- [scripts/panel-lab](../scripts/panel-lab/run.sh) — Experiments on Notification Center's panel, the custom one driven live (`app.sh`), and side by side with the real one (`compare.sh`)
+- [INVESTIGATION-nc-panel.md](INVESTIGATION-nc-panel.md) — What the custom Notification Center is built on, measured
 - [.github/workflows/ci.yml](../.github/workflows/ci.yml) — CI configuration
 
 ### External

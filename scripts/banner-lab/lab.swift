@@ -15,6 +15,12 @@
 //                                                a bare AppKit mock-up, for
 //                                                trying parameters quickly
 //   lab theme light|dark                         switch system appearance
+//   lab real-states <backdrop>                   a Lab notification with buttons, from
+//                                                notify-lab, in every state: collapsed,
+//                                                hovered, details shown, reply open,
+//                                                reply typed; frames to states.txt
+//   lab prod-states <backdrop>                   the app's BannerCard in the same states,
+//                                                at the real ones' frames
 //
 // Backdrops: black white gray red blue stripes checker wallpaper (no backdrop)
 //
@@ -256,6 +262,227 @@ try? FileManager.default.createDirectory(atPath: "\(outDir)/cap/\(appearanceName
                                          withIntermediateDirectories: true)
 
 switch args.first {
+case "real-states":
+    // Every state of a real banner with buttons, posted by a notify-lab app. Only Lab
+    // notifications are acted on, and typing happens only once the reply field has focus.
+    let bd = args.dropFirst().first ?? "gray"
+    let notifier = "build/notify-lab/Lab Charlie.app/Contents/MacOS/notifier"
+    func labBanner() -> AXUIElement? {
+        guard let nc = NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.notificationcenterui").first else { return nil }
+        let app = AXUIElementCreateApplication(nc.processIdentifier)
+        func walk(_ e: AXUIElement, _ d: Int) -> AXUIElement? {
+            guard d < 12 else { return nil }
+            if let sub = attr(e, "AXSubrole") as? String, sub.hasPrefix("AXNotificationCenter"),
+               let desc = attr(e, "AXAttributedDescription"), CFGetTypeID(desc) == CFAttributedStringGetTypeID(),
+               (CFAttributedStringGetString((desc as! CFAttributedString)) as String).hasPrefix("Lab Charlie") { return e }
+            for k in (attr(e, "AXChildren") as? [AXUIElement] ?? []) { if let f = walk(k, d + 1) { return f } }
+            return nil
+        }
+        for w in (attr(app, "AXWindows") as? [AXUIElement] ?? []) { if let b = walk(w, 0) { return b } }
+        return nil
+    }
+    func act(_ e: AXUIElement, _ name: String) {
+        var ref: CFArray?
+        AXUIElementCopyActionNames(e, &ref)
+        if let a = (ref as? [String] ?? []).first(where: { $0.hasPrefix("Name:\(name)\n") }) {
+            AXUIElementPerformAction(e, a as CFString)
+        }
+    }
+    run(notifier, ["Probe title", "Probe body text", "--actions"])
+    var end = Date().addingTimeInterval(8)
+    var banner: AXUIElement?
+    while banner == nil, Date() < end { banner = labBanner(); pump(0.1) }
+    guard let banner else { print("no Lab banner"); exit(1) }
+    pump(1.0)
+    var states: [String] = []
+    let tall = axFrame(banner).insetBy(dx: 0, dy: 0)
+    showBackdrop(bd, around: CGRect(x: tall.minX, y: tall.minY, width: tall.width, height: 200))
+    pump(0.6)
+    func snap(_ state: String) {
+        let f = axFrame(banner)
+        states.append("\(state) \(Int(f.minX)) \(Int(f.minY)) \(Int(f.width)) \(Int(f.height))")
+        capture(f, "real-state-\(state)-\(bd)")
+    }
+    snap("collapsed")
+    let back = CGEvent(source: nil)!.location
+    let f0 = axFrame(banner)
+    // From the left: a pointer arriving from below was at times not taken as entering it.
+    for p in [CGPoint(x: f0.minX - 400, y: f0.minY + 200), CGPoint(x: f0.minX - 20, y: f0.midY), CGPoint(x: f0.midX, y: f0.midY)] {
+        CGEvent(mouseEventSource: nil, mouseType: .mouseMoved, mouseCursorPosition: p, mouseButton: .left)!.post(tap: .cghidEventTap)
+        pump(0.3)
+    }
+    pump(0.6)
+    snap("hover")
+    // What the hovered banner shows, relative to its card.
+    let card = f0
+    func dump(_ e: AXUIElement, _ d: Int) {
+        guard d < 6 else { return }
+        let f = axFrame(e)
+        let role = attr(e, "AXRole") as? String ?? "?"
+        let id = attr(e, "AXIdentifier") as? String ?? ""
+        let desc = (attr(e, "AXDescription") as? String) ?? (attr(e, "AXTitle") as? String) ?? ""
+        if d > 0 { print("  hover: \(role) #\(id) \"\(desc)\" at (\(Int(f.minX - card.minX)),\(Int(f.minY - card.minY))) \(Int(f.width))x\(Int(f.height))") }
+        for k in (attr(e, "AXChildren") as? [AXUIElement] ?? []) { dump(k, d + 1) }
+    }
+    dump(banner, 0)
+    // At the top left corner, where the frame grows on hover: a close button?
+    CGEvent(mouseEventSource: nil, mouseType: .mouseMoved, mouseCursorPosition: CGPoint(x: f0.minX + 6, y: f0.minY + 6), mouseButton: .left)!.post(tap: .cghidEventTap)
+    pump(0.8)
+    snap("corner")
+    // Away, so the rest is as it looks without the pointer on it.
+    CGEvent(mouseEventSource: nil, mouseType: .mouseMoved, mouseCursorPosition: back, mouseButton: .left)!.post(tap: .cghidEventTap)
+    pump(0.6)
+    act(banner, "Show Details")
+    pump(1.0)
+    snap("expanded")
+    act(banner, "Reply")
+    pump(1.0)
+    snap("reply")
+    func field(_ e: AXUIElement, _ d: Int) -> AXUIElement? {
+        guard d < 8 else { return nil }
+        if let r = attr(e, "AXRole") as? String, r == "AXTextArea" || r == "AXTextField" { return e }
+        for k in (attr(e, "AXChildren") as? [AXUIElement] ?? []) { if let f = field(k, d + 1) { return f } }
+        return nil
+    }
+    if let f = field(banner, 0) {
+        AXUIElementSetAttributeValue(f, "AXFocused" as CFString, kCFBooleanTrue)
+        pump(0.4)
+        var focused: CFTypeRef?
+        AXUIElementCopyAttributeValue(AXUIElementCreateSystemWide(), "AXFocusedUIElement" as CFString, &focused)
+        if let focused, CFGetTypeID(focused) == AXUIElementGetTypeID(), CFEqual(focused, f) {
+            for ch in "Hello there".utf16 {
+                var c = ch
+                for down in [true, false] {
+                    let e = CGEvent(keyboardEventSource: nil, virtualKey: 0, keyDown: down)!
+                    e.keyboardSetUnicodeString(stringLength: 1, unicodeString: &c)
+                    e.post(tap: .cghidEventTap)
+                }
+                usleep(15_000)
+            }
+            pump(0.6)
+            snap("typed")
+        } else {
+            print("reply field not focused; not typing")
+        }
+    }
+    act(banner, "Close")
+    backdropWindow?.orderOut(nil)
+    try? states.joined(separator: "\n").write(toFile: "\(outDir)/states.txt", atomically: true, encoding: .utf8)
+    print(states.joined(separator: "\n"))
+
+#if PROD
+case "prod-states":
+    // The app's own card in each state the real one was captured in, at its frame.
+    let bd = args.dropFirst().first ?? "gray"
+    guard let text = try? String(contentsOfFile: "\(outDir)/states.txt", encoding: .utf8) else { print("run real-states first"); exit(1) }
+    let base = BannerContent(appName: "Script Editor", title: "Probe title", body: "Probe body text", appIcon: probeIcon,
+                             actions: ["Reply", "Archive", "Snooze"])
+    let manager = MainActor.assumeIsolated { CustomBannerManager() }
+    var first = true
+    var collapsed: CGRect?
+    for line in text.split(separator: "\n") {
+        let parts = line.split(separator: " ")
+        guard parts.count == 5, let x = Double(parts[1]), let y = Double(parts[2]),
+              let w = Double(parts[3]), let h = Double(parts[4]) else { continue }
+        let state = String(parts[0])
+        let shot = CGRect(x: x, y: y, width: w, height: h)
+        var ax = shot
+        if state == "collapsed" { collapsed = ax }
+        // A hovered banner's frame takes in its close button, which overhangs the card.
+        if state == "hover" || state == "corner", let c = collapsed { ax = c }
+        var content = base
+        switch state {
+        case "expanded": content.expanded = true
+        case "reply": content.expanded = true; content.reply = ""; content.replyPlaceholder = "Message"
+                      content.actions = ["Send", "Archive", "Snooze"]
+        case "typed": content.expanded = true; content.reply = "Hello there"; content.replyPlaceholder = "Message"
+                      content.actions = ["Send", "Archive", "Snooze"]
+        default: break
+        }
+        if state == "hover" { setenv("NN_LOOK_HOVER", "1", 1) } else { unsetenv("NN_LOOK_HOVER") }
+        showBackdrop(bd, around: CGRect(x: ax.minX, y: ax.minY, width: ax.width, height: 200))
+        pump(first ? 1.2 : 0.6)
+        first = false
+        MainActor.assumeIsolated {
+            manager.showBanner(content: content, axTopLeft: ax.origin, width: ax.width, height: ax.height,
+                               scale: 1, backgroundColor: .clear, autoDismissSeconds: 0,
+                               animation: .fade, onOpen: {}, key: 1)
+        }
+        pump(0.9)
+        capture(shot, "ours-state-\(state)-\(bd)")
+        MainActor.assumeIsolated { manager.dismiss(key: 1) }
+        pump(0.5)
+    }
+    backdropWindow?.orderOut(nil)
+#endif
+
+case "corner-sweep":
+    // Where must the pointer be for the real banner's close button to show? A Lab
+    // notification, then the pointer at points measured from its top left corner.
+    let notifier = "build/notify-lab/Lab Charlie.app/Contents/MacOS/notifier"
+    run(notifier, ["Probe title", "Probe body text"])
+    var b: AXUIElement?
+    let end = Date().addingTimeInterval(8)
+    while b == nil, Date() < end {
+        if let nc = NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.notificationcenterui").first {
+            func walk(_ e: AXUIElement, _ d: Int) -> AXUIElement? {
+                guard d < 12 else { return nil }
+                if let sub = attr(e, "AXSubrole") as? String, sub.hasPrefix("AXNotificationCenter"),
+                   let desc = attr(e, "AXAttributedDescription"), CFGetTypeID(desc) == CFAttributedStringGetTypeID(),
+                   (CFAttributedStringGetString((desc as! CFAttributedString)) as String).hasPrefix("Lab Charlie") { return e }
+                for k in (attr(e, "AXChildren") as? [AXUIElement] ?? []) { if let f = walk(k, d + 1) { return f } }
+                return nil
+            }
+            for w in (attr(AXUIElementCreateApplication(nc.processIdentifier), "AXWindows") as? [AXUIElement] ?? []) {
+                if let f = walk(w, 0) { b = f; break }
+            }
+        }
+        pump(0.1)
+    }
+    guard let banner = b else { print("no Lab banner"); exit(1) }
+    pump(1.0)
+    let card = axFrame(banner)
+    let back = CGEvent(source: nil)!.location
+    // Where the close button's ring sits, from the corner capture.
+    let spot = CGRect(x: card.minX - 8, y: card.minY - 5, width: 22, height: 22)
+    func grab(_ name: String) -> NSBitmapImageRep? {
+        run("/usr/sbin/screencapture", ["-x", "-R\(Int(spot.minX)),\(Int(spot.minY)),\(Int(spot.width)),\(Int(spot.height))", "\(outDir)/\(name).png"])
+        defer { try? FileManager.default.removeItem(atPath: "\(outDir)/\(name).png") }
+        return NSImage(contentsOfFile: "\(outDir)/\(name).png").flatMap { $0.tiffRepresentation }.flatMap(NSBitmapImageRep.init)
+    }
+    func move(_ p: CGPoint) {
+        CGEvent(mouseEventSource: nil, mouseType: .mouseMoved, mouseCursorPosition: p, mouseButton: .left)!.post(tap: .cghidEventTap)
+    }
+    move(CGPoint(x: card.midX, y: card.maxY + 80)); pump(0.6)
+    guard let base = grab("sweep-base") else { exit(1) }
+    func differs(_ r: NSBitmapImageRep) -> Double {
+        var total = 0.0, n = 0.0
+        for x in stride(from: 0, to: min(r.pixelsWide, base.pixelsWide), by: 1) {
+            for y in stride(from: 0, to: min(r.pixelsHigh, base.pixelsHigh), by: 1) {
+                guard let a = r.colorAt(x: x, y: y), let c = base.colorAt(x: x, y: y) else { continue }
+                total += abs(a.brightnessComponent - c.brightnessComponent); n += 1
+            }
+        }
+        return n > 0 ? total / n * 255 : 0
+    }
+    // Over time: the middle first, then well away, then the corner.
+    for (label, dx, dy) in [("x80", 80, 29), ("x110", 110, 29), ("x140", 140, 29), ("x160", 160, 29),
+                            ("x172", 172, 29), ("x200", 200, 29), ("x260", 260, 29), ("x330", 330, 29), ("x172y8", 172, 8), ("x172y52", 172, 52)] {
+        move(CGPoint(x: card.minX - 400, y: card.minY + 200)); pump(0.5)
+        move(CGPoint(x: card.minX + CGFloat(dx), y: card.minY + CGFloat(dy)))
+        var line = "\(label):"
+        let t0 = Date()
+        for t in [0.4] {
+            pump(t - Date().timeIntervalSince(t0))
+            if let r = grab("sweep") { line += String(format: "  %.1fs %.1f", t, differs(r)) }
+        }
+        print(line)
+    }
+    move(back)
+    var ref: CFArray?
+    AXUIElementCopyActionNames(banner, &ref)
+    if let a = (ref as? [String] ?? []).first(where: { $0.hasPrefix("Name:Close\n") }) { AXUIElementPerformAction(banner, a as CFString) }
+
 case "theme":
     // SkyLight rather than System Events, so no Automation permission is needed.
     let sky = dlopen("/System/Library/PrivateFrameworks/SkyLight.framework/SkyLight", RTLD_NOW)

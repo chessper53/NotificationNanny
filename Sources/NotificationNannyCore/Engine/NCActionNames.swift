@@ -8,6 +8,12 @@ import AppKit
 enum NCActionNames {
     static let close = names(for: "Close")
     static let clearAll = names(for: "Clear All")
+    static let showDetails = names(for: "Show Details")
+    static let hideDetails = names(for: "Hide Details")
+    /// Notification Center's own actions on a notification, in every language: everything
+    /// else a notification offers is the app's (Reply, Archive, Snooze…).
+    static let builtIn: Set<String> = close.union(clearAll).union(showDetails).union(hideDetails)
+        .union(names(for: "Clear")).union(names(for: "Show")).union(names(for: "Options"))
 
     private static let notificationCenter = "com.apple.notificationcenterui"
     private static let fallbackPath = "/System/Library/CoreServices/NotificationCenter.app"
