@@ -41,6 +41,21 @@ final class AppIconCache {
     /// The icon for the app Notification Center calls `appName`, or nil when no
     /// running or installed app goes by that name.
     func icon(for appName: String) -> NSImage? {
+        if let icon = exactIcon(for: appName) { return icon }
+        // A Persistent banner reads "App Title, Body" with no comma after the app, so
+        // the name taken from it runs into the title ("스크립트 편집기 Claude 1"). The
+        // app is then the longest run of leading words that names one.
+        let words = appName.split(separator: " ")
+        for count in stride(from: words.count - 1, through: 1, by: -1) {
+            if let icon = exactIcon(for: words.prefix(count).joined(separator: " ")) {
+                cache[InstalledAppIndex.key(appName)] = icon
+                return icon
+            }
+        }
+        return nil
+    }
+
+    private func exactIcon(for appName: String) -> NSImage? {
         let key = InstalledAppIndex.key(appName)
         guard !key.isEmpty else { return nil }
         if let cached = cache[key] { return cached }
@@ -149,6 +164,29 @@ struct InstalledAppIndex: Sendable {
         }
     }
 
+    /// The user's languages, as each of the forms apps name their localizations by.
+    private static let userLanguages: [String] = Locale.preferredLanguages.flatMap { lang -> [String] in
+        let base = lang.components(separatedBy: "-").first ?? lang
+        return [lang, lang.replacingOccurrences(of: "-", with: "_"), base]
+    }
+
+    /// The app's name in the user's languages. displayName answers in the languages
+    /// NotificationNanny itself is localized in, and it has no Korean, so "스크립트 편집기"
+    /// (Script Editor) or "카카오톡" (KakaoTalk) on a banner found no icon. Read from the
+    /// app's own InfoPlist.loctable (system apps) or <lang>.lproj/InfoPlist.strings.
+    private static func localizedNames(of app: URL) -> [String] {
+        let resources = app.appendingPathComponent("Contents/Resources")
+        let keys = ["CFBundleDisplayName", "CFBundleName"]
+        var tables: [NSDictionary] = []
+        if let loctable = NSDictionary(contentsOf: resources.appendingPathComponent("InfoPlist.loctable")) {
+            tables += userLanguages.compactMap { loctable[$0] as? NSDictionary }
+        }
+        tables += userLanguages.compactMap {
+            NSDictionary(contentsOf: resources.appendingPathComponent("\($0).lproj/InfoPlist.strings"))
+        }
+        return tables.flatMap { table in keys.compactMap { table[$0] as? String } }
+    }
+
     private mutating func add(_ app: URL) {
         // displayName is the localized name Launch Services shows, which is what
         // Notification Center shows. Reading Info.plist directly rather than through
@@ -161,6 +199,7 @@ struct InstalledAppIndex: Sendable {
         for k in ["CFBundleDisplayName", "CFBundleName"] {
             if let n = info?[k] as? String { names.append(n) }
         }
+        names += Self.localizedNames(of: app)
         for name in names {
             var key = Self.key(name)
             if key.hasSuffix(".app") { key = String(key.dropLast(4)) }
