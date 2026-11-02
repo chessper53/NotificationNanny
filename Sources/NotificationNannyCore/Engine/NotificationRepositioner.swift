@@ -262,6 +262,7 @@ package final class NotificationRepositioner: ObservableObject {
         followTimer?.cancel()
         followTimer = nil
         closedBannerIDs.removeAll()
+        hiddenBannerIDs.removeAll()
         unreadableBannerSweeps.removeAll()
         loggedSkippedKeys.removeAll()
         resolver.invalidateAll()
@@ -598,7 +599,8 @@ package final class NotificationRepositioner: ObservableObject {
         sweepBanners = [:]
         defer { sweepBanners = nil }
         playSounds(in: windows)
-        if !dismissTimers.armedIDs.isEmpty || !closedBannerIDs.isEmpty || !unreadableBannerSweeps.isEmpty
+        if !dismissTimers.armedIDs.isEmpty || !closedBannerIDs.isEmpty || !hiddenBannerIDs.isEmpty
+            || !unreadableBannerSweeps.isEmpty
             || !bannerFirstSeen.isEmpty,
            // A collapsed stack hides every card but its top one; they are still up,
            // and forgetting when they arrived reordered the pile once it opened.
@@ -606,6 +608,7 @@ package final class NotificationRepositioner: ObservableObject {
             let present = Set(windows.flatMap { banners(in: $0) }.compactMap(\.id))
             dismissTimers.prune(keeping: present)
             closedBannerIDs.formIntersection(present)
+            hiddenBannerIDs.formIntersection(present)
             bannerFirstSeen = bannerFirstSeen.filter { present.contains($0.key) }
             unreadableBannerSweeps = unreadableBannerSweeps.filter { present.contains($0.key) }
         }
@@ -1645,6 +1648,99 @@ package final class NotificationRepositioner: ObservableObject {
     /// as its own banner, with the top card keeping the stack's identifier.
     private var stackPressedAt: [String: Double] = [:]
 
+    /// A tap on a collapsed stack opens it, as on macOS, rather than opening the
+    /// banner; once open, a tap opens the banner tapped.
+    private func expandPile(containing id: String) -> Bool {
+        guard let anchor = customPiles.values.lazy.compactMap({ $0.first { $0.id == id }?.anchor }).first,
+              !expandedPiles.contains(anchor),
+              pileIDs(at: anchor).count > 1 else { return false }
+        expandedPiles.append(anchor)
+        logger.log("Stack opened (\(pileIDs(at: anchor).count) banners)", tag: "Custom")
+        _ = repositionVisibleWindows()
+        watchExpandedPiles()
+        return true
+    }
+
+    /// Banners swiped away: no overlay for them while they are up, but the real ones
+    /// stay, so they are still in Notification Center.
+    private var hiddenBannerIDs: Set<String> = []
+
+    /// A swipe up puts away the banner, or the whole stack while it is collapsed.
+    private func hidePile(containing id: String) {
+        let anchor = customPiles.values.lazy.compactMap({ $0.first { $0.id == id }?.anchor }).first
+        let ids = anchor.flatMap { expandedPiles.contains($0) ? nil : pileIDs(at: $0) } ?? [id]
+        for other in ids.isEmpty ? [id] : ids {
+            hiddenBannerIDs.insert(other)
+            customBannerManager.dismiss(key: overlayKey(other))
+        }
+        logger.log("Swiped away \(max(ids.count, 1)) banner(s), left in Notification Center", tag: "Custom")
+    }
+
+    /// Closing a collapsed stack closes every banner in it, as Clear All does on macOS.
+    private func closePile(containing id: String) -> Bool {
+        guard let anchor = customPiles.values.lazy.compactMap({ $0.first { $0.id == id }?.anchor }).first,
+              !expandedPiles.contains(anchor) else { return false }
+        let ids = pileIDs(at: anchor)
+        guard ids.count > 1 else { return false }
+        for other in ids {
+            _ = closeBanner(id: other, reason: "Stack closed")
+            customBannerManager.dismiss(key: overlayKey(other))
+        }
+        return true
+    }
+
+    private func pileIDs(at anchor: PileAnchor) -> [String] {
+        customPiles.values.flatMap { $0 }.filter { $0.anchor == anchor && $0.leavingUntil == nil }.map(\.id)
+    }
+
+    /// An open stack folds back once the pointer has been off it for a moment, or
+    /// when one banner or none is left in it.
+    private var collapseTimer: Timer?
+    private var pointerLeftPile: [Int: Double] = [:]
+
+    private func watchExpandedPiles() {
+        guard collapseTimer == nil else { return }
+        collapseTimer = Timer.scheduledTimer(withTimeInterval: 0.2, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.checkExpandedPiles() }
+        }
+    }
+
+    private func checkExpandedPiles() {
+        let now = ProcessInfo.processInfo.systemUptime
+        let mouse = NSEvent.mouseLocation
+        var folded = false
+        for (index, anchor) in expandedPiles.enumerated().reversed() {
+            let frames = pileIDs(at: anchor).compactMap { customBannerManager.frame(key: overlayKey($0)) }
+            let area = frames.reduce(NSRect.null) { $0.union($1) }.insetBy(dx: -12, dy: -12)
+            if frames.count > 1, area.contains(mouse) {
+                pointerLeftPile[index] = nil
+                continue
+            }
+            let left = pointerLeftPile[index] ?? now
+            pointerLeftPile[index] = left
+            guard frames.count <= 1 || now - left >= Self.collapseDelay else { continue }
+            expandedPiles.remove(at: index)
+            pointerLeftPile = [:]
+            folded = true
+        }
+        if folded {
+            logger.log("Stack folded", tag: "Custom")
+            _ = repositionVisibleWindows()
+        }
+        if expandedPiles.isEmpty {
+            collapseTimer?.invalidate()
+            collapseTimer = nil
+        }
+    }
+
+    private static let collapseDelay: Double = 0.8
+
+    /// Piles opened to show every banner one under another; the rest show as a stack.
+    private var expandedPiles: [PileAnchor] = []
+    private static let stackPeek: CGFloat = 9
+    private static let stackPeekCards = 2
+    private static let stackShrink: CGFloat = 0.05
+
     /// The width macOS banners read at once they have settled.
     private var restingBannerWidth: CGFloat?
     private static let bannerSettleTime: Double = 0.6
@@ -1705,7 +1801,7 @@ package final class NotificationRepositioner: ObservableObject {
             let size: CGSize
         }
         let readItems: [Item] = banners(in: window).compactMap { ref in
-            guard let id = ref.id, !closedBannerIDs.contains(id) else { return nil }
+            guard let id = ref.id, !closedBannerIDs.contains(id), !hiddenBannerIDs.contains(id) else { return nil }
             let el = ref.element
             let description = el.stringAttribute("AXAttributedDescription") ?? ""
             let isTest = testGroupID != nil && pendingTestTitle.map { description.contains($0) } == true
@@ -1806,42 +1902,76 @@ package final class NotificationRepositioner: ObservableObject {
         }
         let gap = Self.pileGap
         var next: [PileSlot] = []
-        var arrivals: [(id: String, item: Item, topLeft: CGPoint, size: CGSize)] = []
+        var arrivals: [(id: String, item: Item, topLeft: CGPoint, size: CGSize, scale: CGFloat)] = []
+        var frontToBack: [String] = []
+        var behindIDs: Set<String> = []
         for (anchor, order) in piles {
             let sizes = order.map(size(of:))
-            let pile = CGSize(width: sizes.map(\.width).max() ?? 0,
-                              height: sizes.map(\.height).reduce(0, +) + gap * CGFloat(max(0, sizes.count - 1)))
             let placement = anchor.placement
-            let origin = placement.position.axStackOrigin(
-                stackSize: pile, screen: anchor.screen,
-                xOffset: CGFloat(placement.xOffset), yOffset: CGFloat(placement.yOffset))
-
-            var y = origin.y
-            for (id, size) in zip(order, sizes) {
-                let x: CGFloat
-                switch placement.position {
-                case .topRight, .middleRight, .bottomRight:    x = origin.x + pile.width - size.width
-                case .topCenter, .middleCenter, .bottomCenter: x = origin.x + (pile.width - size.width) / 2
-                default:                                        x = origin.x
+            // Each banner's frame in the pile, and how far it is shrunk: 1 laid out
+            // one under another, less for the cards behind a collapsed stack.
+            var frames: [(topLeft: CGPoint, size: CGSize, factor: CGFloat)] = []
+            if order.count > 1, !expandedPiles.contains(anchor) {
+                // Collapsed, as macOS draws a stack: the newest in front, the two before
+                // it showing their lower edge beneath, each a little smaller, and any
+                // older ones hidden behind the last of those.
+                let depth = Dictionary(uniqueKeysWithValues: order.enumerated().sorted { a, b in
+                    let sa = bannerFirstSeen[a.element] ?? 0, sb = bannerFirstSeen[b.element] ?? 0
+                    return sa != sb ? sa > sb : a.offset < b.offset
+                }.enumerated().map { ($0.element.element, $0.offset) })
+                let front = sizes[order.firstIndex { depth[$0] == 0 } ?? 0]
+                let shown = min(order.count - 1, Self.stackPeekCards)
+                let pile = CGSize(width: front.width, height: front.height + Self.stackPeek * CGFloat(shown))
+                let origin = placement.position.axStackOrigin(
+                    stackSize: pile, screen: anchor.screen,
+                    xOffset: CGFloat(placement.xOffset), yOffset: CGFloat(placement.yOffset))
+                for id in order {
+                    let d = CGFloat(min(depth[id] ?? 0, Self.stackPeekCards))
+                    let factor = 1 - Self.stackShrink * d
+                    let size = CGSize(width: front.width * factor, height: front.height * factor)
+                    if d > 0 { behindIDs.insert(id) }
+                    frames.append((CGPoint(x: origin.x + (front.width - size.width) / 2,
+                                           y: origin.y + Self.stackPeek * d + front.height - size.height),
+                                   size, factor))
                 }
-                let topLeft = CGPoint(x: x, y: y)
-                y += size.height + gap
+                frontToBack += order.sorted { (depth[$0] ?? 0) < (depth[$1] ?? 0) }
+            } else {
+                let pile = CGSize(width: sizes.map(\.width).max() ?? 0,
+                                  height: sizes.map(\.height).reduce(0, +) + gap * CGFloat(max(0, sizes.count - 1)))
+                let origin = placement.position.axStackOrigin(
+                    stackSize: pile, screen: anchor.screen,
+                    xOffset: CGFloat(placement.xOffset), yOffset: CGFloat(placement.yOffset))
+                var y = origin.y
+                for size in sizes {
+                    let x: CGFloat
+                    switch placement.position {
+                    case .topRight, .middleRight, .bottomRight:    x = origin.x + pile.width - size.width
+                    case .topCenter, .middleCenter, .bottomCenter: x = origin.x + (pile.width - size.width) / 2
+                    default:                                        x = origin.x
+                    }
+                    frames.append((CGPoint(x: x, y: y), size, 1))
+                    y += size.height + gap
+                }
+                frontToBack += order
+            }
 
+            for (id, (size, frame)) in zip(order, zip(sizes, frames)) {
                 guard let item = live[id] else {
                     if let slot = slots[id] { next.append(slot) }   // leaving: holds its place
                     continue
                 }
                 let key = overlayKey(id)
+                let itemScale = scale(item) * frame.factor
                 if customBannerManager.isActive(key: key) {
-                    customBannerManager.move(key: key, axTopLeft: topLeft,
-                                             width: size.width, height: size.height, scale: scale(item),
+                    customBannerManager.move(key: key, axTopLeft: frame.topLeft,
+                                             width: frame.size.width, height: frame.size.height, scale: itemScale,
                                              glide: !placingFromSettings)
                     if interactingBanners.contains(id),
                        let content = extractBannerContent(from: item.element, knownAppName: item.name) {
                         customBannerManager.update(key: key, content: content)
                     }
                 } else {
-                    arrivals.append((id, item, topLeft, size))
+                    arrivals.append((id, item, frame.topLeft, frame.size, itemScale))
                 }
                 next.append(PileSlot(id: id, size: size, exit: exit(item), leavingUntil: nil, anchor: anchor))
             }
@@ -1863,8 +1993,11 @@ package final class NotificationRepositioner: ObservableObject {
         for arrival in arrivals {
             showPileOverlay(arrival.id, element: arrival.item.element, appName: arrival.item.name,
                             testGroup: arrival.item.testGroup, at: arrival.topLeft, size: arrival.size,
-                            scale: scale(arrival.item), settings: settings)
+                            scale: arrival.scale, settings: settings)
         }
+        // A new panel comes up in front of the rest; a stack keeps its newest there.
+        customBannerManager.orderFront(keys: frontToBack.reversed().map(overlayKey))
+        for id in frontToBack { customBannerManager.setBehind(key: overlayKey(id), behindIDs.contains(id)) }
     }
 
     /// CustomBannerManager fades a panel out over 0.2 s after its outro.
@@ -1911,6 +2044,9 @@ package final class NotificationRepositioner: ObservableObject {
             animation: animation,
             onOpen: { [weak self] in self?.handleBannerTap(appName: tapName, bannerElement: element) },
             onUnderlyingDismiss: { [weak self] in self?.closeBanner(id: id, reason: "Custom banner dismissed") },
+            interceptTap: { [weak self] in self?.expandPile(containing: id) ?? false },
+            interceptDismiss: { [weak self] in self?.closePile(containing: id) ?? false },
+            onHide: { [weak self] in self?.hidePile(containing: id) },
             onAction: { [weak self] name in self?.performBannerAction(name, id: id) },
             onDetails: { [weak self] in self?.toggleBannerDetails(id: id) },
             menuSource: bannerMenu(id: id),

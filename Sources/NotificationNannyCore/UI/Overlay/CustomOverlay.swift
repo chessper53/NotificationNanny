@@ -180,6 +180,9 @@ struct CustomBannerView: View {
     let onAction: (String) -> Void
     let onDetails: () -> Void
     var menuSource: BannerMenuSource? = nil
+    /// A card behind the front one of a collapsed stack: glass only, as macOS draws
+    /// those. Its text showed through the front card's glass and crowded it.
+    var behind = false
 
     @State private var animX: CGFloat
     @State private var animY: CGFloat
@@ -277,6 +280,26 @@ struct CustomBannerView: View {
     }
 
     private var banner: some View {
+        let shape = RoundedRectangle(cornerRadius: Metrics.cornerRadius * scale, style: .continuous)
+        // Going behind, the text fades out while the new front card comes down over
+        // it; switched at once, an empty card showed while that one fell.
+        return ZStack {
+            BannerGlass(shape: shape, cornerRadius: Metrics.cornerRadius * scale, scale: scale, tint: tint)
+                .opacity(behind ? Self.behindOpacity : 0)
+                .contentShape(shape)
+                .onTapGesture { onOpen() }
+                .allowsHitTesting(behind)
+            card
+                .opacity(behind ? 0 : 1)
+                .allowsHitTesting(!behind)
+        }
+        .animation(.easeInOut(duration: behind ? Self.behindFade : 0.2), value: behind)
+    }
+
+    private static let behindOpacity = 0.6
+    private static let behindFade = 0.45
+
+    private var card: some View {
         BannerCard(content: content, scale: scale, tint: tint, textColor: textColor,
                    redactContent: redactContent, hovered: isHovered,
                    onOpen: onOpen, onAction: onAction, onDetails: onDetails, menuSource: menuSource)
@@ -752,6 +775,22 @@ enum PanelRowLook {
 /// A custom banner's hosting view, which hands on right clicks.
 final class BannerHostingView<Content: View>: NSHostingView<Content> {
     var onRightClick: ((NSPoint) -> Void)?
+    /// Two fingers pushed up on the trackpad over the banner put it away.
+    var onSwipeUp: (() -> Void)?
+    private var swipeTravel: CGFloat = 0
+    private var swipeDone = false
+
+    override func scrollWheel(with event: NSEvent) {
+        guard let onSwipeUp, event.hasPreciseScrollingDeltas else { return super.scrollWheel(with: event) }
+        if event.phase == .began { swipeTravel = 0; swipeDone = false }
+        // Up for the fingers whichever way scrolling is set.
+        let up = event.isDirectionInvertedFromDevice ? -event.scrollingDeltaY : event.scrollingDeltaY
+        swipeTravel += up
+        if !swipeDone, swipeTravel > 30, abs(event.scrollingDeltaX) < abs(event.scrollingDeltaY) {
+            swipeDone = true
+            onSwipeUp()
+        }
+    }
 
     override func rightMouseDown(with event: NSEvent) {
         guard let onRightClick else { return super.rightMouseDown(with: event) }
@@ -927,6 +966,13 @@ final class CustomBannerManager {
         animation: BannerAnimation = .default,
         onOpen: @escaping () -> Void,
         onUnderlyingDismiss: (() -> Void)? = nil,
+        /// Takes a tap before it opens the banner; true when it handled it.
+        interceptTap: (() -> Bool)? = nil,
+        /// Takes the × before it closes this banner alone.
+        interceptDismiss: (() -> Bool)? = nil,
+        /// A swipe up: off the screen, left in Notification Center. Without it a
+        /// swipe closes the banner like the ×.
+        onHide: (() -> Void)? = nil,
         onAction: @escaping (String) -> Void = { _ in },
         onDetails: @escaping () -> Void = {},
         menuSource: BannerMenuSource? = nil,
@@ -935,8 +981,14 @@ final class CustomBannerManager {
         dismiss(key: key)
 
         let controller = BannerAnimationController()
-        let onDismissAction: () -> Void = { [weak self] in self?.dismissFromUser(key: key) }
-        let onOpenAction:   () -> Void = { [weak self] in onOpen(); self?.dismissFromUser(key: key) }
+        let onDismissAction: () -> Void = { [weak self] in
+            if interceptDismiss?() == true { return }
+            self?.dismissFromUser(key: key)
+        }
+        let onOpenAction:   () -> Void = { [weak self] in
+            if interceptTap?() == true { return }
+            onOpen(); self?.dismissFromUser(key: key)
+        }
 
         let s = CGFloat(scale)
         let frame  = Self.panelFrame(axOrigin: axTopLeft, size: CGSize(width: width, height: height), scale: s)
@@ -961,6 +1013,7 @@ final class CustomBannerManager {
         // The panel's size comes from the real banner, never from SwiftUI. Left
         // to its default, the hosting view grows the panel to its own minimum
         // size, which pushes the banner off the spot it is meant to cover.
+        hosting.onSwipeUp = onHide ?? onDismissAction
         hosting.sizingOptions = []
         hosting.frame = bounds
         hosting.autoresizingMask = [.width, .height]
@@ -1027,6 +1080,25 @@ final class CustomBannerManager {
     }
     /// When the overlay's glide ends (system uptime); in the past when it isn't gliding.
     func glideEnd(key: CFHashCode) -> Double { active[key]?.glideEnds ?? 0 }
+
+    /// Where the panel is, or is gliding to.
+    func frame(key: CFHashCode) -> NSRect? {
+        active[key].map { $0.destination ?? $0.panel.frame }
+    }
+
+    func setBehind(key: CFHashCode, _ behind: Bool) {
+        guard let entry = active[key], entry.hosting.rootView.behind != behind else { return }
+        entry.hosting.rootView.behind = behind
+    }
+
+    /// Stacks the panels in this order, the last in front. Only reorders when the
+    /// order on screen differs, so a sweep doesn't keep raising windows.
+    func orderFront(keys: [CFHashCode]) {
+        let panels = keys.compactMap { active[$0]?.panel }
+        let onScreen = NSApp.orderedWindows.compactMap { w in panels.firstIndex { $0 === w } }
+        guard onScreen != Array((0..<panels.count).reversed()) else { return }
+        for panel in panels { panel.orderFront(nil) }
+    }
     var hasActive: Bool { !active.isEmpty }
 
     func resetDismissTimers(autoDismissSeconds: Double) {
