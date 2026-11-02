@@ -1636,6 +1636,10 @@ package final class NotificationRepositioner: ObservableObject {
         CFHashCode(truncatingIfNeeded: bannerID.hashValue)
     }
 
+    /// The width macOS banners read at once they have settled.
+    private var restingBannerWidth: CGFloat?
+    private static let bannerSettleTime: Double = 0.6
+
     private func dismissCustomPile(_ windowKey: CFHashCode) {
         for slot in customPiles.removeValue(forKey: windowKey) ?? [] {
             customBannerManager.dismiss(key: overlayKey(slot.id))
@@ -1661,13 +1665,12 @@ package final class NotificationRepositioner: ObservableObject {
             let testGroup: UUID??
             let size: CGSize
         }
-        let items: [Item] = banners(in: window).compactMap { ref in
+        let readItems: [Item] = banners(in: window).compactMap { ref in
             guard let id = ref.id, !closedBannerIDs.contains(id) else { return nil }
             let el = ref.element
             let description = el.stringAttribute("AXAttributedDescription") ?? ""
             let isTest = testGroupID != nil && pendingTestTitle.map { description.contains($0) } == true
-            var size = el.size() ?? Self.bannerSize
-            if size.width > Self.maxBannerWidth { size.width = Self.bannerSize.width }
+            let size = el.size() ?? Self.bannerSize
             return Item(id: id, element: el, name: AppNameResolver.appName(fromDescription: description),
                         testGroup: isTest ? testGroupID : nil, size: size)
         }
@@ -1685,6 +1688,23 @@ package final class NotificationRepositioner: ObservableObject {
         // Overlays whose banner went start their exit where they stand and keep
         // their slot until it is over (see PileOrder); a sweep then closes the gap.
         let now = ProcessInfo.processInfo.systemUptime
+        // macOS banners are all one width; only their height changes. A replacing
+        // banner reads wider while it comes in (past 480, but also 440 or 470), and
+        // copying that made banners differ in width. So the width is learned from a
+        // banner that has been up a while and every overlay takes it.
+        // Learned once: a banner on its way out narrows, so later reads could be off.
+        for item in readItems where restingBannerWidth == nil
+            && customBannerManager.isActive(key: overlayKey(item.id))
+            && now - (bannerFirstSeen[item.id] ?? now) > Self.bannerSettleTime
+            && item.size.width <= Self.maxBannerWidth {
+            restingBannerWidth = item.size.width
+        }
+        let items = readItems.map { item -> Item in
+            let width = restingBannerWidth
+                ?? (item.size.width <= Self.maxBannerWidth ? item.size.width : Self.bannerSize.width)
+            return Item(id: item.id, element: item.element, name: item.name, testGroup: item.testGroup,
+                        size: CGSize(width: width, height: item.size.height))
+        }
         let previous = customPiles[windowKey] ?? []
         let liveIDs = Set(items.map(\.id))
         var slots = Dictionary(previous.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
@@ -1720,7 +1740,12 @@ package final class NotificationRepositioner: ObservableObject {
         }
         let anchors = Dictionary(items.map { ($0.id, allCustom ? ownAnchor($0) : shared) },
                                  uniquingKeysWith: { a, _ in a })
-        let piles = PileOrder.split(current: arranged, previous: previous.map(\.id), leaving: leaving) {
+        // A banner that arrives as another leaves is macOS replacing one with the
+        // other. Holding the leaving slot put the newcomer beside it and then slid
+        // it over; instead the newcomer takes its place while the old one fades.
+        let arriving = items.contains { item in !previous.contains { $0.id == item.id } }
+        let piles = PileOrder.split(current: arranged, previous: previous.map(\.id),
+                                    leaving: arriving ? [] : leaving) {
             anchors[$0] ?? slots[$0]?.anchor ?? shared
         }
 
@@ -1730,7 +1755,14 @@ package final class NotificationRepositioner: ObservableObject {
             return true
         }
         func size(of id: String) -> CGSize {
-            if let item = live[id] { return CGSize(width: item.size.width * scale(item), height: item.size.height * scale(item)) }
+            if let item = live[id] {
+                let measured = CGSize(width: item.size.width * scale(item), height: item.size.height * scale(item))
+                // A banner on its way out narrows as macOS animates it; keep the width it settled at.
+                if let slot = slots[id], !placingFromSettings {
+                    return CGSize(width: slot.size.width, height: measured.height)
+                }
+                return measured
+            }
             return slots[id]?.size ?? .zero
         }
         let gap = Self.pileGap
@@ -1780,8 +1812,10 @@ package final class NotificationRepositioner: ObservableObject {
         // Make room first: while the pile glides aside, a new overlay would land
         // on the one still leaving its slot. Its slot is kept, and it slides in
         // once the glide is over.
+        // With nothing leaving there is no slot to land on, and waiting out the glide
+        // held each new banner back by about 0.3 s; it comes in as the pile moves.
         let settles = next.map { customBannerManager.glideEnd(key: overlayKey($0.id)) }.max() ?? 0
-        if !arrivals.isEmpty, settles > now {
+        if !arrivals.isEmpty, settles > now, !leaving.isEmpty {
             DispatchQueue.main.asyncAfter(deadline: .now() + (settles - now) + 0.02) { [weak self] in
                 self?.repositionVisibleWindows()
             }
