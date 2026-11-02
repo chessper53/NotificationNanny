@@ -599,7 +599,10 @@ package final class NotificationRepositioner: ObservableObject {
         defer { sweepBanners = nil }
         playSounds(in: windows)
         if !dismissTimers.armedIDs.isEmpty || !closedBannerIDs.isEmpty || !unreadableBannerSweeps.isEmpty
-            || !bannerFirstSeen.isEmpty {
+            || !bannerFirstSeen.isEmpty,
+           // A collapsed stack hides every card but its top one; they are still up,
+           // and forgetting when they arrived reordered the pile once it opened.
+           !windows.contains(where: hasCollapsedStack) {
             let present = Set(windows.flatMap { banners(in: $0) }.compactMap(\.id))
             dismissTimers.prune(keeping: present)
             closedBannerIDs.formIntersection(present)
@@ -1636,9 +1639,37 @@ package final class NotificationRepositioner: ObservableObject {
         CFHashCode(truncatingIfNeeded: bannerID.hashValue)
     }
 
+    /// When an app has several banners up, macOS folds them into one stack and the
+    /// accessibility tree shows only the top card, so the custom pile drew one banner.
+    /// Pressing the stack (the host is off screen) opens it and every card shows up
+    /// as its own banner, with the top card keeping the stack's identifier.
+    private var stackPressedAt: [String: Double] = [:]
+
     /// The width macOS banners read at once they have settled.
     private var restingBannerWidth: CGFloat?
     private static let bannerSettleTime: Double = 0.6
+
+    private func hasCollapsedStack(_ window: AXUIElement) -> Bool {
+        banners(in: window).contains {
+            $0.element.stringAttribute(kAXSubroleAttribute as String)?.hasSuffix("Stack") == true
+        }
+    }
+
+    private func expandCollapsedStacks(in window: AXUIElement) -> Bool {
+        let now = ProcessInfo.processInfo.systemUptime
+        stackPressedAt = stackPressedAt.filter { now - $0.value < 5 }
+        var pressed = false
+        for ref in banners(in: window) {
+            guard let id = ref.id,
+                  ref.element.stringAttribute(kAXSubroleAttribute as String)?.hasSuffix("Stack") == true,
+                  now - (stackPressedAt[id] ?? -.infinity) > 1 else { continue }
+            stackPressedAt[id] = now
+            let result = AXUIElementPerformAction(ref.element, kAXPressAction as CFString)
+            logger.log("Collapsed stack \(id.prefix(8)) — pressed to open (AX \(result.rawValue))", tag: "Custom")
+            if result == .success { pressed = true }
+        }
+        return pressed
+    }
 
     private func dismissCustomPile(_ windowKey: CFHashCode) {
         for slot in customPiles.removeValue(forKey: windowKey) ?? [] {
@@ -1657,6 +1688,14 @@ package final class NotificationRepositioner: ObservableObject {
         guard let settings else { return }
         let windowKey = CFHash(window)
         hideOffscreen(window, atX: t.windowOrigin.x)
+        if expandCollapsedStacks(in: window) {
+            // The cards come up as siblings once the stack has opened; read them then.
+            // Syncing now would take the hidden cards for gone and play them out.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
+                self?.repositionVisibleWindows()
+            }
+            return
+        }
 
         struct Item {
             let id: String
