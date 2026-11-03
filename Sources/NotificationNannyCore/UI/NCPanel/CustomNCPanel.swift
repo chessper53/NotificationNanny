@@ -641,7 +641,11 @@ private struct GroupView: View {
                 RowView(row: row, takeover: takeover)
                 // A collapsed stack: the edges of the cards behind it, under its own.
                 if row.isStack {
-                    StackEdges(tint: takeover.tint(row.appName)).padding(.top, -NCPanelMetrics.rowGap * s)
+                    // Part of the stack: a click on them expands it, as on the system's.
+                    StackEdges(tint: takeover.tint(row.appName))
+                        .contentShape(Rectangle())
+                        .onTapGesture { takeover.activate(row) }
+                        .padding(.top, -NCPanelMetrics.rowGap * s)
                 }
             }
         }
@@ -665,6 +669,7 @@ private struct RowView: View {
         c.expanded = row.expanded
         c.reply = row.reply
         c.replyPlaceholder = row.replyPlaceholder
+        c.time = row.time
         return c
     }
 
@@ -691,19 +696,10 @@ private struct RowView: View {
             // than jumping at each.
             .animation(.smooth(duration: 0.22), value: row.height)
             .animation(.smooth(duration: 0.22), value: row.expanded)
+            // Nothing of a row ever reaches the next: its text fits in it, and while it
+            // grows or shrinks what doesn't fit yet is cut off.
+            .clipShape(shape)
             .panelBackdrop(shape)
-            .overlay(alignment: .topTrailing) {
-                // Notification Center's own time, where it draws it; the hover controls take
-                // its place, as on the system's.
-                if !hovering, !row.expanded, let time = row.time {
-                    Text(time)
-                        .font(.system(size: 11 * s).monospacedDigit())
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                        .padding(.top, 13 * s).padding(.trailing, 14 * s)
-                        .allowsHitTesting(false)
-                }
-            }
             .overlay(alignment: .topLeading) {
                 if hovering {
                     CloseButton { takeover.close(row) }
