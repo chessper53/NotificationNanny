@@ -216,7 +216,7 @@ final class NCPanelTakeover: ObservableObject {
         options = readOptions()
         let screen = preferredScreen() ?? Self.screen(atAXPoint: origin) ?? NSScreen.main ?? NSScreen.screens[0]
         onBegin?()
-        refresh()
+        refresh(now: true)
         // Clicks in Settings too: dragging the panel's place there would close it otherwise.
         router.otherWindows = { [weak self] in
             NSApp.windows.filter { $0.isVisible && $0.level == .normal && $0 !== self?.panel.window }
@@ -293,7 +293,13 @@ final class NCPanelTakeover: ObservableObject {
         sectionButtons = [:]
         editWidgetsButton = nil
         clearMenuButton = nil
-        snapshot = .empty
+        // What it shows stays until its way out has played: emptied at once, the rows and
+        // widgets were gone while Edit Widgets still slid away.
+        DispatchQueue.main.asyncAfter(deadline: .now() + options.animation.outroDuration + 0.1) { [weak self] in
+            guard let self, !self.isActive else { return }
+            self.snapshot = .empty
+            self.widgets = []
+        }
         logger.log("Custom Notification Center closed (\(reason))", tag: "Panel")
     }
 
@@ -342,50 +348,91 @@ final class NCPanelTakeover: ObservableObject {
     /// NN_TIMING=1 (scripts/notify-lab, panel-lab) writes how long each read of the list took.
     private static let timing = ProcessInfo.processInfo.environment["NN_TIMING"] == "1"
 
-    private func refresh() {
+    /// What one read of Notification Center's window found.
+    private struct ListRead {
+        /// The list's children that decide the layout, with their elements; nil with no list.
+        var entries: [(NCListEntry, AXUIElement)]?
+        var editWidgets: AXUIElement?
+        var clearMenu: AXUIElement?
+        var footer = NCPanelFooter()
+    }
+
+    /// Notification Center's own names and roles a read needs, taken on the main thread.
+    private struct ReadNames {
+        let subroles: Set<String>
+        let builtIn: Set<String>
+        let hideDetails: Set<String>
+        let labFilter: String?
+    }
+
+    private var readNames: ReadNames {
+        ReadNames(subroles: AppNameResolver.bannerSubroles, builtIn: NCActionNames.builtIn,
+                  hideDetails: NCActionNames.hideDetails, labFilter: Self.labFilter)
+    }
+
+    /// Reads of the list happen here: with many notifications one took tens of
+    /// milliseconds of Accessibility calls, and on the main thread clicks, typing and
+    /// drawing waited for each.
+    private static let readQueue = DispatchQueue(label: "com.notificationnanny.panel-read", qos: .userInteractive)
+    private var reading = false
+    private var readAgain = false
+
+    /// Reads the list again. `now` reads it on the main thread and waits, for the panel's
+    /// opening, which can't show before it has a list.
+    private func refresh(now: Bool = false) {
+        readWidgets()
+        guard let window else {
+            if snapshot != .empty { snapshot = .empty }
+            return
+        }
+        let names = readNames
+        if now {
+            apply(Self.read(window, names))
+            return
+        }
+        // One read at a time; events meanwhile make one more after it.
+        guard !reading else { readAgain = true; return }
+        reading = true
+        let started = ProcessInfo.processInfo.systemUptime
+        Self.readQueue.async {
+            let result = Self.read(window, names)
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated { [weak self] in
+                    guard let self else { return }
+                    self.reading = false
+                    if Self.timing {
+                        let ms = Int((ProcessInfo.processInfo.systemUptime - started) * 1000)
+                        FileHandle.standardError.write(Data("[timing] panel read \(ms) ms off the main thread\n".utf8))
+                    }
+                    // A read of a panel since closed, or of another window, is dropped.
+                    if self.isActive, let current = self.window, CFEqual(current, window) { self.apply(result) }
+                    if self.readAgain {
+                        self.readAgain = false
+                        self.refresh()
+                    }
+                }
+            }
+        }
+    }
+
+    private func apply(_ read: ListRead) {
         let started = ProcessInfo.processInfo.systemUptime
         defer {
             if Self.timing {
                 let ms = Int((ProcessInfo.processInfo.systemUptime - started) * 1000)
-                FileHandle.standardError.write(Data("[timing] panel refresh \(ms) ms, \(snapshot.rowCount) rows\n".utf8))
+                FileHandle.standardError.write(Data("[timing] panel apply \(ms) ms, \(snapshot.rowCount) rows\n".utf8))
             }
         }
-        readWidgets()
-        // With no notifications there may be no list, and the footer is all there is.
-        if let window { readFooter(in: window) }
-        guard let window, let list = Self.findList(in: window) else {
+        editWidgetsButton = read.editWidgets
+        clearMenuButton = read.clearMenu
+        if read.footer != footer { footer = read.footer }
+        guard let pairs = read.entries else {
             if snapshot != .empty { snapshot = .empty }
             return
         }
-        var entries: [NCListEntry] = []
-        var elements: [AXUIElement] = []
-        // In a lab run, a header of an app filtered out goes with its buttons.
-        var skippingHeader = false
-        for child in Self.visualOrder(list.children()) {
-            let role = child.stringAttribute(kAXRoleAttribute as String)
-            if skippingHeader, role == (kAXButtonRole as String) { continue }
-            skippingHeader = false
-            if let sub = child.stringAttribute(kAXSubroleAttribute as String), AppNameResolver.bannerSubroles.contains(sub) {
-                guard let row = Self.readRow(child, subrole: sub) else { continue }
-                if let only = Self.labFilter, !row.appName.hasPrefix(only) { continue }
-                entries.append(.row(row))
-            } else if role == "AXHeading" {
-                let text = cleanAXString(child.stringAttribute("AXAttributedDescription")
-                    ?? child.stringAttribute(kAXDescriptionAttribute as String) ?? "")
-                if let only = Self.labFilter, !text.hasPrefix(only) {
-                    skippingHeader = true
-                    continue
-                }
-                entries.append(.heading(text))
-            } else if role == (kAXButtonRole as String) {
-                entries.append(.button)
-            } else {
-                continue
-            }
-            elements.append(child)
-        }
+        let entries = pairs.map(\.0)
         let next = NCPanelSnapshot.build(from: entries)
-        mapElements(entries: entries, elements: elements)
+        mapElements(entries: entries, elements: pairs.map(\.1))
         if next != snapshot {
             if Self.timing { // DEBUG-CLICK
                 let rows = next.sections.flatMap(\.groups).flatMap(\.rows).map { "\($0.title):\($0.isStack ? "stack" : "row"):\(Int($0.height))" }
@@ -395,17 +442,46 @@ final class NCPanelTakeover: ObservableObject {
         }
     }
 
-    /// The buttons under the list: Edit Widgets, and the ✕ with its Clear Notifications
-    /// menu, which is only there while there is something to clear (measured on 27.0).
-    private func readFooter(in window: AXUIElement) {
-        guard let scroll = Self.find(in: window, depth: 0, { $0.stringAttribute(kAXRoleAttribute as String) == (kAXScrollAreaRole as String) })
-        else { return }
-        let kids = scroll.children()
-        editWidgetsButton = kids.first { $0.identifier == "widget-editor-button" }
-        clearMenuButton = kids.first { $0.stringAttribute(kAXRoleAttribute as String) == "AXMenuButton" && $0.identifier == "xmark" }
-        let next = NCPanelFooter(editWidgets: editWidgetsButton.flatMap { $0.stringAttribute("AXAttributedDescription") },
-                                 clear: clearMenuButton.flatMap { $0.stringAttribute(kAXTitleAttribute as String) })
-        if next != footer { footer = next }
+    /// The list and the footer under it, from Notification Center's window. Only
+    /// Accessibility reads, so it runs on any thread.
+    private nonisolated static func read(_ window: AXUIElement, _ names: ReadNames) -> ListRead {
+        var result = ListRead()
+        // The buttons under the list: Edit Widgets, and the ✕ with its Clear Notifications
+        // menu, which is only there while there is something to clear (measured on 27.0).
+        // With no notifications there may be no list, and the footer is all there is.
+        if let scroll = find(in: window, depth: 0, { $0.stringAttribute(kAXRoleAttribute as String) == (kAXScrollAreaRole as String) }) {
+            let kids = scroll.children()
+            result.editWidgets = kids.first { $0.identifier == "widget-editor-button" }
+            result.clearMenu = kids.first { $0.stringAttribute(kAXRoleAttribute as String) == "AXMenuButton" && $0.identifier == "xmark" }
+            result.footer = NCPanelFooter(editWidgets: result.editWidgets.flatMap { $0.stringAttribute("AXAttributedDescription") },
+                                          clear: result.clearMenu.flatMap { $0.stringAttribute(kAXTitleAttribute as String) })
+        }
+        guard let list = findList(in: window, subroles: names.subroles) else { return result }
+        var entries: [(NCListEntry, AXUIElement)] = []
+        // In a lab run, a header of an app filtered out goes with its buttons.
+        var skippingHeader = false
+        for child in visualOrder(list.children()) {
+            let role = child.stringAttribute(kAXRoleAttribute as String)
+            if skippingHeader, role == (kAXButtonRole as String) { continue }
+            skippingHeader = false
+            if let sub = child.stringAttribute(kAXSubroleAttribute as String), names.subroles.contains(sub) {
+                guard let row = readRow(child, subrole: sub, names) else { continue }
+                if let only = names.labFilter, !row.appName.hasPrefix(only) { continue }
+                entries.append((.row(row), child))
+            } else if role == "AXHeading" {
+                let text = cleanAXString(child.stringAttribute("AXAttributedDescription")
+                    ?? child.stringAttribute(kAXDescriptionAttribute as String) ?? "")
+                if let only = names.labFilter, !text.hasPrefix(only) {
+                    skippingHeader = true
+                    continue
+                }
+                entries.append((.heading(text), child))
+            } else if role == (kAXButtonRole as String) {
+                entries.append((.button, child))
+            }
+        }
+        result.entries = entries
+        return result
     }
 
     /// Records which element answers for which row and header button, the same way
@@ -442,7 +518,7 @@ final class NCPanelTakeover: ObservableObject {
     /// a stack expanded after others came first in the list, above rows it is drawn below
     /// (measured on 27.0). Top to bottom, and a header's buttons after its heading, which
     /// sit on the same line.
-    static func visualOrder(_ elements: [AXUIElement]) -> [AXUIElement] {
+    nonisolated static func visualOrder(_ elements: [AXUIElement]) -> [AXUIElement] {
         let framed = elements.map { ($0, $0.point() ?? .zero) }.sorted { $0.1.y < $1.1.y }
         var lines: [[(AXUIElement, CGPoint)]] = []
         for item in framed {
@@ -455,20 +531,20 @@ final class NCPanelTakeover: ObservableObject {
         return lines.flatMap { $0.sorted { $0.1.x < $1.1.x }.map(\.0) }
     }
 
-    private static func findList(in el: AXUIElement, depth: Int = 0) -> AXUIElement? {
+    private nonisolated static func findList(in el: AXUIElement, subroles: Set<String>, depth: Int = 0) -> AXUIElement? {
         guard depth < 8 else { return nil }
         if el.identifier == "AXNotificationListItems" { return el }
         // Rows sit inside the list; nothing to find below one.
-        if let sub = el.stringAttribute(kAXSubroleAttribute as String), AppNameResolver.bannerSubroles.contains(sub) {
+        if let sub = el.stringAttribute(kAXSubroleAttribute as String), subroles.contains(sub) {
             return nil
         }
         for child in el.children() {
-            if let found = findList(in: child, depth: depth + 1) { return found }
+            if let found = findList(in: child, subroles: subroles, depth: depth + 1) { return found }
         }
         return nil
     }
 
-    private static func readRow(_ el: AXUIElement, subrole: String) -> NCPanelRow? {
+    private nonisolated static func readRow(_ el: AXUIElement, subrole: String, _ names: ReadNames) -> NCPanelRow? {
         guard let id = el.identifier else { return nil }
         let description = el.stringAttribute("AXAttributedDescription") ?? ""
         let appName = AppNameResolver.appName(fromDescription: description) ?? "Notification"
@@ -480,10 +556,10 @@ final class NCPanelTakeover: ObservableObject {
         }.flatMap { $0.stringAttribute(kAXValueAttribute as String) }.map(cleanAXString).flatMap { $0.isEmpty ? nil : $0 }
         return NCPanelRow(id: id, appName: appName, title: lines["title"] ?? "", subtitle: lines["subtitle"] ?? "",
                           body: lines["body"] ?? "", isStack: subrole.hasSuffix("Stack"),
-                          actions: NotificationActions.appActions(of: el),
+                          actions: NotificationActions.appActions(of: el, builtIn: names.builtIn),
                           reply: field.map { $0.stringAttribute(kAXValueAttribute as String) ?? "" },
                           replyPlaceholder: field?.stringAttribute(kAXPlaceholderValueAttribute as String) ?? "",
-                          expanded: NotificationActions.isExpanded(el),
+                          expanded: NotificationActions.isExpanded(el, hideDetails: names.hideDetails),
                           height: el.size()?.height ?? 58, time: time)
     }
 
@@ -537,7 +613,7 @@ final class NCPanelTakeover: ObservableObject {
         return frames.dropFirst().reduce(frames.first) { $0?.union($1) }
     }
 
-    private static func find(in el: AXUIElement, depth: Int, _ match: (AXUIElement) -> Bool) -> AXUIElement? {
+    private nonisolated static func find(in el: AXUIElement, depth: Int, _ match: (AXUIElement) -> Bool) -> AXUIElement? {
         guard depth < 6 else { return nil }
         if match(el) { return el }
         for child in el.children() {
@@ -582,7 +658,6 @@ final class NCPanelTakeover: ObservableObject {
         widgetTimer?.invalidate()
         widgetTimer = nil
         cover.hide()
-        widgets = []
         widgetElements = [:]
     }
 
@@ -772,7 +847,7 @@ final class NCPanelTakeover: ObservableObject {
     /// Reads one row again and puts it in place, the rest of the list as it was.
     private func refreshRow(_ id: String) {
         guard let el = rowElements[id], let sub = el.stringAttribute(kAXSubroleAttribute as String),
-              let fresh = Self.readRow(el, subrole: sub) else { return }
+              let fresh = Self.readRow(el, subrole: sub, readNames) else { return }
         var next = snapshot
         for s in next.sections.indices {
             for g in next.sections[s].groups.indices {

@@ -53,7 +53,7 @@ final class AppNameResolver {
     /// The app a single banner belongs to, from its description ("App, Title,
     /// Body"). `appName(for:)` answers for a window, which since macOS 26 holds
     /// every banner that is up.
-    static func appName(fromDescription description: String) -> String? {
+    nonisolated static func appName(fromDescription description: String) -> String? {
         guard let first = description.components(separatedBy: ", ").first else { return nil }
         let cleaned = cleanAXString(first)
         return cleaned.isEmpty ? nil : cleaned
