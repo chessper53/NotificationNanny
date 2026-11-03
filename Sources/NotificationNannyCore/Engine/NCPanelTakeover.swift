@@ -326,9 +326,15 @@ final class NCPanelTakeover: ObservableObject {
 
     // MARK: - Reading the list
 
+    /// At most 40 ms after the first event, not the last: Notification Center sends them
+    /// all through an animation (a stack expanding), and put off each time, ours caught
+    /// up only once it had finished.
     private func scheduleRefresh() {
-        pendingRefresh?.cancel()
-        let item = DispatchWorkItem { [weak self] in self?.refresh() }
+        if let pending = pendingRefresh, !pending.isCancelled { return }
+        let item = DispatchWorkItem { [weak self] in
+            self?.pendingRefresh = nil
+            self?.refresh()
+        }
         pendingRefresh = item
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.04, execute: item)
     }
@@ -674,7 +680,11 @@ final class NCPanelTakeover: ObservableObject {
             refreshSoon()
             // With a reply open, Notification Center spends the first press on closing it
             // and only the second expands the stack (measured on 27.0, scripts/panel-lab
-            // `real-expand-while-reply`). One click should do what it says.
+            // `real-expand-while-reply`). One click should do what it says. Only then:
+            // otherwise a stack still expanding 0.35 s on reads as a stack yet, and the
+            // second press undid the first, so a stack only sometimes opened.
+            let replyOpen = snapshot.sections.contains { $0.groups.contains { $0.rows.contains { $0.reply != nil } } }
+            guard replyOpen else { return }
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [weak self] in
                 guard let self, self.isActive, let el = self.rowElements[row.id],
                       el.stringAttribute(kAXSubroleAttribute as String)?.hasSuffix("Stack") == true else { return }
