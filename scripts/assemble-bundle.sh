@@ -62,6 +62,18 @@ for lproj in "${ROOT}"/Resources/*.lproj; do
 done
 
 # Ad-hoc codesigning, required for Accessibility TCC to attach to a code identity.
-codesign --force --deep --sign - \
+# DEV_SIGNING=1 (dev.sh, panel-lab) signs with the dev identity instead, the same for every
+# build, so Accessibility and Screen Recording stay allowed from one build to the next;
+# see dev-signing.sh. Release builds stay ad-hoc.
+IDENTITY="-"
+KEYCHAIN_ARGS=()
+if [[ "${DEV_SIGNING:-}" == 1 ]]; then
+    "${ROOT}/scripts/dev-signing.sh"
+    KEYCHAIN="${ROOT}/build/dev-signing/dev.keychain-db"
+    security unlock-keychain -p notificationnanny-dev "${KEYCHAIN}"
+    IDENTITY="$(cat "${ROOT}/build/dev-signing/identity")"
+    KEYCHAIN_ARGS=(--keychain "${KEYCHAIN}")
+fi
+codesign --force --deep --sign "${IDENTITY}" ${KEYCHAIN_ARGS[@]+"${KEYCHAIN_ARGS[@]}"} \
     --entitlements "${ROOT}/Resources/NotificationNanny.entitlements" \
     "${APP_DIR}"
