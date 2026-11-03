@@ -941,9 +941,39 @@ package final class NotificationRepositioner: ObservableObject {
     private var targetBannerSize: CGSize = .zero
 
     /// Puts back what can't wait for later: Notification Center's window, if the custom
-    /// panel just closed and is still waiting for the real one to finish leaving.
+    /// panel just closed and is still waiting for the real one to finish leaving, and any
+    /// of its windows still hidden for a custom banner. Left there once we are gone, every
+    /// banner after it arrived in it, off screen (seen on 27.0: a banner up at quit, one
+    /// more posted after, and it never showed).
     package func prepareForQuit() {
         panelTakeover.finishClosing()
+        guard let ncApp else { return }
+        var value: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(ncApp, kAXWindowsAttribute as CFString, &value) == .success,
+              let windows = value as? [AXUIElement] else { return }
+        let screens = Self.axScreenFrames
+        for window in windows where !isProtectedWidget(window) {
+            guard let p = window.point(), let home = Self.homeOrigin(forParked: p, screens: screens) else { continue }
+            setWindowPosition(window, to: home)
+            logger.log("Quitting — put Notification Center's window back from (\(Int(p.x)),\(Int(p.y))) to (\(Int(home.x)),\(Int(home.y)))", tag: "AX")
+        }
+    }
+
+    /// Where a window parked off screen belongs: the top left of the screen across from it
+    /// (hidden for a banner, it keeps its x), or of the main screen when its x is parked
+    /// too (display sleep). Nil for a window that isn't parked. AX coordinates.
+    static func homeOrigin(forParked p: CGPoint, screens: [CGRect]) -> CGPoint? {
+        guard p.x < -1000 || p.y < -1000, let main = screens.first else { return nil }
+        let across = p.x < -1000 ? nil : screens.first { p.x >= $0.minX && p.x < $0.maxX }
+        let screen = across ?? main
+        return CGPoint(x: screen.minX, y: screen.minY)
+    }
+
+    /// Every screen's frame in AX coordinates (top left origin of the main display).
+    private static var axScreenFrames: [CGRect] {
+        guard let primary = NSScreen.screens.first else { return [] }
+        return NSScreen.screens.map { CGRect(x: $0.frame.minX, y: primary.frame.maxY - $0.frame.maxY,
+                                             width: $0.frame.width, height: $0.frame.height) }
     }
 
     func sendTestNotification(groupID: UUID?) {
