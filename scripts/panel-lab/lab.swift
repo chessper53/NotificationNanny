@@ -519,6 +519,83 @@ case "widget-shot":
     try? FileManager.default.removeItem(atPath: full)
     restore()
 
+case "widget-park":
+    // Where can the open panel's window be, unseen, and still have its widgets drawn for a
+    // capture? `widget-park <out> <x|top|off|home>`: parked as the app parks it, then moved
+    // so that only the window's left column is on screen at the right edge (x), only its
+    // bottom row at the top (top), nowhere (off), or back home. Writes the window number
+    // to <out>.wid for scripts/panel-lab/shot.sh to capture into <out>-full.png, waits for
+    // it, keeps only the widgets' crops (<out>-0.png…) and deletes the full capture.
+    let out = args.dropFirst().first ?? "build/panel-lab/park"
+    let mode = args.dropFirst(2).first ?? "x"
+    guard let screen = NSScreen.screens.first else { exit(1) }
+    guard pressClock(), waitFor(3, { isOpen() }) != nil, let h = host(), let hf = frame(h) else {
+        print("panel did not open"); restore(); exit(1)
+    }
+    hostHome = hf.origin
+    _ = setPoint(h, CGPoint(x: hf.minX, y: -9999))
+    spin(0.5)
+    let target: CGPoint
+    switch mode {
+    case "x": target = CGPoint(x: screen.frame.maxX - 1, y: hf.minY)
+    case "top": target = CGPoint(x: hf.minX, y: -(hf.height - 1))
+    case "home": target = hf.origin
+    default: target = CGPoint(x: hf.minX, y: -9999)
+    }
+    _ = setPoint(h, target)
+    // Notification Center may put it back; held where it was put.
+    for _ in 0..<8 { spin(0.1); if let p = frame(h)?.origin, hypot(p.x - target.x, p.y - target.y) > 1 { _ = setPoint(h, target) } }
+    let widgets = { () -> [CGRect] in
+        var found: [AXUIElement] = []
+        func walk(_ e: AXUIElement, _ d: Int) {
+            guard d < 10 else { return }
+            if (str(e, kAXIdentifierAttribute) ?? "").hasPrefix("widget-local:") { found.append(e); return }
+            if str(e, kAXIdentifierAttribute) == "AXNotificationListItems" { return }
+            for c in children(e) { walk(c, d + 1) }
+        }
+        walk(h, 0)
+        let o = frame(h)?.origin ?? .zero
+        return found.compactMap(frame).map { CGRect(x: $0.minX - o.x, y: $0.minY - o.y, width: $0.width, height: $0.height) }
+    }()
+    let list = CGWindowListCopyWindowInfo([.optionAll], kCGNullWindowID) as? [[String: Any]] ?? []
+    let wid = list.first { info in
+        guard info[kCGWindowOwnerPID as String] as? pid_t == nc.processIdentifier,
+              let b = info[kCGWindowBounds as String] as? NSDictionary,
+              let r = CGRect(dictionaryRepresentation: b as CFDictionary) else { return false }
+        return abs(r.width - hf.width) < 2 && abs(r.height - hf.height) < 2
+    }?[kCGWindowNumber as String] as? Int
+    print("mode \(mode): window \(wid.map(String.init) ?? "?") at \(frame(h).map { "(\(Int($0.minX)),\(Int($0.minY)))" } ?? "?"), \(widgets.count) widget(s): \(widgets.map { "\(Int($0.minX)),\(Int($0.minY)) \(Int($0.width))x\(Int($0.height))" })")
+    let full = out + "-full.png"
+    try? FileManager.default.removeItem(atPath: full)
+    try? "\(wid ?? 0)".write(toFile: out + ".wid", atomically: true, encoding: .utf8)
+    var waited = 0.0
+    while !FileManager.default.fileExists(atPath: full + ".txt"), waited < 15 {
+        spin(0.1); waited += 0.1
+        if let p = frame(h)?.origin, hypot(p.x - target.x, p.y - target.y) > 1 { _ = setPoint(h, target) }
+    }
+    if let img = NSImage(contentsOfFile: full), let cg = img.cgImage(forProposedRect: nil, context: nil, hints: nil) {
+        let scale = CGFloat(cg.width) / hf.width
+        for (i, r) in widgets.enumerated() {
+            guard let part = cg.cropping(to: CGRect(x: r.minX * scale, y: r.minY * scale, width: r.width * scale, height: r.height * scale)) else { continue }
+            // How much is drawn there: the spread of brightness, 0 for a blank picture.
+            let rep = NSBitmapImageRep(cgImage: part)
+            var lo = 1.0, hi = 0.0
+            for y in stride(from: 0, to: rep.pixelsHigh, by: 4) { for x in stride(from: 0, to: rep.pixelsWide, by: 4) {
+                if let c = rep.colorAt(x: x, y: y) { let v = Double(c.brightnessComponent) * Double(c.alphaComponent); lo = min(lo, v); hi = max(hi, v) }
+            } }
+            try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: "\(out)-\(i).png"))
+            print("   widget \(i): brightness spread \(String(format: "%.2f", hi - lo)) → \(out)-\(i).png")
+        }
+    } else {
+        print("   nothing captured: \((try? String(contentsOfFile: full + ".txt", encoding: .utf8)) ?? "no report")")
+    }
+    try? FileManager.default.removeItem(atPath: full)
+    try? FileManager.default.removeItem(atPath: full + ".txt")
+    try? FileManager.default.removeItem(atPath: out + ".wid")
+    closePanel()
+    spin(0.3)
+    restore()
+
 case "widget-cover":
     // The real panel left on screen under an opaque window of ours: can its widgets be
     // captured then, and does it stay hidden? Saves only the widgets' crop.
