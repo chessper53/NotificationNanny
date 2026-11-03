@@ -11,6 +11,7 @@
 #   shut                  close the panel if it is open (a clock press would reopen it)
 #   scroll                scroll the wheel over our panel
 #   state                 what our panel and Notification Center's show
+#   frames                where each text is in our rows and in Notification Center's
 #   count                 the same as numbers only, for PANEL_FILTER= runs
 #   shot:name             capture our panel into build/panel-lab/name.png
 #   sshot:name            the same, as it is on screen, desktop and all
@@ -97,6 +98,8 @@ for key in keys:
         subprocess.run(["defaults", "delete", domain, key], capture_output=True)
     elif isinstance(value, bool):
         subprocess.run(["defaults", "write", domain, key, "-bool", "YES" if value else "NO"], check=True)
+    elif isinstance(value, int):
+        subprocess.run(["defaults", "write", domain, key, "-integer", str(value)], check=True)
     elif isinstance(value, datetime.datetime):
         subprocess.run(["defaults", "write", domain, key, "-date", value.strftime("%Y-%m-%d %H:%M:%S +0000")], check=True)
     else:
@@ -155,6 +158,7 @@ for step in "$@"; do
         apps)   for b in $arg; do pgrep -xq "$b" && echo "   $b running" || echo "   $b not running"; done ;;
         scroll) "$OUT/lab" ui-scroll "$NN_PID" ;;
         state)  "$OUT/lab" ui-state "$NN_PID" ;;
+        frames) "$OUT/lab" ui-frames "$NN_PID" ;;
         count)  "$OUT/lab" ui-count "$NN_PID" ;;
         shot)   id=$("$OUT/lab" ui-winid "$NN_PID") && screencapture -x -o -l "$id" "$OUT/$arg.png" && echo "   $OUT/$arg.png" ;;
         # The same area as it is on screen, with the desktop behind: our panel is transparent.
