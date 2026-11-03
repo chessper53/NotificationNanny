@@ -127,6 +127,12 @@ final class CustomNCPanelController {
             takeover.showMenu(for: row, withAppActions: true, at: point, trailing: false)
         }
         window.contentView = host
+        if ProcessInfo.processInfo.environment["NN_TIMING"] == "1" { // DEBUG-CLICK
+            NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak window] event in
+                FileHandle.standardError.write(Data("[app] scroll \(event.scrollingDeltaY) to window \(event.windowNumber), panel \(window?.windowNumber ?? -1)\n".utf8))
+                return event
+            }
+        }
     }
 
     func show(on screen: NSScreen) {
@@ -406,6 +412,10 @@ struct CustomNCPanelView: View {
             })
         }
         .frame(width: CustomNCPanelController.width(o), height: listHeight)
+        // The window server sends a scroll over a clear pixel to the window behind: in the
+        // gaps between rows and stacks the scroll moved what was under the panel. Clicks
+        // there are ours already (PanelClickRouter). One level of alpha, too little to see.
+        .background(Color.black.opacity(0.005))
     }
 
     /// A menu over the panel, with a layer under it that closes it on a click elsewhere in
