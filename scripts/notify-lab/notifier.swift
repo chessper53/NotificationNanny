@@ -78,8 +78,10 @@ final class Delegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterD
         let body = args.count > 1 && !args[1].hasPrefix("--") ? args[1] : "Sent by notify-lab"
         let category = args.contains("--archive-only") ? archiveCategoryID
             : args.contains("--actions") ? categoryID : args.contains("--reply") ? replyCategoryID : nil
+        // --subtitle Text: a second bold line, as mail apps send.
+        let subtitle = args.firstIndex(of: "--subtitle").flatMap { $0 + 1 < args.count ? args[$0 + 1] : nil } ?? ""
         Task { @MainActor in
-            await post(title: title, body: body, category: category)
+            await post(title: title, subtitle: subtitle, body: body, category: category)
             // Stay a moment, in case the response arrives while still running.
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
                 if !self.handledResponse { NSApp.terminate(nil) }
@@ -107,7 +109,7 @@ final class Delegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterD
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { NSApp.terminate(nil) }
     }
 
-    private func post(title: String, body: String, category: String?) async {
+    private func post(title: String, subtitle: String, body: String, category: String?) async {
         let center = UNUserNotificationCenter.current()
         var status = await center.notificationSettings().authorizationStatus
         if status == .notDetermined {
@@ -120,6 +122,7 @@ final class Delegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterD
         }
         let content = UNMutableNotificationContent()
         content.title = title
+        content.subtitle = subtitle
         content.body = body
         if let category { content.categoryIdentifier = category }
         let request = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil)

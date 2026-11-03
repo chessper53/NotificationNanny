@@ -1358,7 +1358,7 @@ case "ui-menu":
         print("   press \(want): \(AXUIElementPerformAction(hit, kAXPressAction as CFString).rawValue)")
     }
 
-case "ui-state", "ui-click", "ui-close", "ui-button", "ui-winid", "ui-scroll", "ui-count", "ui-widget", "ui-hover", "ui-rect", "ui-rclick":
+case "ui-state", "ui-click", "ui-close", "ui-button", "ui-winid", "ui-scroll", "ui-count", "ui-widget", "ui-hover", "ui-rect", "ui-rclick", "ui-frames":
     guard args.count >= 2, let pid = pid_t(args[1]) else { print("usage: lab \(args[0]) <pid> [text]"); exit(64) }
     let nn = AXUIElementCreateApplication(pid)
     AXUIElementSetMessagingTimeout(nn, 2)
@@ -1400,6 +1400,28 @@ case "ui-state", "ui-click", "ui-close", "ui-button", "ui-winid", "ui-scroll", "
         // Our panel's frame as screencapture -R wants it.
         guard let f = nnWindows.compactMap(frame).first else { print("none"); exit(1) }
         print("\(Int(f.minX)),\(Int(f.minY)),\(Int(f.width)),\(Int(f.height))")
+    case "ui-frames":
+        // Where every text is, ours and Notification Center's own rows', from the top left
+        // of each row's window, to see overlaps and line counts without a screenshot.
+        func line(_ e: AXUIElement, origin: CGPoint) -> String {
+            guard let f = frame(e) else { return "?" }
+            let t = text(e).prefix(28)
+            return "y \(Int(f.minY - origin.y))..\(Int(f.maxY - origin.y)) x \(Int(f.minX - origin.x))..\(Int(f.maxX - origin.x)) h \(Int(f.height)) \"\(t)\""
+        }
+        if let w = nnWindows.first, let o = frame(w)?.origin {
+            print("ours:")
+            for e in elements where ["AXStaticText", "AXButton", "AXGroup"].contains(role(e)) && !(text(e).isEmpty && role(e) != "AXGroup") {
+                print("   \(role(e).dropFirst(2)) \(line(e, origin: o))")
+            }
+        }
+        print("Notification Center's:")
+        for row in labRows() {
+            guard let rf = frame(row) else { continue }
+            print("   row \(str(row, kAXSubroleAttribute)?.replacingOccurrences(of: "AXNotificationCenter", with: "") ?? "?") h \(Int(rf.height)) w \(Int(rf.width))")
+            for c in children(row) where str(c, kAXRoleAttribute) == "AXStaticText" {
+                print("      \(str(c, kAXIdentifierAttribute) ?? "time") \(line(c, origin: rf.origin))")
+            }
+        }
     case "ui-state":
         let panelFrame = nnWindows.compactMap(frame).max { $0.height < $1.height }
         print("our panel: \(panelFrame.map { "(\(Int($0.minX)),\(Int($0.minY)) \(Int($0.width))x\(Int($0.height)))" } ?? "none")")
