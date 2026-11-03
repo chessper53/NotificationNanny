@@ -10,23 +10,43 @@ import AppKit
 /// Recording.
 @MainActor
 final class WidgetCapture {
-    /// Captures `windowID` and cuts out each rect, given in points from the window's top left.
+    /// Captures the part of `windowID` with the rects and cuts out each, given in points from
+    /// the window's top left.
     func capture(windowID: CGWindowID, rects: [String: CGRect]) async -> [String: NSImage] {
-        guard !rects.isEmpty,
-              let content = try? await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: false),
+        guard !rects.isEmpty else { return [:] }
+        if let cached, cached.windowID == windowID {
+            let images = await capture(cached, rects: rects)
+            if !images.isEmpty { return images }
+        }
+        // Finding the window means listing every window there is, which took most of a
+        // capture's time; it is done once for Notification Center's, and again only when
+        // that one stops capturing.
+        cached = nil
+        guard let content = try? await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: false),
               let window = content.windows.first(where: { $0.windowID == windowID }) else { return [:] }
+        cached = window
+        return await capture(window, rects: rects)
+    }
+
+    private var cached: SCWindow?
+
+    private func capture(_ window: SCWindow, rects: [String: CGRect]) async -> [String: NSImage] {
         let filter = SCContentFilter(desktopIndependentWindow: window)
         let scale = CGFloat(filter.pointPixelScale)
+        // Only where the widgets are: the whole window is the screen's size, and a picture
+        // of all of it took some 170 ms every 2 s.
+        let area = rects.values.dropFirst().reduce(rects.values.first!) { $0.union($1) }.integral
         let config = SCStreamConfiguration()
-        config.width = Int(window.frame.width * scale)
-        config.height = Int(window.frame.height * scale)
+        config.sourceRect = area
+        config.width = Int(area.width * scale)
+        config.height = Int(area.height * scale)
         config.showsCursor = false
         config.ignoreShadowsSingleWindow = true
         guard let image = try? await SCScreenshotManager.captureImage(contentFilter: filter, configuration: config)
         else { return [:] }
         var result: [String: NSImage] = [:]
         for (id, rect) in rects {
-            let pixels = CGRect(x: rect.minX * scale, y: rect.minY * scale,
+            let pixels = CGRect(x: (rect.minX - area.minX) * scale, y: (rect.minY - area.minY) * scale,
                                 width: rect.width * scale, height: rect.height * scale).integral
             guard let part = image.cropping(to: pixels) else { continue }
             result[id] = NSImage(cgImage: part, size: rect.size)
