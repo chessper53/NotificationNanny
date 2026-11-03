@@ -100,12 +100,14 @@ final class NCPanelTakeover: ObservableObject {
     private var watchdog: Timer?
     private var pendingRefresh: DispatchWorkItem?
     /// Where the real panel's window belongs while ours is up: parked off screen, or with
-    /// widgets shown, right under ours, where it is drawn and so can be captured.
+    /// widgets shown, where it is drawn unseen and so can be captured (drawnOffScreen).
     private var desiredOrigin: CGPoint?
     private var widgetElements: [String: AXUIElement] = [:]
     private let widgetCapture = WidgetCapture()
+    /// The last picture of each widget, kept across openings: the panel opens with it, not
+    /// an empty box until the first capture, some 170 ms on.
+    private var widgetImages: [String: NSImage] = [:]
     private var widgetTimer: Timer?
-    private lazy var cover = NCPanelCover()
     private let actions = NotificationActions()
     /// Mirrors a reply while one is open: the typing goes to Notification Center's field.
     private var replyTimer: Timer?
@@ -581,7 +583,7 @@ final class NCPanelTakeover: ObservableObject {
         for (id, el) in found {
             guard let p = el.point(), let size = el.size() else { continue }
             let frame = CGRect(x: p.x - origin.x, y: p.y - origin.y, width: size.width, height: size.height)
-            next.append(NCWidget(id: id, frameInWindow: frame, image: previous[id]?.image))
+            next.append(NCWidget(id: id, frameInWindow: frame, image: previous[id]?.image ?? widgetImages[id]))
         }
         widgetElements = Dictionary(found, uniquingKeysWith: { a, _ in a })
         if next.map(\.id) != widgets.map(\.id) || next.map(\.frameInWindow) != widgets.map(\.frameInWindow) {
@@ -622,42 +624,70 @@ final class NCPanelTakeover: ObservableObject {
         return nil
     }
 
-    /// Brings the real panel from parked to right under ours, so it is drawn and its
-    /// widgets can be captured: first an opaque cover where it will land, then the move.
+    /// Where the real panel's window goes while ours shows its widgets: above the top
+    /// screen, all but its bottom row, which is on screen under the menu bar. A window
+    /// wholly off screen isn't drawn and its widgets capture as nothing; with that one row
+    /// on screen they capture as they look, and the row, empty in Notification Center's
+    /// window, changes no pixel (measured on 27.0, scripts/panel-lab `widget-park`). It
+    /// used to sit right under ours behind an opaque cover, which showed through our glass
+    /// rows and the gaps between them as a box. `screens` in AX coordinates.
+    static func drawnOffScreen(windowSize: CGSize, screens: [CGRect]) -> CGPoint? {
+        // No screen is above the one whose top edge is highest.
+        guard windowSize.height > 1, let top = screens.min(by: { $0.minY < $1.minY }) else { return nil }
+        let origin = CGPoint(x: top.minX, y: top.minY - windowSize.height + 1)
+        let hidden = CGRect(x: origin.x, y: origin.y, width: windowSize.width, height: windowSize.height - 1)
+        let seen = screens.contains { s in
+            let i = s.intersection(hidden)
+            return !i.isNull && i.width > 0 && i.height > 0
+        }
+        return seen ? nil : origin
+    }
+
+    /// Every screen's frame in AX coordinates (top left origin of the main display).
+    private static var axScreens: [CGRect] {
+        guard let primary = NSScreen.screens.first else { return [] }
+        return NSScreen.screens.map { CGRect(x: $0.frame.minX, y: primary.frame.maxY - $0.frame.maxY,
+                                             width: $0.frame.width, height: $0.frame.height) }
+    }
+
+    /// Where the real panel's window puts its column right under our rows, top right to
+    /// top right, for a click on one of its widgets.
+    private func underOurs() -> CGPoint? {
+        guard let content = panelContentRect(), let primary = NSScreen.screens.first else { return nil }
+        let ours = panel.window.frame
+        // Ours in AX coordinates (top left origin).
+        let oursTop = primary.frame.maxY - ours.maxY
+        let rows = CustomNCPanelController.rowsRect(in: ours, options: options)
+        return CGPoint(x: rows.maxX - content.maxX, y: oursTop + (ours.maxY - rows.maxY) - content.minY)
+    }
+
+    /// Brings the real panel from parked to where it is drawn unseen, and captures its
+    /// widgets every 2 s.
     private func startWidgets() {
         ScreenRecordingPermission.shared.refresh()
         if options.widgets, !ScreenRecordingPermission.shared.isGranted {
             logger.log("Widgets are on, but Screen Recording isn't allowed — leaving them out", level: .warn, tag: "Panel")
         }
         readWidgets()
-        guard showsWidgets, !widgets.isEmpty, let content = panelContentRect() else { return }
-        let ours = panel.window.frame
-        guard let primary = NSScreen.screens.first else { return }
-        // Ours in AX coordinates (top left origin).
-        let oursTop = primary.frame.maxY - ours.maxY
-        // Under our rows, top right to top right, wherever they are.
-        let rows = CustomNCPanelController.rowsRect(in: ours, options: options)
-        let target = CGPoint(x: rows.maxX - content.maxX, y: oursTop + (ours.maxY - rows.maxY) - content.minY)
-        let landed = content.offsetBy(dx: target.x, dy: target.y)
-        cover.show(axRect: landed.insetBy(dx: -4, dy: -4), below: panel.window)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
-            guard let self, self.isActive else { return }
-            self.desiredOrigin = target
-            self.keepInPlace()
-            self.captureWidgets()
-            let timer = Timer(timeInterval: 2, repeats: true) { [weak self] _ in
-                MainActor.assumeIsolated { self?.captureWidgets() }
-            }
-            RunLoop.main.add(timer, forMode: .common)
-            self.widgetTimer = timer
+        guard showsWidgets, !widgets.isEmpty, let window, let size = window.size() else { return }
+        guard let target = Self.drawnOffScreen(windowSize: size, screens: Self.axScreens) else {
+            logger.log("No place to draw Notification Center's widgets unseen — leaving them out", level: .warn, tag: "Panel")
+            return
         }
+        desiredOrigin = target
+        keepInPlace()
+        captureWidgets()
+        let timer = Timer(timeInterval: 2, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.captureWidgets() }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        widgetTimer = timer
         logger.log("Showing \(widgets.count) widget(s)", tag: "Panel")
     }
 
     private func stopWidgets() {
         widgetTimer?.invalidate()
         widgetTimer = nil
-        cover.hide()
         widgetElements = [:]
     }
 
@@ -670,7 +700,12 @@ final class NCPanelTakeover: ObservableObject {
         let rects = Dictionary(widgets.map { ($0.id, $0.frameInWindow) }, uniquingKeysWith: { a, _ in a })
         Task { @MainActor [weak self] in
             guard let self else { return }
+            let started = ProcessInfo.processInfo.systemUptime
             let images = await self.widgetCapture.capture(windowID: id, rects: rects)
+            if Self.timing {
+                let ms = Int((ProcessInfo.processInfo.systemUptime - started) * 1000)
+                FileHandle.standardError.write(Data("[timing] widget capture \(ms) ms, \(images.count) of \(rects.count)\n".utf8))
+            }
             guard self.isActive else { return }
             self.readWidgets()
             let settled = self.widgets.allSatisfy { w in
@@ -688,25 +723,33 @@ final class NCPanelTakeover: ObservableObject {
                 self.logger.log("Captured \(images.count) of \(rects.count) widget(s)", level: .warn, tag: "Panel")
             }
             for i in self.widgets.indices {
-                if let image = images[self.widgets[i].id] { self.widgets[i].image = image }
+                if let image = images[self.widgets[i].id] {
+                    self.widgets[i].image = image
+                    self.widgetImages[self.widgets[i].id] = image
+                }
             }
         }
     }
 
     /// A click on a widget's picture, `at` as a fraction of its size. Widgets offer nothing
-    /// to Accessibility, so the click goes to the real widget, which is right under ours:
-    /// for that one click our panel and the router let everything through, and a real
-    /// click lands on Notification Center's own window, which doesn't close its panel.
-    /// The pointer goes back to where it was.
+    /// to Accessibility, so the click goes to the real widget: for that one click the real
+    /// panel comes right under ours, where ours hides it, and our panel and the router let
+    /// everything through. A real click lands on Notification Center's own window, which
+    /// doesn't close its panel. The pointer goes back to where it was, and the real panel to
+    /// where it is drawn unseen.
     func click(_ widget: NCWidget, at fraction: CGPoint) {
-        guard let window, let origin = window.point() else { return }
+        guard let under = underOurs() else { return }
+        let parked = desiredOrigin
+        desiredOrigin = under
+        keepInPlace()
         let f = widget.frameInWindow
-        let point = CGPoint(x: origin.x + f.minX + f.width * fraction.x, y: origin.y + f.minY + f.height * fraction.y)
+        let point = CGPoint(x: under.x + f.minX + f.width * fraction.x, y: under.y + f.minY + f.height * fraction.y)
         let back = CGEvent(source: nil)?.location
         panel.window.ignoresMouseEvents = true
         router.passThrough = true
-        // A beat for the window server to stop sending clicks to ours.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.03) { [weak self] in
+        // A beat for the window server to stop sending clicks to ours and to have the real
+        // panel in its new place.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
             for type in [CGEventType.mouseMoved, .leftMouseDown, .leftMouseUp] {
                 CGEvent(mouseEventSource: nil, mouseType: type, mouseCursorPosition: point, mouseButton: .left)?
                     .post(tap: .cghidEventTap)
@@ -719,6 +762,12 @@ final class NCPanelTakeover: ObservableObject {
                 guard let self else { return }
                 self.router.passThrough = false
                 self.panel.window.ignoresMouseEvents = false
+            }
+            // A widget opening its app closes the panel; one that doesn't goes back.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+                guard let self, self.isActive, self.desiredOrigin == under else { return }
+                self.desiredOrigin = parked
+                self.keepInPlace()
             }
         }
         logger.log("Widget clicked: \(widget.appBundleID ?? widget.id)", tag: "Panel")
