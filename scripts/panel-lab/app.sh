@@ -9,7 +9,7 @@
 #   open | clock          press the menu bar clock (opens or closes the panel)
 #   clock2                a real click on the second screen's clock
 #   shut                  close the panel if it is open (a clock press would reopen it)
-#   scroll                scroll the wheel over our panel
+#   scroll[:gap]          scroll the wheel over our panel, or over the gap between two rows
 #   state                 what our panel and Notification Center's show
 #   frames                where each text is in our rows and in Notification Center's
 #   count                 the same as numbers only, for PANEL_FILTER= runs
@@ -86,8 +86,11 @@ restore() {
     # The app parks Notification Center's window for custom banners; stopped like this it
     # can't put it back, and banners would arrive off screen until something did.
     "$OUT/lab" unpark
-    "$OUT/lab" host >/dev/null && "$NOTIFY/watch" --close-all >/dev/null 2>&1
-    for a in Alpha Bravo Charlie; do "$NOTIFY/Lab $a.app/Contents/MacOS/notifier" --clear >/dev/null 2>&1; done
+    # KEEP_LAB=1 leaves them for the next run, which then needn't post them all again.
+    if [[ -z "${KEEP_LAB:-}" ]]; then
+        "$OUT/lab" host >/dev/null && "$NOTIFY/watch" --close-all >/dev/null 2>&1
+        for a in Alpha Bravo Charlie; do "$NOTIFY/Lab $a.app/Contents/MacOS/notifier" --clear >/dev/null 2>&1; done
+    fi
     python3 - "$DOMAIN" "$BACKUP" "${KEYS[@]}" <<'PY'
 import datetime, plistlib, subprocess, sys
 domain, backup, keys = sys.argv[1], sys.argv[2], sys.argv[3:]
@@ -156,7 +159,7 @@ for step in "$@"; do
         shut)   "$OUT/lab" shut ;;
         widget) "$OUT/lab" ui-widget "$NN_PID" || echo "   widget click failed" ;;
         apps)   for b in $arg; do pgrep -xq "$b" && echo "   $b running" || echo "   $b not running"; done ;;
-        scroll) "$OUT/lab" ui-scroll "$NN_PID" ;;
+        scroll) [[ "$step" == scroll ]] && arg=""; NN_LAB_WHEEL="${WHEEL:-}" "$OUT/lab" ui-scroll "$NN_PID" $arg ;;
         state)  "$OUT/lab" ui-state "$NN_PID" ;;
         frames) "$OUT/lab" ui-frames "$NN_PID" ;;
         count)  "$OUT/lab" ui-count "$NN_PID" ;;
