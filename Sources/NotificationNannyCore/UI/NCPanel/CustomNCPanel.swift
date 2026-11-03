@@ -196,36 +196,6 @@ final class CustomNCPanelController {
     }
 }
 
-/// An opaque window between Notification Center's panel and ours, while the real panel
-/// sits under ours to have its widgets captured. Ours covers it almost always; this
-/// covers what ours doesn't, so no part of the real panel ever shows.
-@MainActor
-final class NCPanelCover {
-    private let window: NSPanel
-
-    init() {
-        window = NSPanel(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: true)
-        // Notification Center's window is at 21, ours at the status bar's 25.
-        window.level = NSWindow.Level(rawValue: 22)
-        window.isOpaque = false
-        window.backgroundColor = .clear
-        window.hasShadow = false
-        window.ignoresMouseEvents = true
-        window.collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle, .fullScreenAuxiliary]
-        let fill = NSHostingView(rootView: RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Color.nannyWindow))
-        window.contentView = fill
-    }
-
-    func show(axRect: CGRect, below ours: NSWindow) {
-        guard let primary = NSScreen.screens.first else { return }
-        let frame = NSRect(x: axRect.minX, y: primary.frame.maxY - axRect.maxY, width: axRect.width, height: axRect.height)
-        window.setFrame(frame, display: true)
-        window.order(.below, relativeTo: ours.windowNumber)
-    }
-
-    func hide() { window.orderOut(nil) }
-}
-
 /// In or out: the panel's animation, chosen in Settings, plays between the two.
 @MainActor
 final class PanelPresentation: ObservableObject {
@@ -863,18 +833,22 @@ private struct WidgetView: View {
 
     @Environment(\.panelScale) private var s
 
+    /// A widget's corners: a circle of 28 fits where its capture turns black, row by row
+    /// (measured on 27.0, scripts/panel-lab `widget-park`); at 20 black showed in them.
+    static let cornerRadius: CGFloat = 28
+
     var body: some View {
         let size = CGSize(width: widget.frameInWindow.width * s, height: widget.frameInWindow.height * s)
         Group {
             if let image = widget.image {
                 Image(nsImage: image).resizable().interpolation(.high)
             } else {
-                RoundedRectangle(cornerRadius: 18, style: .continuous).fill(Color.primary.opacity(0.06))
+                RoundedRectangle(cornerRadius: Self.cornerRadius * s, style: .circular).fill(Color.primary.opacity(0.06))
             }
         }
         .frame(width: size.width, height: size.height)
-        // The capture's corners hold whatever was behind the widget's rounded ones.
-        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+        // The capture's corners hold whatever was behind the widget's rounded ones, black.
+        .clipShape(RoundedRectangle(cornerRadius: Self.cornerRadius * s, style: .circular))
         .contentShape(Rectangle())
         .onTapGesture(coordinateSpace: .local) { location in
             takeover.click(widget, at: CGPoint(x: min(max(location.x / size.width, 0), 1),
