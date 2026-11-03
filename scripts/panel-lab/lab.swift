@@ -1453,7 +1453,25 @@ case "ui-state", "ui-click", "ui-close", "ui-button", "ui-winid", "ui-scroll", "
     case "ui-scroll":
         // A scroll wheel over our panel: it must not close Notification Center's.
         guard let f = nnWindows.compactMap(frame).max(by: { $0.height < $1.height }) else { print("no panel"); exit(1) }
-        let point = CGPoint(x: f.midX, y: f.midY)
+        var point = CGPoint(x: f.midX, y: f.midY)
+        // `ui-scroll <pid> gap`: over the clear gap between two rows instead, where the
+        // window server sees no pixel of ours. A row's text ends 13 above its bottom, the
+        // next starts 12 under its top, and rows stand 6 apart.
+        let texts = elements.filter { role($0) == "AXStaticText" }.compactMap(frame).sorted { $0.minY < $1.minY }
+        // Where each text is: a text seen before and after shows how far the list moved.
+        let textYs = { () -> [String: CGFloat] in
+            var ys: [String: CGFloat] = [:]
+            for e in (attr(nn, kAXWindowsAttribute) as? [AXUIElement] ?? []).flatMap({ all($0) }) where role(e) == "AXStaticText" {
+                if let f = frame(e) { ys[text(e)] = f.minY }
+            }
+            return ys
+        }
+        if args.dropFirst(2).first == "gap" {
+            guard let next = zip(texts, texts.dropFirst()).first(where: { $1.minY - $0.maxY > 25 && $1.minY > f.minY + 100 })?.1
+            else { print("no gap between rows"); exit(1) }
+            point = CGPoint(x: f.midX, y: next.minY - 12 - 3)
+        }
+        let before = textYs()
         let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID) as? [[String: Any]] ?? []
         let front = list.first { info in
             guard let b = info[kCGWindowBounds as String] as? NSDictionary,
@@ -1465,14 +1483,18 @@ case "ui-state", "ui-click", "ui-close", "ui-button", "ui-winid", "ui-scroll", "
         CGEvent(mouseEventSource: nil, mouseType: .mouseMoved, mouseCursorPosition: point, mouseButton: .left)!.post(tap: .cghidEventTap)
         usleep(80_000)
         for _ in 0..<6 {
-            let wheel = CGEvent(scrollWheelEvent2Source: nil, units: .pixel, wheelCount: 1, wheel1: -60, wheel2: 0, wheel3: 0)!
+            // NN_LAB_WHEEL sets the step; the default -60 is up the list under natural scrolling.
+            let step = Int32(ProcessInfo.processInfo.environment["NN_LAB_WHEEL"] ?? "") ?? -60
+            let wheel = CGEvent(scrollWheelEvent2Source: nil, units: .pixel, wheelCount: 1, wheel1: step, wheel2: 0, wheel3: 0)!
             wheel.location = point
             wheel.post(tap: .cghidEventTap)
             usleep(30_000)
         }
         usleep(300_000)
         CGEvent(mouseEventSource: nil, mouseType: .mouseMoved, mouseCursorPosition: back, mouseButton: .left)!.post(tap: .cghidEventTap)
-        print("scrolled; NC panel \(isOpen() ? "open" : "CLOSED")")
+        let after = textYs()
+        let moved = before.compactMap { key, y in after[key].map { y - $0 } }.max(by: { abs($0) < abs($1) }) ?? 0
+        print("scrolled at y \(Int(point.y)); our list moved \(Int(moved)) points; NC panel \(isOpen() ? "open" : "CLOSED")")
     case "ui-click":
         // Clicks as soon as the text shows, for a click right after the panel opens.
         let want = args.dropFirst(2).joined(separator: " ")
