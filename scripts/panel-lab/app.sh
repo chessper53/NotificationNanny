@@ -58,15 +58,21 @@ APP=build/NotificationNanny.app
 NN_MATCH="\.app/Contents/MacOS/NotificationNanny"
 mkdir -p "$OUT"
 
-if pgrep -f "$NN_MATCH" >/dev/null; then
+# NN_ATTACH=pid drives a NotificationNanny already running instead: one opened on its own,
+# with Screen Recording of its own, which a build started from here can't have (it borrows
+# the terminal's). Its settings are its runner's to set and put back.
+ATTACH=${NN_ATTACH:-}
+if [[ -z "$ATTACH" ]] && pgrep -f "$NN_MATCH" >/dev/null; then
     echo "NotificationNanny is already running; quit it first." >&2
     exit 65
 fi
 
 SDK=/Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk
 [[ -d "$SDK" ]] && export SDKROOT="$SDK"
-swift build >/dev/null
-scripts/assemble-bundle.sh "$(swift build --show-bin-path)/NotificationNanny" "$APP" "$(tr -d '[:space:]' < VERSION)" >/dev/null
+if [[ -z "$ATTACH" ]]; then
+    swift build >/dev/null
+    DEV_SIGNING=1 scripts/assemble-bundle.sh "$(swift build --show-bin-path)/NotificationNanny" "$APP" "$(tr -d '[:space:]' < VERSION)" >/dev/null
+fi
 swiftc -O -swift-version 5 -o "$OUT/lab" scripts/panel-lab/lab.swift
 
 BACKUP=$OUT/defaults-backup.plist
@@ -79,7 +85,7 @@ defaults export "$DOMAIN" "$BACKUP"
 NN_PID=""
 restore() {
     set +e
-    if [[ -n "$NN_PID" ]]; then kill "$NN_PID" 2>/dev/null; wait "$NN_PID" 2>/dev/null; fi
+    if [[ -n "$NN_PID" && -z "$ATTACH" ]]; then kill "$NN_PID" 2>/dev/null; wait "$NN_PID" 2>/dev/null; fi
     # A run can end with Notification Center's panel open; put back on screen, it would
     # be left open in front of the user.
     "$OUT/lab" shut >/dev/null
@@ -91,6 +97,7 @@ restore() {
         "$OUT/lab" host >/dev/null && "$NOTIFY/watch" --close-all >/dev/null 2>&1
         for a in Alpha Bravo Charlie; do "$NOTIFY/Lab $a.app/Contents/MacOS/notifier" --clear >/dev/null 2>&1; done
     fi
+    [[ -n "$ATTACH" ]] && return
     python3 - "$DOMAIN" "$BACKUP" "${KEYS[@]}" <<'PY'
 import datetime, plistlib, subprocess, sys
 domain, backup, keys = sys.argv[1], sys.argv[2], sys.argv[3:]
@@ -124,6 +131,9 @@ trap restore EXIT
 # Stopped from outside, the EXIT trap only runs if the signal ends the script through exit.
 trap 'exit 130' INT TERM
 
+if [[ -n "$ATTACH" ]]; then
+    NN_PID=$ATTACH
+else
 defaults write "$DOMAIN" customNotificationCenter -bool YES
 for kv in ${EXTRA[@]+"${EXTRA[@]}"}; do
     k=${kv%%=*}; v=${kv#*=}
@@ -141,6 +151,7 @@ if ! grep -q "Observer started" "$OUT/app.log"; then
     echo "The build isn't observing Notification Center (no Accessibility for $APP?):" >&2
     tail -5 "$OUT/app.log" >&2
     exit 1
+fi
 fi
 
 for step in "$@"; do
@@ -163,12 +174,12 @@ for step in "$@"; do
         state)  "$OUT/lab" ui-state "$NN_PID" ;;
         frames) "$OUT/lab" ui-frames "$NN_PID" ;;
         count)  "$OUT/lab" ui-count "$NN_PID" ;;
-        shot)   id=$("$OUT/lab" ui-winid "$NN_PID") && screencapture -x -o -l "$id" "$OUT/$arg.png" && echo "   $OUT/$arg.png" ;;
+        shot)   id=$("$OUT/lab" ui-winid "$NN_PID") && scripts/panel-lab/shot.sh screencapture -x -o -l "$id" "$OUT/$arg.png" >/dev/null && echo "   $OUT/$arg.png" ;;
         # The same area as it is on screen, with the desktop behind: our panel is transparent.
         # Over a gray backdrop, so nothing of the user's screen behind it is captured.
         # Waits for the backdrop only: a bare wait would wait for the app, forever.
         sshot)  r=$("$OUT/lab" ui-rect "$NN_PID") && { "$OUT/lab" backdrop "$r" 2 & bd=$!; sleep 0.8
-                screencapture -x -R"$r" "$OUT/$arg.png"; wait "$bd"; echo "   $OUT/$arg.png"; } ;;
+                scripts/panel-lab/shot.sh screencapture -x -R"$r" "$OUT/$arg.png" >/dev/null; wait "$bd"; echo "   $OUT/$arg.png"; } ;;
         click)  "$OUT/lab" ui-click "$NN_PID" "$arg" || echo "   click failed" ;;
         rclick) "$OUT/lab" ui-rclick "$NN_PID" "$arg" || echo "   right click failed" ;;
         close)  "$OUT/lab" ui-close "$NN_PID" "$arg" || echo "   close failed" ;;
