@@ -261,6 +261,8 @@ enum NCPanelMetrics {
     /// Under the list: Edit Widgets (87 wide) and the Clear Notifications ✕, both 24 high,
     /// 8 apart, centred on the column, 16 under what is above them.
     static let footerAbove: CGFloat = 16
+    /// From the last notification to the first widget under them.
+    static let widgetsAbove: CGFloat = 16
     static let footerHeight: CGFloat = 24
     static let footerGap: CGFloat = 8
     static let editWidgetsWidth: CGFloat = 87
@@ -354,19 +356,23 @@ struct CustomNCPanelView: View {
                 if o.appFilter, apps.count > 1 {
                     AppFilterBar(apps: apps, filter: $filter).padding(.bottom, NCPanelMetrics.headingBelow * s)
                 }
-                if !takeover.widgets.isEmpty {
-                    VStack(spacing: NCPanelMetrics.rowGap * s) {
-                        ForEach(takeover.widgets) { widget in WidgetView(widget: widget, takeover: takeover) }
-                    }
-                    .padding(.bottom, NCPanelMetrics.rowGap * s)
-                }
                 ForEach(Array(sections.enumerated()), id: \.element.id) { index, section in
                     if let title = section.title {
-                        Heading(title: title, isFirst: index == 0 && takeover.widgets.isEmpty && !(o.appFilter && apps.count > 1)) {
+                        Heading(title: title, isFirst: index == 0 && !(o.appFilter && apps.count > 1)) {
                             RoundButton(symbol: "xmark") { takeover.clearAll(section) }
                         }
                     }
                     ForEach(section.groups) { group in GroupView(group: group, takeover: takeover) }
+                }
+                // Under the notifications, 16 below the last, as Notification Center has them
+                // (measured on 27.0, scripts/panel-lab `widget-park`); the rows end in their
+                // gap already.
+                if !takeover.widgets.isEmpty {
+                    VStack(spacing: NCPanelMetrics.rowGap * s) {
+                        ForEach(takeover.widgets) { widget in WidgetView(widget: widget, takeover: takeover) }
+                    }
+                    .padding(.top, sections.isEmpty ? 0 : (NCPanelMetrics.widgetsAbove - NCPanelMetrics.rowGap) * s)
+                    .padding(.bottom, NCPanelMetrics.rowGap * s)
                 }
                 Footer(takeover: takeover, hasContent: !sections.isEmpty || !takeover.widgets.isEmpty)
             }

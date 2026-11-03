@@ -564,6 +564,9 @@ case "widget-park":
               let r = CGRect(dictionaryRepresentation: b as CFDictionary) else { return false }
         return abs(r.width - hf.width) < 2 && abs(r.height - hf.height) < 2
     }?[kCGWindowNumber as String] as? Int
+    if let list = find(h, { str($0, kAXIdentifierAttribute) == "AXNotificationListItems" }), let lf = frame(list), let o = frame(h)?.origin {
+        print("notification list at y \(Int(lf.minY - o.y))..\(Int(lf.maxY - o.y)), x \(Int(lf.minX - o.x))..\(Int(lf.maxX - o.x))")
+    }
     print("mode \(mode): window \(wid.map(String.init) ?? "?") at \(frame(h).map { "(\(Int($0.minX)),\(Int($0.minY)))" } ?? "?"), \(widgets.count) widget(s): \(widgets.map { "\(Int($0.minX)),\(Int($0.minY)) \(Int($0.width))x\(Int($0.height))" })")
     let full = out + "-full.png"
     try? FileManager.default.removeItem(atPath: full)
