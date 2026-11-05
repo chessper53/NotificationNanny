@@ -30,6 +30,20 @@ final class WidgetCapture {
 
     private var cached: SCWindow?
 
+    /// A picture of nothing: one colour all over. A window caught while it is moved, or
+    /// a widget while it redraws at another size, captures so, and it replaced the
+    /// widget's picture with an empty box. Every widget draws something.
+    nonisolated static func isBlank(_ image: CGImage) -> Bool {
+        let side = 8
+        var pixels = [UInt8](repeating: 0, count: side * side * 4)
+        guard let context = CGContext(data: &pixels, width: side, height: side, bitsPerComponent: 8, bytesPerRow: side * 4,
+                                      space: CGColorSpaceCreateDeviceRGB(),
+                                      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return false }
+        context.draw(image, in: CGRect(x: 0, y: 0, width: side, height: side))
+        let values = stride(from: 0, to: pixels.count, by: 4).map { Int(pixels[$0]) + Int(pixels[$0 + 1]) + Int(pixels[$0 + 2]) }
+        return (values.max() ?? 0) - (values.min() ?? 0) < 12
+    }
+
     private func capture(_ window: SCWindow, rects: [String: CGRect]) async -> [String: NSImage] {
         let filter = SCContentFilter(desktopIndependentWindow: window)
         let scale = CGFloat(filter.pointPixelScale)
@@ -48,7 +62,7 @@ final class WidgetCapture {
         for (id, rect) in rects {
             let pixels = CGRect(x: (rect.minX - area.minX) * scale, y: (rect.minY - area.minY) * scale,
                                 width: rect.width * scale, height: rect.height * scale).integral
-            guard let part = image.cropping(to: pixels) else { continue }
+            guard let part = image.cropping(to: pixels), !Self.isBlank(part) else { continue }
             result[id] = NSImage(cgImage: part, size: rect.size)
         }
         return result

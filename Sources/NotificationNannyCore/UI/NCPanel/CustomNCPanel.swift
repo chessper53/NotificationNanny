@@ -121,8 +121,19 @@ final class CustomNCPanelController {
         host.sizingOptions = []
         // A right click on a row opens its menu where it was clicked, as on the system's.
         host.onRightClick = { [weak takeover] point in
-            guard let takeover, let id = hitMap.row(at: point),
-                  let row = takeover.snapshot.sections.lazy.flatMap({ $0.groups }).flatMap({ $0.rows }).first(where: { $0.id == id })
+            if ProcessInfo.processInfo.environment["NN_TIMING"] == "1" { // DEBUG-CLICK
+                FileHandle.standardError.write(Data("[panel view] right click at \(point) → \(hitMap.row(at: point) ?? "nothing"), \(hitMap.rowFrames.count) frames\n".utf8))
+            }
+            guard let takeover, let id = hitMap.row(at: point) else { return }
+            // A widget's menu, as a right click on it opens on the system's.
+            if id.hasPrefix(NCPanelHitMap.widgetPrefix) {
+                let widgetID = String(id.dropFirst(NCPanelHitMap.widgetPrefix.count))
+                if let widget = takeover.widgets.first(where: { $0.id == widgetID }) {
+                    takeover.showMenu(for: widget, at: point)
+                }
+                return
+            }
+            guard let row = takeover.snapshot.sections.lazy.flatMap({ $0.groups }).flatMap({ $0.rows }).first(where: { $0.id == id })
             else { return }
             takeover.showMenu(for: row, withAppActions: true, at: point, trailing: false)
         }
@@ -423,6 +434,8 @@ struct CustomNCPanelView: View {
 /// it is right clicked.
 @MainActor
 final class NCPanelHitMap {
+    /// Rows by their ID, widgets by this and theirs.
+    static let widgetPrefix = "widget:"
     var rowFrames: [String: CGRect] = [:]
 
     func row(at point: CGPoint) -> String? {
@@ -713,6 +726,8 @@ private struct PanelMenuView: View {
     private static let separatorHeight: CGFloat = 11
     private static let padding: CGFloat = 5
     private static let radius: CGFloat = 10
+    /// The room a tick takes before an item's title.
+    static let tickWidth: CGFloat = 14
 
     var body: some View {
         let shape = RoundedRectangle(cornerRadius: Self.radius, style: .continuous)
@@ -729,9 +744,12 @@ private struct PanelMenuView: View {
                         .foregroundStyle(.tertiary)
                         .lineLimit(1)
                         .padding(.horizontal, 14)
+                        // Over its items' titles, past the ticks.
+                        .padding(.leading, menu.items.contains(where: \.checked) ? Self.tickWidth : 0)
                         .frame(height: Self.itemHeight, alignment: .leading)
                 case .action:
-                    MenuItemRow(title: item.title) { takeover.choose(item) }
+                    MenuItemRow(title: item.title, checked: item.checked,
+                                ticks: menu.items.contains(where: \.checked)) { takeover.choose(item) }
                 }
             }
         }
@@ -755,15 +773,26 @@ private struct PanelMenuView: View {
 
 private struct MenuItemRow: View {
     let title: String
+    /// Ticked, and whether the menu has ticks at all: then every item leaves room for
+    /// one, as on the system's menus.
+    var checked = false
+    var ticks = false
     let action: () -> Void
     @State private var hovering = false
 
     var body: some View {
         Button(action: action) {
-            Text(title)
+            HStack(spacing: 0) {
+                if ticks {
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 11, weight: .semibold))
+                        .opacity(checked ? 1 : 0)
+                        .frame(width: PanelMenuView.tickWidth, alignment: .leading)
+                }
+                Text(title).lineLimit(1)
+            }
                 .font(.system(size: 13))
                 .foregroundStyle(hovering ? AnyShapeStyle(Color.white) : AnyShapeStyle(.primary))
-                .lineLimit(1)
                 .padding(.leading, 9).padding(.trailing, 24)
                 .frame(maxWidth: .infinity, minHeight: 24, alignment: .leading)
                 .background {
@@ -846,7 +875,10 @@ private struct WidgetView: View {
     var body: some View {
         let size = CGSize(width: widget.frameInWindow.width * s, height: widget.frameInWindow.height * s)
         Group {
-            if let image = widget.image {
+            // Only a picture of its size: right after a resize the last one was stretched to
+            // the new size until the next capture.
+            if let image = widget.image,
+               abs(image.size.width - widget.frameInWindow.width) < 2, abs(image.size.height - widget.frameInWindow.height) < 2 {
                 Image(nsImage: image).resizable().interpolation(.high)
             } else {
                 RoundedRectangle(cornerRadius: Self.cornerRadius * s, style: .circular).fill(Color.primary.opacity(0.06))
@@ -856,6 +888,10 @@ private struct WidgetView: View {
         // The capture's corners hold whatever was behind the widget's rounded ones, black.
         .clipShape(RoundedRectangle(cornerRadius: Self.cornerRadius * s, style: .circular))
         .contentShape(Rectangle())
+        .background(GeometryReader { g in
+            Color.clear.preference(key: RowFramesKey.self,
+                                   value: [NCPanelHitMap.widgetPrefix + widget.id: g.frame(in: .named(NCPanelSpace.name))])
+        })
         .onTapGesture(coordinateSpace: .local) { location in
             takeover.click(widget, at: CGPoint(x: min(max(location.x / size.width, 0), 1),
                                                y: min(max(location.y / size.height, 0), 1)))
