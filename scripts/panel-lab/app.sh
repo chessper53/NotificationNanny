@@ -22,6 +22,7 @@
 #   postreply:App:Title   a Lab notification with Reply as its only button
 #   postlong:App:Title    one with buttons and a body of several lines
 #   widget                click the middle of the first widget picture in our panel
+#   wrclick               right click it: the widget's menu
 #   apps:Name             whether a process of that name is running
 #   postact:App:Title     a Lab notification with buttons: Reply, Archive, Snooze
 #   hover:Text            rest the pointer on the text in our panel
@@ -169,6 +170,7 @@ for step in "$@"; do
         clock2) "$NOTIFY/watch" --click-clock 2 ;;
         shut)   "$OUT/lab" shut ;;
         widget) "$OUT/lab" ui-widget "$NN_PID" || echo "   widget click failed" ;;
+        wrclick) "$OUT/lab" ui-widget "$NN_PID" right || echo "   widget right click failed" ;;
         apps)   for b in $arg; do pgrep -xq "$b" && echo "   $b running" || echo "   $b not running"; done ;;
         scroll) [[ "$step" == scroll ]] && arg=""; NN_LAB_WHEEL="${WHEEL:-}" "$OUT/lab" ui-scroll "$NN_PID" $arg ;;
         state)  "$OUT/lab" ui-state "$NN_PID" ;;
