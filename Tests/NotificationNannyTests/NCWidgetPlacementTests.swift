@@ -32,3 +32,27 @@ struct NCWidgetPlacementTests {
         #expect(NCPanelTakeover.drawnOffScreen(windowSize: builtIn.size, screens: []) == nil)
     }
 }
+
+/// A capture of nothing never replaces a widget's picture.
+@Suite("Widget capture blank check")
+struct WidgetBlankTests {
+    private func image(_ draw: (CGContext) -> Void) -> CGImage {
+        let c = CGContext(data: nil, width: 64, height: 64, bitsPerComponent: 8, bytesPerRow: 0,
+                          space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+        draw(c)
+        return c.makeImage()!
+    }
+
+    @Test func oneColour_isBlank() {
+        let gray = image { $0.setFillColor(gray: 0.3, alpha: 1); $0.fill(CGRect(x: 0, y: 0, width: 64, height: 64)) }
+        #expect(WidgetCapture.isBlank(gray))
+    }
+
+    @Test func content_isNot() {
+        let drawn = image {
+            $0.setFillColor(gray: 0.2, alpha: 1); $0.fill(CGRect(x: 0, y: 0, width: 64, height: 64))
+            $0.setFillColor(gray: 0.9, alpha: 1); $0.fill(CGRect(x: 10, y: 10, width: 30, height: 20))
+        }
+        #expect(!WidgetCapture.isBlank(drawn))
+    }
+}

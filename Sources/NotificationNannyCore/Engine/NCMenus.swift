@@ -32,6 +32,14 @@ enum NCMenus {
         AXUIElementPerformAction(el, kAXShowMenuAction as CFString)
         AXUIElementSetMessagingTimeout(el, 0)
         let deadline = ProcessInfo.processInfo.systemUptime + 0.6
+        let started = ProcessInfo.processInfo.systemUptime
+        let timing = ProcessInfo.processInfo.environment["NN_TIMING"] == "1"
+        func trace(_ what: String) { // DEBUG-CLICK
+            guard timing else { return }
+            let ms = Int((ProcessInfo.processInfo.systemUptime - started) * 1000)
+            FileHandle.standardError.write(Data("[menu] \(ms) ms \(what), window at \(window.point().map { "(\(Int($0.x)),\(Int($0.y)))" } ?? "?")\n".utf8))
+        }
+        trace("asked")
         func poll() {
             guard let menu = Self.openMenu(of: el, in: window), before.map({ !CFEqual($0, menu) }) ?? true else {
                 if ProcessInfo.processInfo.systemUptime < deadline {
@@ -42,23 +50,40 @@ enum NCMenus {
                 }
                 return
             }
+            trace("menu up at \(menu.point().map { "(\(Int($0.x)),\(Int($0.y)))" } ?? "?")")
             let children = menu.children()
             let read = children.map { child in
                 (title: cleanAXString(child.stringAttribute(kAXTitleAttribute as String) ?? ""),
                  height: child.size()?.height ?? 0,
                  isAction: child.identifier?.hasPrefix("menuAction") == true)
             }
-            let items = NCMenuItem.build(from: read)
+            // A ticked item has a mark: a widget's current size.
+            let ticked = Set(children.enumerated().compactMap { i, child in
+                (child.stringAttribute("AXMenuItemMarkChar") ?? "").isEmpty ? nil : read[i].title
+            })
+            let items = NCMenuItem.build(from: read).map { item in
+                var item = item
+                item.checked = item.kind == .action && ticked.contains(item.title)
+                return item
+            }
             if let press, let hit = Self.item(press, in: children, read: read) {
                 AXUIElementPerformAction(hit, kAXPressAction as CFString)
             } else {
-                // AXCancel says it worked and leaves the menu open; Escape closes it. Only
-                // sent with the menu up, which has the keyboard then.
+                // AXCancel says it worked and leaves the menu open; Escape closes it. Sent
+                // to Notification Center itself: posted to the session it went to the app
+                // with the keyboard, and a widget's menu, which doesn't take it, stayed up
+                // until the panel moved, a third of a second on screen.
+                var pid: pid_t = 0
+                AXUIElementGetPid(el, &pid)
                 for down in [true, false] {
-                    CGEvent(keyboardEventSource: nil, virtualKey: 53, keyDown: down)?.post(tap: .cghidEventTap)
+                    guard let key = CGEvent(keyboardEventSource: nil, virtualKey: 53, keyDown: down) else { continue }
+                    if pid > 0 { key.postToPid(pid) } else { key.post(tap: .cghidEventTap) }
                 }
             }
             done(items)
+            for delay in [0.02, 0.06, 0.12, 0.25, 0.5] {
+                DispatchQueue.main.asyncAfter(deadline: .now() + delay) { trace("after +\(Int(delay * 1000)) ms, menu \(Self.openMenu(of: el, in: window) == nil ? "gone" : "still up")") }
+            }
         }
         poll()
     }

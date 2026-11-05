@@ -695,7 +695,8 @@ final class NCPanelTakeover: ObservableObject {
     /// and a picture cut by where a widget was a moment earlier shows the wrong part of it.
     /// Then it tries again shortly.
     private func captureWidgets(retries: Int = 6) {
-        guard isActive, let window, let id = PrivateWindowAPI.windowID(for: window) else { return }
+        guard isActive, ProcessInfo.processInfo.systemUptime >= widgetCaptureHold,
+              let window, let id = PrivateWindowAPI.windowID(for: window) else { return }
         readWidgets()
         let rects = Dictionary(widgets.map { ($0.id, $0.frameInWindow) }, uniquingKeysWith: { a, _ in a })
         Task { @MainActor [weak self] in
@@ -987,6 +988,32 @@ final class NCPanelTakeover: ObservableObject {
         menu = NCPanelMenu(target: .options(row.id), items: items, anchor: anchor, trailing: true)
     }
 
+    /// A widget's menu, as a right click on it opens it in Notification Center: Edit, its
+    /// sizes, Remove Widget, Edit Widgets (read from the real one, as a row's is).
+    ///
+    /// Read once and kept: a widget's menu can't be read unseen. It opens on a screen
+    /// wherever the panel is, with the widget lifted beside it, and stays some 250 ms
+    /// before it has closed again (filmed on 27.0). After the first, ours opens at once,
+    /// and the real one only opens for an item picked, which closes it straight away.
+    func showMenu(for widget: NCWidget, at anchor: CGPoint) {
+        if let items = widgetMenus[widget.id] {
+            menu = NCPanelMenu(target: .widget(widget.id), items: items, anchor: anchor)
+            return
+        }
+        guard let el = widgetElements[widget.id] else { return }
+        readRealMenu(of: el) { [weak self] items in
+            guard let self, self.isActive, let items, !items.isEmpty else { return }
+            self.widgetMenus[widget.id] = items
+            self.menu = NCPanelMenu(target: .widget(widget.id), items: items, anchor: anchor)
+        }
+    }
+
+    /// Each widget's menu, by widget ID; see showMenu(for:at:).
+    private var widgetMenus: [String: [NCMenuItem]] = [:]
+    /// No capture before this (system uptime): a widget redrawing at another size
+    /// captured half drawn.
+    private var widgetCaptureHold: Double = 0
+
     /// The footer ✕: Clear Banners Only, Clear All Notifications.
     func showClearMenu(at anchor: CGPoint) {
         guard let button = clearMenuButton else { return }
@@ -1006,7 +1033,7 @@ final class NCPanelTakeover: ObservableObject {
         let rowID: String?
         switch open.target {
         case .row(let id), .options(let id): rowID = id
-        case .clear: rowID = nil
+        case .clear, .widget: rowID = nil
         }
         if let rowID, let row = snapshot.sections.lazy.flatMap({ $0.groups }).flatMap({ $0.rows }).first(where: { $0.id == rowID }),
            item.kind == .action, row.actions.contains(item.title) {
@@ -1017,15 +1044,49 @@ final class NCPanelTakeover: ObservableObject {
         switch open.target {
         case .row(let id), .options(let id): element = rowElements[id].map(NCMenus.target)
         case .clear: element = clearMenuButton
+        case .widget(let id): element = widgetElements[id]
         }
         guard let element else { return }
-        readRealMenu(of: element, press: item) { [weak self] _ in self?.refreshSoon() }
+        if case .widget = open.target {
+            widgetCaptureHold = ProcessInfo.processInfo.systemUptime + 0.7
+        }
+        readRealMenu(of: element, press: item) { [weak self] items in
+            guard let self else { return }
+            self.refreshSoon()
+            // A widget changes size or goes: its picture follows once it has redrawn, and
+            // its menu is the one just read, with the tick where the pick put it.
+            if case .widget(let id) = open.target {
+                if let items { self.widgetMenus[id] = NCMenuItem.choosing(item, in: items) }
+                for delay in [0.8, 1.6] {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in self?.captureWidgets() }
+                }
+            }
+        }
         logger.log("Menu item \(item.title)", tag: "Panel")
     }
 
+    /// With widgets shown the real panel waits just above the screen, and a menu of its
+    /// opens where it is, pulled onto the screen with the panel: filmed, the real menu
+    /// showed over the menu bar and the panel under ours. While a menu is read it is
+    /// parked far off, as without widgets, and goes back once the menu has closed.
     private func readRealMenu(of el: AXUIElement, press: NCMenuItem? = nil, _ done: @escaping ([NCMenuItem]?) -> Void) {
         guard let window else { done(nil); return }
-        NCMenus.read(of: el, in: window, press: press, logger: logger, done)
+        let resting = desiredOrigin.flatMap { $0.y > Self.parkedY + 1 ? $0 : nil }
+        if let resting {
+            desiredOrigin = CGPoint(x: resting.x, y: Self.parkedY)
+            keepInPlace()
+        }
+        NCMenus.read(of: el, in: window, press: press, logger: logger) { [weak self] items in
+            done(items)
+            guard let resting else { return }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+                guard let self, self.isActive, self.desiredOrigin?.y == Self.parkedY else { return }
+                self.desiredOrigin = resting
+                self.keepInPlace()
+                // Not drawn while parked: pictured again once it is.
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in self?.captureWidgets() }
+            }
+        }
     }
 }
 
@@ -1045,6 +1106,8 @@ struct NCPanelMenu: Identifiable, Equatable {
         case options(String)
         /// The footer ✕.
         case clear
+        /// A right click on a widget.
+        case widget(String)
     }
     let id = UUID()
     let target: Target
