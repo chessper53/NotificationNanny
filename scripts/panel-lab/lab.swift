@@ -148,7 +148,8 @@ func click(at point: CGPoint, ifFrontIs owner: pid_t, skippingOurs: Bool = false
               let rect = CGRect(dictionaryRepresentation: b as CFDictionary) else { return false }
         return rect.contains(point) && (info[kCGWindowAlpha as String] as? Double ?? 0) > 0
     }
-    guard front?[kCGWindowOwnerPID as String] as? pid_t == owner else {
+    // NN_LAB_RECORDING=1: a screen recording puts a window of its own over the area.
+    guard front?[kCGWindowOwnerPID as String] as? pid_t == owner || ProcessInfo.processInfo.environment["NN_LAB_RECORDING"] == "1" else {
         print("  (not clicking: front window at the point is pid \(front?[kCGWindowOwnerPID as String] ?? "none"))")
         return false
     }
@@ -517,6 +518,47 @@ case "widget-shot":
         print("nothing captured")
     }
     try? FileManager.default.removeItem(atPath: full)
+    restore()
+
+case "widget-menu":
+    // A widget's own menu (a right click on it in the real panel): its actions, and what
+    // AXShowMenu opens, on the widget and on its children, parked as the app parks it.
+    // The menu is closed with Escape, nothing in it pressed.
+    guard pressClock(), waitFor(3, { isOpen() }) != nil, let h = host(), let hf = frame(h) else {
+        print("panel did not open"); restore(); exit(1)
+    }
+    hostHome = hf.origin
+    _ = setPoint(h, CGPoint(x: hf.minX, y: -9999))
+    spin(0.6)
+    guard let widget = find(h, { (str($0, kAXIdentifierAttribute) ?? "").hasPrefix("widget-local:") }) else {
+        print("no widget"); closePanel(); restore(); exit(1)
+    }
+    func menus(_ e: AXUIElement, _ d: Int = 0) -> [AXUIElement] {
+        guard d < 4 else { return [] }
+        return children(e).flatMap { str($0, kAXRoleAttribute) == "AXMenu" ? [$0] : menus($0, d + 1) }
+    }
+    var targets = [widget]
+    for c in children(widget) { targets.append(c); targets.append(contentsOf: children(c)) }
+    for (i, t) in targets.enumerated() {
+        let acts = actionNames(t).map(displayName)
+        print("\(i) \(str(t, kAXRoleAttribute) ?? "?")\(str(t, kAXSubroleAttribute).map { "/\($0)" } ?? "") actions: \(acts)")
+        guard acts.contains("AXShowMenu") else { continue }
+        let before = menus(h).count
+        AXUIElementSetMessagingTimeout(t, 0.05)
+        AXUIElementPerformAction(t, kAXShowMenuAction as CFString)
+        AXUIElementSetMessagingTimeout(t, 0)
+        spin(0.4)
+        let found = menus(h) + menus(t)
+        if found.count > before, let m = found.last {
+            print("   menu: \(children(m).map { "\(str($0, kAXTitleAttribute) ?? "")[\(str($0, kAXIdentifierAttribute) ?? "")] h\(Int(frame($0)?.height ?? 0))" })")
+            for down in [true, false] { CGEvent(keyboardEventSource: nil, virtualKey: 53, keyDown: down)?.post(tap: .cghidEventTap) }
+            spin(0.3)
+        } else {
+            print("   no menu")
+        }
+    }
+    closePanel()
+    spin(0.3)
     restore()
 
 case "widget-park":
@@ -1524,7 +1566,18 @@ case "ui-state", "ui-click", "ui-close", "ui-button", "ui-winid", "ui-scroll", "
             print("no widget picture"); exit(1)
         }
         print("widget picture \(Int(img.1.width))x\(Int(img.1.height))")
-        exit(click(at: CGPoint(x: img.1.midX, y: img.1.midY), ifFrontIs: pid) ? 0 : 1)
+        let point = CGPoint(x: img.1.midX, y: img.1.midY)
+        // `ui-widget <pid> right`: a right click there instead, for the widget's menu.
+        if args.dropFirst(2).first == "right" {
+            let back = CGEvent(source: nil)!.location
+            for type in [CGEventType.mouseMoved, .rightMouseDown, .rightMouseUp] {
+                CGEvent(mouseEventSource: nil, mouseType: type, mouseCursorPosition: point, mouseButton: .right)!.post(tap: .cghidEventTap)
+                usleep(40_000)
+            }
+            CGEvent(mouseEventSource: nil, mouseType: .mouseMoved, mouseCursorPosition: back, mouseButton: .left)!.post(tap: .cghidEventTap)
+            exit(0)
+        }
+        exit(click(at: point, ifFrontIs: pid) ? 0 : 1)
     case "ui-count":
         // Numbers only, for runs that show the user's own notifications.
         let allRows = windows().flatMap { rows(in: $0) }
