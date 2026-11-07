@@ -121,9 +121,52 @@ struct InstalledAppIndex: Sendable {
     ]
 
     private var byName: [String: URL] = [:]
+    private let languages: [String]
 
-    init(roots: [Root]) {
+    /// - Parameter languages: the user's languages, which Notification Center names
+    ///   apps in. Nil reads them from the system; see `systemLanguages`.
+    init(roots: [Root], languages: [String]? = nil) {
+        self.languages = languages ?? Self.systemLanguages()
         for root in roots { scan(root.url, depth: 0, maxDepth: root.depth) }
+    }
+
+    private static let nameKeys = ["CFBundleDisplayName", "CFBundleName"]
+
+    /// The languages set for the whole system. Not `Locale.preferredLanguages`: that is
+    /// NotificationNanny's own list, which follows its language setting, while
+    /// Notification Center names apps in the system's languages.
+    static func systemLanguages() -> [String] {
+        let global = CFPreferencesCopyValue("AppleLanguages" as CFString, kCFPreferencesAnyApplication,
+                                            kCFPreferencesCurrentUser, kCFPreferencesAnyHost)
+        return (global as? [String]) ?? Locale.preferredLanguages
+    }
+
+    /// The app's name in the first of `languages` it has a translation for.
+    /// `FileManager.displayName` answers in a language NotificationNanny itself
+    /// ships, so on a Korean system it gives "KakaoTalk" while Notification Center
+    /// shows "카카오톡". System apps keep every translation in one
+    /// `InfoPlist.loctable`; other apps have an `InfoPlist.strings` per `.lproj`.
+    /// Nothing to do for English, which the Info.plist names already are.
+    static func localizedNames(of app: URL, languages: [String]) -> [String] {
+        guard let first = languages.first, !first.hasPrefix("en") else { return [] }
+        let resources = app.appendingPathComponent("Contents/Resources")
+        func names(in strings: Any?) -> [String] {
+            guard let strings = strings as? [String: Any] else { return [] }
+            return nameKeys.compactMap { strings[$0] as? String }
+        }
+        if let table = NSDictionary(contentsOf: resources.appendingPathComponent("InfoPlist.loctable")) as? [String: Any],
+           let language = Bundle.preferredLocalizations(from: Array(table.keys), forPreferences: languages).first {
+            let found = names(in: table[language])
+            if !found.isEmpty { return found }
+        }
+        let lprojs = ((try? FileManager.default.contentsOfDirectory(atPath: resources.path)) ?? [])
+            .filter { $0.hasSuffix(".lproj") }
+            .map { String($0.dropLast(".lproj".count)) }
+        guard !lprojs.isEmpty,
+              let language = Bundle.preferredLocalizations(from: lprojs, forPreferences: languages).first
+        else { return [] }
+        let strings = resources.appendingPathComponent("\(language).lproj/InfoPlist.strings")
+        return names(in: NSDictionary(contentsOf: strings))
     }
 
     func url(for key: String) -> URL? { byName[key] }
@@ -158,9 +201,10 @@ struct InstalledAppIndex: Sendable {
             FileManager.default.displayName(atPath: app.path),
         ]
         let info = NSDictionary(contentsOf: app.appendingPathComponent("Contents/Info.plist"))
-        for k in ["CFBundleDisplayName", "CFBundleName"] {
+        for k in Self.nameKeys {
             if let n = info?[k] as? String { names.append(n) }
         }
+        names += Self.localizedNames(of: app, languages: languages)
         for name in names {
             var key = Self.key(name)
             if key.hasSuffix(".app") { key = String(key.dropLast(4)) }

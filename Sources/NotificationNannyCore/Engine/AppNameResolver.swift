@@ -53,13 +53,40 @@ final class AppNameResolver {
     /// The app a single banner belongs to, from its description ("App, Title,
     /// Body"). `appName(for:)` answers for a window, which since macOS 26 holds
     /// every banner that is up.
-    static func appName(fromDescription description: String) -> String? {
+    nonisolated static func appName(fromDescription description: String) -> String? {
         guard let first = description.components(separatedBy: ", ").first else { return nil }
         let cleaned = cleanAXString(first)
         return cleaned.isEmpty ? nil : cleaned
     }
 
+    /// The app, given the banner's title too. A Persistent banner on macOS 27
+    /// describes itself as "App Title, Body", with no comma after the app, so the
+    /// first part alone runs the app into the title. The title is a labelled line of
+    /// its own, so what comes before it is the app.
+    nonisolated static func appName(fromDescription description: String, title: String?) -> String? {
+        let cleaned = cleanAXString(description)
+        if let title, !title.isEmpty {
+            // The title ends at a comma or at the end, so "Microsoft Teams Teams, Hi"
+            // is Microsoft Teams and not Microsoft.
+            let padded = cleaned + ", "
+            for marker in [", \(title), ", " \(title), "] {
+                guard let range = padded.range(of: marker) else { continue }
+                let app = cleanAXString(String(padded[..<range.lowerBound]))
+                // Only when the title follows the app straight away; a comma before
+                // it means the title turned up later, in the body.
+                if !app.isEmpty, !app.contains(", ") { return app }
+            }
+        }
+        return appName(fromDescription: cleaned)
+    }
+
+    /// The app a banner element belongs to; see `appName(fromDescription:title:)`.
+    static func appName(of banner: AXUIElement) -> String? {
+        guard let description = banner.stringAttribute("AXAttributedDescription") else { return nil }
+        return appName(fromDescription: description, title: banner.identifiedTextValues()["title"])
+    }
+
     private func nameFromElement(_ el: AXUIElement) -> String? {
-        el.stringAttribute("AXAttributedDescription").flatMap(Self.appName(fromDescription:))
+        Self.appName(of: el)
     }
 }
