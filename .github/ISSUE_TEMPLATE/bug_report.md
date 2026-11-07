@@ -1,9 +1,11 @@
 ---
 name: Bug report
-about: Something is not working right
+about: Something isn't working as expected
 title: "[Bug] "
 labels: bug
 assignees: chessper53
+type: Bug
+
 ---
 
 **What happened?**
