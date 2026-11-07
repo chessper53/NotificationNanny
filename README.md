@@ -46,8 +46,6 @@ Or install manually:
 2. Drag `NotificationNanny.app` into Applications, then launch it.
 3. Click the bell icon in your menu bar and grant Accessibility permission.
 
-You will need to grant Accessibility permission again after every update. macOS ties that permission to the exact build it was granted to, so a new version arrives as an unrecognised app.
-
 ## What it does
 
 - Nine anchor points on any display, with independent settings per screen
