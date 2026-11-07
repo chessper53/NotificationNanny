@@ -1027,6 +1027,8 @@ final class CustomBannerManager {
     }
     /// When the overlay's glide ends (system uptime); in the past when it isn't gliding.
     func glideEnd(key: CFHashCode) -> Double { active[key]?.glideEnds ?? 0 }
+    /// Where the overlay's panel is right now, partway through a glide included.
+    func frame(key: CFHashCode) -> NSRect? { active[key]?.panel.frame }
     var hasActive: Bool { !active.isEmpty }
 
     func resetDismissTimers(autoDismissSeconds: Double) {
