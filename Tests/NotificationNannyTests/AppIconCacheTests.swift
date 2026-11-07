@@ -94,3 +94,96 @@ struct AppIconCacheTests {
         #expect(InstalledAppIndex.key("\u{200E}Café ") == InstalledAppIndex.key("cafe"))
     }
 }
+
+/// Notification Center names apps in the system's language, which is often not one
+/// NotificationNanny ships: on a Korean Mac a banner says "카카오톡", not "KakaoTalk".
+@Suite("InstalledAppIndex localized names")
+struct InstalledAppIndexLocalizedNameTests {
+    let root: URL
+
+    init() throws {
+        root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("LocalizedNameTests-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    }
+
+    func makeApp(_ file: String) throws -> URL {
+        let app = root.appendingPathComponent("\(file).app")
+        let resources = app.appendingPathComponent("Contents/Resources")
+        try FileManager.default.createDirectory(at: resources, withIntermediateDirectories: true)
+        (["CFBundleName": file, "CFBundlePackageType": "APPL"] as NSDictionary)
+            .write(to: app.appendingPathComponent("Contents/Info.plist"), atomically: true)
+        return app
+    }
+
+    func writeStrings(_ strings: [String: String], language: String, in app: URL) throws {
+        let lproj = app.appendingPathComponent("Contents/Resources/\(language).lproj")
+        try FileManager.default.createDirectory(at: lproj, withIntermediateDirectories: true)
+        (strings as NSDictionary).write(to: lproj.appendingPathComponent("InfoPlist.strings"), atomically: true)
+    }
+
+    @Test func findsAppByNameInItsLproj() throws {
+        let app = try makeApp("ProbeTalk")
+        try writeStrings(["CFBundleDisplayName": "프로브톡"], language: "ko", in: app)
+        try writeStrings(["CFBundleDisplayName": "ProbeTalk FR"], language: "fr", in: app)
+        let index = InstalledAppIndex(roots: [.init(url: root, depth: 0)], languages: ["ko-KR", "en-US"])
+        #expect(index.url(for: InstalledAppIndex.key("프로브톡"))?.lastPathComponent == "ProbeTalk.app")
+        #expect(index.url(for: InstalledAppIndex.key("ProbeTalk FR")) == nil, "only the user's language")
+        #expect(index.url(for: InstalledAppIndex.key("ProbeTalk")) != nil, "the English name still works")
+    }
+
+    @Test func findsSystemAppByNameInItsLoctable() throws {
+        let app = try makeApp("Probe Editor")
+        let table: [String: [String: String]] = [
+            "ko": ["CFBundleDisplayName": "프로브 편집기"],
+            "de": ["CFBundleDisplayName": "Probe-Editor"],
+        ]
+        (table as NSDictionary).write(to: app.appendingPathComponent("Contents/Resources/InfoPlist.loctable"),
+                                      atomically: true)
+        let index = InstalledAppIndex(roots: [.init(url: root, depth: 0)], languages: ["ko"])
+        #expect(index.url(for: InstalledAppIndex.key("프로브 편집기")) != nil)
+        #expect(index.url(for: InstalledAppIndex.key("Probe-Editor")) == nil)
+    }
+
+    @Test func englishSystemReadsNoTranslations() throws {
+        let app = try makeApp("ProbeEnglish")
+        try writeStrings(["CFBundleDisplayName": "Probe Anglais"], language: "fr", in: app)
+        #expect(InstalledAppIndex.localizedNames(of: app, languages: ["en-GB", "fr"]).isEmpty)
+    }
+}
+
+/// A banner's description is "App, Title, Body", except a Persistent banner on
+/// macOS 27, which leaves out the comma after the app: "App Title, Body".
+@Suite("App name from a banner's description")
+struct AppNameFromDescriptionTests {
+    @Test func usualBanner() {
+        #expect(AppNameResolver.appName(fromDescription: "Mail, Hello, How are you", title: "Hello") == "Mail")
+    }
+
+    @Test func persistentBannerWithoutCommaAfterApp() {
+        #expect(AppNameResolver.appName(fromDescription: "스크립트 편집기 Claude 1, body", title: "Claude 1")
+                == "스크립트 편집기")
+    }
+
+    @Test func titleThatIsPartOfTheAppName() {
+        #expect(AppNameResolver.appName(fromDescription: "Microsoft Teams Teams, Hi", title: "Teams")
+                == "Microsoft Teams")
+    }
+
+    @Test func persistentBannerWithoutBody() {
+        #expect(AppNameResolver.appName(fromDescription: "Script Editor Done", title: "Done") == "Script Editor")
+    }
+
+    @Test func titleWithACommaInIt() {
+        #expect(AppNameResolver.appName(fromDescription: "Calendar Lunch, Bob, at noon", title: "Lunch, Bob")
+                == "Calendar")
+    }
+
+    @Test func titleOnlyInTheBodyFallsBackToFirstPart() {
+        #expect(AppNameResolver.appName(fromDescription: "Slack, Ping, Ping me", title: "me") == "Slack")
+    }
+
+    @Test func noTitleFallsBackToFirstPart() {
+        #expect(AppNameResolver.appName(fromDescription: "Slack, Ping", title: nil) == "Slack")
+    }
+}

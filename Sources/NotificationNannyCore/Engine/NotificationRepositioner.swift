@@ -258,6 +258,9 @@ package final class NotificationRepositioner: ObservableObject {
         dismissTimers.cancelAll()
         customPiles.removeAll()
         bannerFirstSeen.removeAll()
+        bannerAppNames.removeAll()
+        bannerWidthsRead.removeAll()
+        stackPresses.removeAll()
         nativePiles.removeAll()
         followTimer?.cancel()
         followTimer = nil
@@ -599,11 +602,20 @@ package final class NotificationRepositioner: ObservableObject {
         defer { sweepBanners = nil }
         playSounds(in: windows)
         if !dismissTimers.armedIDs.isEmpty || !closedBannerIDs.isEmpty || !unreadableBannerSweeps.isEmpty
-            || !bannerFirstSeen.isEmpty {
-            let present = Set(windows.flatMap { banners(in: $0) }.compactMap(\.id))
+            || !bannerFirstSeen.isEmpty || !stackPresses.isEmpty {
+            let refs = windows.flatMap { banners(in: $0) }
+            let present = Set(refs.compactMap(\.id))
             dismissTimers.prune(keeping: present)
             closedBannerIDs.formIntersection(present)
-            bannerFirstSeen = bannerFirstSeen.filter { present.contains($0.key) }
+            // A collapsed stack hides the cards behind its top one. They're still
+            // up, and forgetting when they came would reorder the pile once the
+            // stack is open.
+            if !refs.contains(where: \.isCollapsedStack) {
+                bannerFirstSeen = bannerFirstSeen.filter { present.contains($0.key) }
+                bannerAppNames = bannerAppNames.filter { present.contains($0.key) }
+                bannerWidthsRead.formIntersection(present)
+            }
+            stackPresses = stackPresses.filter { present.contains($0.key) }
             unreadableBannerSweeps = unreadableBannerSweeps.filter { present.contains($0.key) }
         }
         let baseTargets: [(AXUIElement, RepositionTarget)] = windows.compactMap { w in
@@ -634,10 +646,7 @@ package final class NotificationRepositioner: ObservableObject {
         let up = windows.filter { !isNCPanelOpen($0) }.flatMap { window in
             banners(in: window).compactMap { ref in
                 ref.id.map { id in
-                    (id: id, appName: {
-                        ref.element.stringAttribute("AXAttributedDescription")
-                            .flatMap(AppNameResolver.appName(fromDescription:))
-                    })
+                    (id: id, appName: { AppNameResolver.appName(of: ref.element) })
                 }
             }
         }
@@ -648,6 +657,8 @@ package final class NotificationRepositioner: ObservableObject {
     private struct BannerRef {
         let element: AXUIElement
         let id: String?
+        /// Several Persistent banners folded into one; see `openCollapsedStacks`.
+        let isCollapsedStack: Bool
     }
 
     /// Banners per window for the sweep in progress. Measuring the pile, choosing
@@ -659,7 +670,10 @@ package final class NotificationRepositioner: ObservableObject {
     private func banners(in window: AXUIElement) -> [BannerRef] {
         let key = CFHash(window)
         if let cached = sweepBanners?[key] { return cached }
-        let found = resolver.findBannerElements(in: window).map { BannerRef(element: $0, id: $0.identifier) }
+        let found = resolver.findBannerElements(in: window).map {
+            BannerRef(element: $0, id: $0.identifier,
+                      isCollapsedStack: $0.stringAttribute(kAXSubroleAttribute as String) == Self.collapsedStackSubrole)
+        }
         if sweepBanners != nil { sweepBanners?[key] = found }
         return found
     }
@@ -1476,7 +1490,7 @@ package final class NotificationRepositioner: ObservableObject {
             parsedAppName = knownAppName ?? str
             textPart = str
         }
-        let appName = knownAppName ?? parsedAppName
+        var appName = knownAppName ?? parsedAppName
 
         // Labelled lines are exact, including the subtitle, which the description
         // string runs together with the body. Older layouts have no identifiers,
@@ -1484,6 +1498,9 @@ package final class NotificationRepositioner: ObservableObject {
         let lines = element.identifiedTextValues()
         var content: BannerContent
         if let title = lines["title"] {
+            if knownAppName == nil {
+                appName = AppNameResolver.appName(fromDescription: str, title: title) ?? appName
+            }
             content = BannerContent(appName: appName, title: title, subtitle: lines["subtitle"] ?? "",
                                     body: lines["body"] ?? "", appIcon: lookupIcon(for: appName))
         } else {
@@ -1642,6 +1659,72 @@ package final class NotificationRepositioner: ObservableObject {
         }
     }
 
+    /// Width every custom overlay takes: what macOS gave the last banner that had
+    /// settled. A banner reads wider while it comes in (440, 470, past 480) and
+    /// narrower on its way out, so copying each reading made a pile of mixed widths.
+    private var settledBannerWidth = NotificationRepositioner.bannerSize.width
+    /// Banners whose width has been read once settled; each is read only once,
+    /// before it can start to leave.
+    private var bannerWidthsRead: Set<String> = []
+    private static let bannerSettleTime: Double = 0.5
+
+    private func overlayWidth(for id: String, reading: CGFloat, now: Double) -> CGFloat {
+        if !bannerWidthsRead.contains(id), let seen = bannerFirstSeen[id], now - seen >= Self.bannerSettleTime,
+           reading > 0, reading <= Self.maxBannerWidth {
+            bannerWidthsRead.insert(id)
+            if abs(reading - settledBannerWidth) >= 1 {
+                logger.log("Banner width \(Int(settledBannerWidth)) → \(Int(reading))", tag: "Custom")
+                settledBannerWidth = reading
+            }
+        }
+        return settledBannerWidth
+    }
+
+    /// App names by banner. The name needs the banner's title (see
+    /// `AppNameResolver.appName(fromDescription:title:)`), one more walk of its
+    /// lines, and it doesn't change, so it is read once rather than every sweep.
+    private var bannerAppNames: [String: String] = [:]
+
+    private func appName(ofBanner id: String, _ el: AXUIElement) -> String? {
+        if let known = bannerAppNames[id] { return known }
+        guard let description = el.stringAttribute("AXAttributedDescription") else { return nil }
+        let title = el.identifiedTextValues()["title"]
+        let name = AppNameResolver.appName(fromDescription: description, title: title)
+        // Kept only once the title could be read; without it a Persistent
+        // banner's name still has its title on the end.
+        if let name, title != nil { bannerAppNames[id] = name }
+        return name
+    }
+
+    /// Persistent banners from one app that macOS has folded into one. Over
+    /// Accessibility such a stack is only its top card, so the custom pile would
+    /// show one banner for several.
+    private static let collapsedStackSubrole = "AXNotificationCenterAlertStack"
+    /// Times each collapsed stack was pressed, by its identifier.
+    private var stackPresses: [String: Int] = [:]
+
+    /// Presses each collapsed stack in the window open, as a click on it would;
+    /// its cards are then banners of their own. Its host is off screen while the
+    /// pile is custom, so nobody sees it open. True when one was pressed: the
+    /// cards take a moment to come apart, and syncing in between would take the
+    /// hidden ones for gone. A stack that stays shut after two presses is left
+    /// as one banner.
+    private func openCollapsedStacks(in window: AXUIElement) -> Bool {
+        var pressed = false
+        for ref in banners(in: window) where ref.isCollapsedStack {
+            guard let id = ref.id, stackPresses[id, default: 0] < 2 else { continue }
+            stackPresses[id, default: 0] += 1
+            if AXUIElementPerformAction(ref.element, kAXPressAction as CFString) == .success {
+                logger.log("Opened a collapsed stack", tag: "Custom")
+                pressed = true
+            }
+        }
+        if pressed {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in self?.repositionVisibleWindows() }
+        }
+        return pressed
+    }
+
     /// One custom overlay per banner in the window, laid out the way the native
     /// banners are: placed as one pile (growing upward at bottom positions) and
     /// kept on screen as a whole. The host itself is parked off screen. Each
@@ -1653,6 +1736,7 @@ package final class NotificationRepositioner: ObservableObject {
         guard let settings else { return }
         let windowKey = CFHash(window)
         hideOffscreen(window, atX: t.windowOrigin.x)
+        if openCollapsedStacks(in: window) { return }
 
         struct Item {
             let id: String
@@ -1661,14 +1745,15 @@ package final class NotificationRepositioner: ObservableObject {
             let testGroup: UUID??
             let size: CGSize
         }
+        let now = ProcessInfo.processInfo.systemUptime
         let items: [Item] = banners(in: window).compactMap { ref in
             guard let id = ref.id, !closedBannerIDs.contains(id) else { return nil }
             let el = ref.element
             let description = el.stringAttribute("AXAttributedDescription") ?? ""
             let isTest = testGroupID != nil && pendingTestTitle.map { description.contains($0) } == true
             var size = el.size() ?? Self.bannerSize
-            if size.width > Self.maxBannerWidth { size.width = Self.bannerSize.width }
-            return Item(id: id, element: el, name: AppNameResolver.appName(fromDescription: description),
+            size.width = overlayWidth(for: id, reading: size.width, now: now)
+            return Item(id: id, element: el, name: appName(ofBanner: id, el),
                         testGroup: isTest ? testGroupID : nil, size: size)
         }
         func scale(_ item: Item) -> CGFloat {
@@ -1684,7 +1769,6 @@ package final class NotificationRepositioner: ObservableObject {
 
         // Overlays whose banner went start their exit where they stand and keep
         // their slot until it is over (see PileOrder); a sweep then closes the gap.
-        let now = ProcessInfo.processInfo.systemUptime
         let previous = customPiles[windowKey] ?? []
         let liveIDs = Set(items.map(\.id))
         var slots = Dictionary(previous.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
@@ -1696,7 +1780,11 @@ package final class NotificationRepositioner: ObservableObject {
                 self?.repositionVisibleWindows()
             }
         }
-        let leaving = Set(slots.values.filter { ($0.leavingUntil ?? 0) > now }.map(\.id))
+        // A banner arriving as another leaves is macOS swapping one for the other.
+        // Then the leaving overlay fades where it is without holding its slot, so
+        // the newcomer lands in place instead of beside it and then sliding over.
+        let arriving = items.contains { !customBannerManager.isActive(key: overlayKey($0.id)) }
+        let leaving = arriving ? [] : Set(slots.values.filter { ($0.leavingUntil ?? 0) > now }.map(\.id))
         for item in items where bannerFirstSeen[item.id] == nil { bannerFirstSeen[item.id] = now }
         let arranged = PileOrder.arrange(items.map(\.id), firstSeen: bannerFirstSeen,
                                          newestAtBottom: settings.newestBannerAtBottom)
@@ -1734,6 +1822,10 @@ package final class NotificationRepositioner: ObservableObject {
             return slots[id]?.size ?? .zero
         }
         let gap = Self.pileGap
+        // Where each overlay stood before this sweep moved it; see the arrivals below.
+        let framesBefore = Dictionary(items.compactMap { item in
+            customBannerManager.frame(key: overlayKey(item.id)).map { (item.id, $0) }
+        }, uniquingKeysWith: { a, _ in a })
         var next: [PileSlot] = []
         var arrivals: [(id: String, item: Item, topLeft: CGPoint, size: CGSize)] = []
         for (anchor, order) in piles {
@@ -1777,17 +1869,26 @@ package final class NotificationRepositioner: ObservableObject {
         }
         customPiles[windowKey] = next
 
-        // Make room first: while the pile glides aside, a new overlay would land
-        // on the one still leaving its slot. Its slot is kept, and it slides in
-        // once the glide is over.
-        let settles = next.map { customBannerManager.glideEnd(key: overlayKey($0.id)) }.max() ?? 0
-        if !arrivals.isEmpty, settles > now {
-            DispatchQueue.main.asyncAfter(deadline: .now() + (settles - now) + 0.02) { [weak self] in
+        // Make room first: a new overlay whose spot another one is still gliding
+        // out of would land on top of it, so that one waits for the glide and a
+        // sweep then brings it in. Everything else comes in at once; waiting for
+        // any glide in the pile held every new banner back by about 0.3 s.
+        var waitUntil: Double = 0
+        let ready = arrivals.filter { arrival in
+            let lands = CustomBannerManager.panelFrame(axOrigin: arrival.topLeft, size: arrival.size,
+                                                       scale: scale(arrival.item)).insetBy(dx: 1, dy: 1)
+            let clearsAt = framesBefore.filter { $0.value.intersects(lands) }
+                .map { customBannerManager.glideEnd(key: overlayKey($0.key)) }.max() ?? 0
+            guard clearsAt > now else { return true }
+            waitUntil = max(waitUntil, clearsAt)
+            return false
+        }
+        if waitUntil > now {
+            DispatchQueue.main.asyncAfter(deadline: .now() + (waitUntil - now) + 0.02) { [weak self] in
                 self?.repositionVisibleWindows()
             }
-            return
         }
-        for arrival in arrivals {
+        for arrival in ready {
             showPileOverlay(arrival.id, element: arrival.item.element, appName: arrival.item.name,
                             testGroup: arrival.item.testGroup, at: arrival.topLeft, size: arrival.size,
                             scale: scale(arrival.item), settings: settings)

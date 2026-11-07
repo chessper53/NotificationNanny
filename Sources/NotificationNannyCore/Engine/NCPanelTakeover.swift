@@ -465,8 +465,8 @@ final class NCPanelTakeover: ObservableObject {
     private static func readRow(_ el: AXUIElement, subrole: String) -> NCPanelRow? {
         guard let id = el.identifier else { return nil }
         let description = el.stringAttribute("AXAttributedDescription") ?? ""
-        let appName = AppNameResolver.appName(fromDescription: description) ?? "Notification"
         let lines = el.identifiedTextValues()
+        let appName = AppNameResolver.appName(fromDescription: description, title: lines["title"]) ?? "Notification"
         let field = NotificationActions.replyField(in: el)
         // The time is the one text without an identifier; title, subtitle and body have one.
         let time = el.children().first {
