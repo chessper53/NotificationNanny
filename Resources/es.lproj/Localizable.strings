@@ -261,3 +261,4 @@
 "Each app's own sound, as macOS plays it" = "El sonido propio de cada app, como lo reproduce macOS";
 "Pick a sound for all apps" = "Elige un sonido para todas las apps";
 "Pick a sound for this sound group" = "Elige un sonido para este grupo de sonidos";
+"Pause during Focus needs Full Disk Access. Without it, NotificationNanny can't tell when a Focus is on, so it never pauses. After allowing it, quit and reopen NotificationNanny." = "Pausar durante un modo de concentración requiere acceso total al disco. Sin él, NotificationNanny no sabe cuándo hay uno activo y nunca se pausa. Después de permitirlo, cierra y vuelve a abrir NotificationNanny.";
