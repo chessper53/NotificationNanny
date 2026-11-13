@@ -15,14 +15,16 @@ private let log = Logger(subsystem: "com.notificationnanny", category: "focus")
 /// Detection is intentionally isolated here: if Apple moves the store again,
 /// only `readActiveState()` needs updating.
 @MainActor
-final class FocusModeMonitor {
+final class FocusModeMonitor: ObservableObject {
     static let shared = FocusModeMonitor()
 
     private(set) var isActive = false
     /// Whether the Focus store could be read on the last check: nil before the first one.
     /// False most often means macOS denied access (it sits behind Full Disk Access on
     /// recent releases), and then `isActive` is always false whatever the real Focus is.
-    private(set) var storeReadable: Bool?
+    /// Published for Settings, which says when Pause during Focus can't work: set only when
+    /// it changes, as it is read every second.
+    @Published private(set) var storeReadable: Bool?
     private let cacheTTL: TimeInterval = 1.0
     private var refreshTask: Task<Void, Never>?
 
@@ -34,7 +36,7 @@ final class FocusModeMonitor {
                 guard let self else { return }
                 await MainActor.run {
                     self.isActive = value
-                    self.storeReadable = readable
+                    if self.storeReadable != readable { self.storeReadable = readable }
                 }
                 try? await Task.sleep(nanoseconds: ttlNanoseconds)
             }

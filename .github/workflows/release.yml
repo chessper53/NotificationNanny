@@ -1,22 +1,75 @@
 name: Release
 
+# The one place a release is built and published. scripts/release.sh only pushes the
+# tag. Built once, checked, uploaded to a draft, checked again as downloaded, and only
+# then published; the cask follows on main. A local script used to publish too, and
+# its archive and this one raced for the same release and the same cask line.
 on:
-  release:
-    types: [published]
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing tag to release again, e.g. v8.1.0
+        required: true
+
+concurrency:
+  group: release
+  cancel-in-progress: false
 
 jobs:
-  build-and-update-cask:
+  release:
     runs-on: macos-latest
     permissions:
       contents: write
+    env:
+      TAG: ${{ github.event.inputs.tag || github.ref_name }}
 
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.TAG }}
+          fetch-depth: 0
 
-      - name: Get version
-        id: version
-        run: echo "version=${GITHUB_REF_NAME#v}" >> $GITHUB_OUTPUT
+      - name: Version from the tag
+        run: |
+          VERSION="${TAG#v}"
+          FILE="$(tr -d '[:space:]' < VERSION)"
+          if [[ "$VERSION" != "$FILE" ]]; then
+            echo "error: tag $TAG but VERSION says $FILE; bump VERSION, commit, and tag that" >&2
+            exit 1
+          fi
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          echo "ZIP=NotificationNanny-$VERSION.zip" >> "$GITHUB_ENV"
 
+      # Every release signed with the same certificate, so macOS keeps a user's
+      # Accessibility and Screen Recording across updates (ad-hoc, each update was a
+      # new app to allow again). A release without it fails rather than going out
+      # ad-hoc: those who had allowed the last one would have to again.
+      - name: Import signing certificate
+        env:
+          SIGNING_P12: ${{ secrets.SIGNING_P12 }}
+          SIGNING_P12_PASSWORD: ${{ secrets.SIGNING_P12_PASSWORD }}
+        run: |
+          if [[ -z "$SIGNING_P12" || -z "$SIGNING_P12_PASSWORD" ]]; then
+            echo "error: SIGNING_P12 and SIGNING_P12_PASSWORD secrets are required to sign a release" >&2
+            exit 1
+          fi
+          keychain="$RUNNER_TEMP/signing.keychain-db"
+          pass="$(uuidgen)"
+          echo "$SIGNING_P12" | base64 --decode > "$RUNNER_TEMP/signing.p12"
+          security create-keychain -p "$pass" "$keychain"
+          security set-keychain-settings "$keychain"
+          security unlock-keychain -p "$pass" "$keychain"
+          security import "$RUNNER_TEMP/signing.p12" -k "$keychain" -P "$SIGNING_P12_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$pass" "$keychain" >/dev/null
+          rm -f "$RUNNER_TEMP/signing.p12"
+          identity="$(security find-identity -p codesigning "$keychain" | awk '/"/ { print $2; exit }')"
+          [[ -n "$identity" ]] || { echo "error: no signing identity in SIGNING_P12" >&2; exit 1; }
+          echo "SIGN_KEYCHAIN=$keychain" >> "$GITHUB_ENV"
+          echo "SIGN_IDENTITY=$identity" >> "$GITHUB_ENV"
+
+      # VERSION comes from the environment set above.
       - name: Build
         run: UNIVERSAL=1 ./scripts/build-app.sh
 
@@ -31,35 +84,81 @@ jobs:
             fi
           done
 
-      - name: Zip
-        run: cd build && zip -r "../NotificationNanny-${{ steps.version.outputs.version }}.zip" NotificationNanny.app
+      - name: Verify signature
+        run: |
+          requirement="$(codesign -dr - build/NotificationNanny.app 2>&1)"
+          echo "$requirement"
+          [[ "$requirement" == *"certificate leaf"* ]] || { echo "error: release is not signed with the certificate" >&2; exit 1; }
 
-      - name: SHA256
-        id: sha
-        run: echo "sha256=$(shasum -a 256 "NotificationNanny-${{ steps.version.outputs.version }}.zip" | awk '{print $1}')" >> $GITHUB_OUTPUT
+      # ditto, as release.sh did and the CI bundle does: zip can drop what the signature
+      # covers, and the archive would install a broken app.
+      - name: Package
+        run: ditto -c -k --sequesterRsrc --keepParent build/NotificationNanny.app "$ZIP"
 
-      # --clobber so the job can be re-run. Every release from 7.3.1 to 7.7.0
-      # failed at "Commit cask" below, and re-running the job would have
-      # collided with the zip this same job had already attached. Safe here
-      # because this job is the only thing that builds, hashes and uploads: the
-      # sha256 written into the cask always comes from the very zip being
-      # attached, in the same run.
-      - name: Attach zip to release
-        run: gh release upload "$GITHUB_REF_NAME" "NotificationNanny-${{ steps.version.outputs.version }}.zip" --clobber
+      # What users get is the archive, so the archive is what is checked: unpacked, its
+      # version, both architectures and the signature.
+      - name: Verify the archive
+        run: |
+          rm -rf "$RUNNER_TEMP/unpacked" && mkdir -p "$RUNNER_TEMP/unpacked"
+          ditto -x -k "$ZIP" "$RUNNER_TEMP/unpacked"
+          app="$RUNNER_TEMP/unpacked/NotificationNanny.app"
+          shipped="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$app/Contents/Info.plist")"
+          [[ "$shipped" == "$VERSION" ]] || { echo "error: archive holds version $shipped, not $VERSION" >&2; exit 1; }
+          architectures="$(lipo -archs "$app/Contents/MacOS/NotificationNanny")"
+          [[ " $architectures " == *" arm64 "* && " $architectures " == *" x86_64 "* ]] || { echo "error: archive binary is $architectures" >&2; exit 1; }
+          codesign --verify --deep --strict "$app"
+          [[ "$(codesign -dr - "$app" 2>&1)" == *"certificate leaf"* ]] || { echo "error: archive app is not signed with the certificate" >&2; exit 1; }
+          echo "SHA256=$(shasum -a 256 "$ZIP" | awk '{print $1}')" >> "$GITHUB_ENV"
+
+      # A draft first: nobody sees it until it is checked. A run started again finds its
+      # draft and replaces the archive; a release already published is left alone.
+      - name: Upload to a draft release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Update cask
         run: |
-          sed -i '' 's/version "[^"]*"/version "${{ steps.version.outputs.version }}"/' Casks/notificationnanny.rb
-          sed -i '' 's/sha256 "[^"]*"/sha256 "${{ steps.sha.outputs.sha256 }}"/' Casks/notificationnanny.rb
+          if state="$(gh release view "$TAG" --json isDraft -q .isDraft 2>/dev/null)"; then
+            if [[ "$state" != "true" ]]; then
+              echo "error: $TAG is already published; its archive and the cask are left as they are" >&2
+              exit 1
+            fi
+            gh release upload "$TAG" "$ZIP" --clobber
+          else
+            gh release create "$TAG" "$ZIP" --draft --verify-tag --title "NotificationNanny $VERSION" --generate-notes
+          fi
 
-      - name: Commit cask
+      - name: Check the uploaded archive
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          rm -rf "$RUNNER_TEMP/downloaded"
+          gh release download "$TAG" --pattern "$ZIP" --dir "$RUNNER_TEMP/downloaded"
+          got="$(shasum -a 256 "$RUNNER_TEMP/downloaded/$ZIP" | awk '{print $1}')"
+          [[ "$got" == "$SHA256" ]] || { echo "error: uploaded archive is $got, built $SHA256" >&2; exit 1; }
+
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release edit "$TAG" --draft=false --latest
+
+      # On main as it is now, not the tag's checkout: pushing that onto main failed
+      # whenever main had moved on, as it did for every release from 7.3.1 to 7.7.0.
+      # Tried again on a race; nothing to commit when the cask already says this.
+      - name: Update the cask on main
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add Casks/notificationnanny.rb
-          git commit -m "chore: bump cask to v${{ steps.version.outputs.version }}"
-          git push origin HEAD:main
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          for attempt in 1 2 3; do
+            git fetch -q origin main
+            git checkout -q -B cask-update origin/main
+            sed -i '' "s/version \"[^\"]*\"/version \"$VERSION\"/" Casks/notificationnanny.rb
+            sed -i '' "s/sha256 \"[^\"]*\"/sha256 \"$SHA256\"/" Casks/notificationnanny.rb
+            if git diff --quiet; then echo "cask already at $VERSION"; exit 0; fi
+            git commit -qam "chore: bump cask to v$VERSION"
+            if git push -q origin HEAD:main; then echo "cask at $VERSION"; exit 0; fi
+            echo "main moved on, trying again ($attempt)"
+            sleep $((attempt * 5))
+          done
+          echo "error: couldn't push the cask; the release is published, update Casks/notificationnanny.rb by hand" >&2
+          exit 1

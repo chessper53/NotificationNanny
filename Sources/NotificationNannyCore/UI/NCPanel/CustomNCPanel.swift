@@ -121,12 +121,29 @@ final class CustomNCPanelController {
         host.sizingOptions = []
         // A right click on a row opens its menu where it was clicked, as on the system's.
         host.onRightClick = { [weak takeover] point in
-            guard let takeover, let id = hitMap.row(at: point),
-                  let row = takeover.snapshot.sections.lazy.flatMap({ $0.groups }).flatMap({ $0.rows }).first(where: { $0.id == id })
+            if ProcessInfo.processInfo.environment["NN_TIMING"] == "1" { // DEBUG-CLICK
+                FileHandle.standardError.write(Data("[panel view] right click at \(point) → \(hitMap.row(at: point) ?? "nothing"), \(hitMap.rowFrames.count) frames\n".utf8))
+            }
+            guard let takeover, let id = hitMap.row(at: point) else { return }
+            // A widget's menu, as a right click on it opens on the system's.
+            if id.hasPrefix(NCPanelHitMap.widgetPrefix) {
+                let widgetID = String(id.dropFirst(NCPanelHitMap.widgetPrefix.count))
+                if let widget = takeover.widgets.first(where: { $0.id == widgetID }) {
+                    takeover.showMenu(for: widget, at: point)
+                }
+                return
+            }
+            guard let row = takeover.snapshot.sections.lazy.flatMap({ $0.groups }).flatMap({ $0.rows }).first(where: { $0.id == id })
             else { return }
             takeover.showMenu(for: row, withAppActions: true, at: point, trailing: false)
         }
         window.contentView = host
+        if ProcessInfo.processInfo.environment["NN_TIMING"] == "1" { // DEBUG-CLICK
+            NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak window] event in
+                FileHandle.standardError.write(Data("[app] scroll \(event.scrollingDeltaY) to window \(event.windowNumber), panel \(window?.windowNumber ?? -1)\n".utf8))
+                return event
+            }
+        }
     }
 
     func show(on screen: NSScreen) {
@@ -188,36 +205,6 @@ final class CustomNCPanelController {
             FileHandle.standardError.write(Data("[panel window] height \(Int(height)) uptime \(ProcessInfo.processInfo.systemUptime)\n".utf8))
         }
     }
-}
-
-/// An opaque window between Notification Center's panel and ours, while the real panel
-/// sits under ours to have its widgets captured. Ours covers it almost always; this
-/// covers what ours doesn't, so no part of the real panel ever shows.
-@MainActor
-final class NCPanelCover {
-    private let window: NSPanel
-
-    init() {
-        window = NSPanel(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: true)
-        // Notification Center's window is at 21, ours at the status bar's 25.
-        window.level = NSWindow.Level(rawValue: 22)
-        window.isOpaque = false
-        window.backgroundColor = .clear
-        window.hasShadow = false
-        window.ignoresMouseEvents = true
-        window.collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle, .fullScreenAuxiliary]
-        let fill = NSHostingView(rootView: RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Color.nannyWindow))
-        window.contentView = fill
-    }
-
-    func show(axRect: CGRect, below ours: NSWindow) {
-        guard let primary = NSScreen.screens.first else { return }
-        let frame = NSRect(x: axRect.minX, y: primary.frame.maxY - axRect.maxY, width: axRect.width, height: axRect.height)
-        window.setFrame(frame, display: true)
-        window.order(.below, relativeTo: ours.windowNumber)
-    }
-
-    func hide() { window.orderOut(nil) }
 }
 
 /// In or out: the panel's animation, chosen in Settings, plays between the two.
@@ -285,6 +272,8 @@ enum NCPanelMetrics {
     /// Under the list: Edit Widgets (87 wide) and the Clear Notifications ✕, both 24 high,
     /// 8 apart, centred on the column, 16 under what is above them.
     static let footerAbove: CGFloat = 16
+    /// From the last notification to the first widget under them.
+    static let widgetsAbove: CGFloat = 16
     static let footerHeight: CGFloat = 24
     static let footerGap: CGFloat = 8
     static let editWidgetsWidth: CGFloat = 87
@@ -378,19 +367,23 @@ struct CustomNCPanelView: View {
                 if o.appFilter, apps.count > 1 {
                     AppFilterBar(apps: apps, filter: $filter).padding(.bottom, NCPanelMetrics.headingBelow * s)
                 }
-                if !takeover.widgets.isEmpty {
-                    VStack(spacing: NCPanelMetrics.rowGap * s) {
-                        ForEach(takeover.widgets) { widget in WidgetView(widget: widget, takeover: takeover) }
-                    }
-                    .padding(.bottom, NCPanelMetrics.rowGap * s)
-                }
                 ForEach(Array(sections.enumerated()), id: \.element.id) { index, section in
                     if let title = section.title {
-                        Heading(title: title, isFirst: index == 0 && takeover.widgets.isEmpty && !(o.appFilter && apps.count > 1)) {
+                        Heading(title: title, isFirst: index == 0 && !(o.appFilter && apps.count > 1)) {
                             RoundButton(symbol: "xmark") { takeover.clearAll(section) }
                         }
                     }
                     ForEach(section.groups) { group in GroupView(group: group, takeover: takeover) }
+                }
+                // Under the notifications, 16 below the last, as Notification Center has them
+                // (measured on 27.0, scripts/panel-lab `widget-park`); the rows end in their
+                // gap already.
+                if !takeover.widgets.isEmpty {
+                    VStack(spacing: NCPanelMetrics.rowGap * s) {
+                        ForEach(takeover.widgets) { widget in WidgetView(widget: widget, takeover: takeover) }
+                    }
+                    .padding(.top, sections.isEmpty ? 0 : (NCPanelMetrics.widgetsAbove - NCPanelMetrics.rowGap) * s)
+                    .padding(.bottom, NCPanelMetrics.rowGap * s)
                 }
                 Footer(takeover: takeover, hasContent: !sections.isEmpty || !takeover.widgets.isEmpty)
             }
@@ -406,6 +399,10 @@ struct CustomNCPanelView: View {
             })
         }
         .frame(width: CustomNCPanelController.width(o), height: listHeight)
+        // The window server sends a scroll over a clear pixel to the window behind: in the
+        // gaps between rows and stacks the scroll moved what was under the panel. Clicks
+        // there are ours already (PanelClickRouter). One level of alpha, too little to see.
+        .background(Color.black.opacity(0.005))
     }
 
     /// A menu over the panel, with a layer under it that closes it on a click elsewhere in
@@ -437,6 +434,8 @@ struct CustomNCPanelView: View {
 /// it is right clicked.
 @MainActor
 final class NCPanelHitMap {
+    /// Rows by their ID, widgets by this and theirs.
+    static let widgetPrefix = "widget:"
     var rowFrames: [String: CGRect] = [:]
 
     func row(at point: CGPoint) -> String? {
@@ -641,7 +640,11 @@ private struct GroupView: View {
                 RowView(row: row, takeover: takeover)
                 // A collapsed stack: the edges of the cards behind it, under its own.
                 if row.isStack {
-                    StackEdges(tint: takeover.tint(row.appName)).padding(.top, -NCPanelMetrics.rowGap * s)
+                    // Part of the stack: a click on them expands it, as on the system's.
+                    StackEdges(tint: takeover.tint(row.appName))
+                        .contentShape(Rectangle())
+                        .onTapGesture { takeover.activate(row) }
+                        .padding(.top, -NCPanelMetrics.rowGap * s)
                 }
             }
         }
@@ -665,6 +668,7 @@ private struct RowView: View {
         c.expanded = row.expanded
         c.reply = row.reply
         c.replyPlaceholder = row.replyPlaceholder
+        c.time = row.time
         return c
     }
 
@@ -691,19 +695,10 @@ private struct RowView: View {
             // than jumping at each.
             .animation(.smooth(duration: 0.22), value: row.height)
             .animation(.smooth(duration: 0.22), value: row.expanded)
+            // Nothing of a row ever reaches the next: its text fits in it, and while it
+            // grows or shrinks what doesn't fit yet is cut off.
+            .clipShape(shape)
             .panelBackdrop(shape)
-            .overlay(alignment: .topTrailing) {
-                // Notification Center's own time, where it draws it; the hover controls take
-                // its place, as on the system's.
-                if !hovering, !row.expanded, let time = row.time {
-                    Text(time)
-                        .font(.system(size: 11 * s).monospacedDigit())
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                        .padding(.top, 13 * s).padding(.trailing, 14 * s)
-                        .allowsHitTesting(false)
-                }
-            }
             .overlay(alignment: .topLeading) {
                 if hovering {
                     CloseButton { takeover.close(row) }
@@ -731,6 +726,8 @@ private struct PanelMenuView: View {
     private static let separatorHeight: CGFloat = 11
     private static let padding: CGFloat = 5
     private static let radius: CGFloat = 10
+    /// The room a tick takes before an item's title.
+    static let tickWidth: CGFloat = 14
 
     var body: some View {
         let shape = RoundedRectangle(cornerRadius: Self.radius, style: .continuous)
@@ -747,9 +744,12 @@ private struct PanelMenuView: View {
                         .foregroundStyle(.tertiary)
                         .lineLimit(1)
                         .padding(.horizontal, 14)
+                        // Over its items' titles, past the ticks.
+                        .padding(.leading, menu.items.contains(where: \.checked) ? Self.tickWidth : 0)
                         .frame(height: Self.itemHeight, alignment: .leading)
                 case .action:
-                    MenuItemRow(title: item.title) { takeover.choose(item) }
+                    MenuItemRow(title: item.title, checked: item.checked,
+                                ticks: menu.items.contains(where: \.checked)) { takeover.choose(item) }
                 }
             }
         }
@@ -773,15 +773,26 @@ private struct PanelMenuView: View {
 
 private struct MenuItemRow: View {
     let title: String
+    /// Ticked, and whether the menu has ticks at all: then every item leaves room for
+    /// one, as on the system's menus.
+    var checked = false
+    var ticks = false
     let action: () -> Void
     @State private var hovering = false
 
     var body: some View {
         Button(action: action) {
-            Text(title)
+            HStack(spacing: 0) {
+                if ticks {
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 11, weight: .semibold))
+                        .opacity(checked ? 1 : 0)
+                        .frame(width: PanelMenuView.tickWidth, alignment: .leading)
+                }
+                Text(title).lineLimit(1)
+            }
                 .font(.system(size: 13))
                 .foregroundStyle(hovering ? AnyShapeStyle(Color.white) : AnyShapeStyle(.primary))
-                .lineLimit(1)
                 .padding(.leading, 9).padding(.trailing, 24)
                 .frame(maxWidth: .infinity, minHeight: 24, alignment: .leading)
                 .background {
@@ -857,19 +868,31 @@ private struct WidgetView: View {
 
     @Environment(\.panelScale) private var s
 
+    /// A widget's corners: a circle of 28 fits where its capture turns black, row by row
+    /// (measured on 27.0, scripts/panel-lab `widget-park`); at 20 black showed in them.
+    static let cornerRadius: CGFloat = 28
+
     var body: some View {
-        let size = CGSize(width: widget.frameInWindow.width * s, height: widget.frameInWindow.height * s)
+        // As large as its picture: resized, it keeps the last picture at the last size until
+        // one at the new size comes, and then changes once. Stretched to the new size, or a
+        // faint box meanwhile, it looked broken or gone. A box only before any picture.
+        let shown = widget.image?.size ?? widget.frameInWindow.size
+        let size = CGSize(width: shown.width * s, height: shown.height * s)
         Group {
             if let image = widget.image {
                 Image(nsImage: image).resizable().interpolation(.high)
             } else {
-                RoundedRectangle(cornerRadius: 18, style: .continuous).fill(Color.primary.opacity(0.06))
+                RoundedRectangle(cornerRadius: Self.cornerRadius * s, style: .circular).fill(Color.primary.opacity(0.06))
             }
         }
         .frame(width: size.width, height: size.height)
-        // The capture's corners hold whatever was behind the widget's rounded ones.
-        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+        // The capture's corners hold whatever was behind the widget's rounded ones, black.
+        .clipShape(RoundedRectangle(cornerRadius: Self.cornerRadius * s, style: .circular))
         .contentShape(Rectangle())
+        .background(GeometryReader { g in
+            Color.clear.preference(key: RowFramesKey.self,
+                                   value: [NCPanelHitMap.widgetPrefix + widget.id: g.frame(in: .named(NCPanelSpace.name))])
+        })
         .onTapGesture(coordinateSpace: .local) { location in
             takeover.click(widget, at: CGPoint(x: min(max(location.x / size.width, 0), 1),
                                                y: min(max(location.y / size.height, 0), 1)))

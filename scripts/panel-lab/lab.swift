@@ -148,7 +148,8 @@ func click(at point: CGPoint, ifFrontIs owner: pid_t, skippingOurs: Bool = false
               let rect = CGRect(dictionaryRepresentation: b as CFDictionary) else { return false }
         return rect.contains(point) && (info[kCGWindowAlpha as String] as? Double ?? 0) > 0
     }
-    guard front?[kCGWindowOwnerPID as String] as? pid_t == owner else {
+    // NN_LAB_RECORDING=1: a screen recording puts a window of its own over the area.
+    guard front?[kCGWindowOwnerPID as String] as? pid_t == owner || ProcessInfo.processInfo.environment["NN_LAB_RECORDING"] == "1" else {
         print("  (not clicking: front window at the point is pid \(front?[kCGWindowOwnerPID as String] ?? "none"))")
         return false
     }
@@ -517,6 +518,135 @@ case "widget-shot":
         print("nothing captured")
     }
     try? FileManager.default.removeItem(atPath: full)
+    restore()
+
+case "widget-menu":
+    // A widget's own menu (a right click on it in the real panel): its actions, and what
+    // AXShowMenu opens, on the widget and on its children, parked as the app parks it.
+    // The menu is closed with Escape, nothing in it pressed.
+    guard pressClock(), waitFor(3, { isOpen() }) != nil, let h = host(), let hf = frame(h) else {
+        print("panel did not open"); restore(); exit(1)
+    }
+    hostHome = hf.origin
+    _ = setPoint(h, CGPoint(x: hf.minX, y: -9999))
+    spin(0.6)
+    guard let widget = find(h, { (str($0, kAXIdentifierAttribute) ?? "").hasPrefix("widget-local:") }) else {
+        print("no widget"); closePanel(); restore(); exit(1)
+    }
+    func menus(_ e: AXUIElement, _ d: Int = 0) -> [AXUIElement] {
+        guard d < 4 else { return [] }
+        return children(e).flatMap { str($0, kAXRoleAttribute) == "AXMenu" ? [$0] : menus($0, d + 1) }
+    }
+    var targets = [widget]
+    for c in children(widget) { targets.append(c); targets.append(contentsOf: children(c)) }
+    for (i, t) in targets.enumerated() {
+        let acts = actionNames(t).map(displayName)
+        print("\(i) \(str(t, kAXRoleAttribute) ?? "?")\(str(t, kAXSubroleAttribute).map { "/\($0)" } ?? "") actions: \(acts)")
+        guard acts.contains("AXShowMenu") else { continue }
+        let before = menus(h).count
+        AXUIElementSetMessagingTimeout(t, 0.05)
+        AXUIElementPerformAction(t, kAXShowMenuAction as CFString)
+        AXUIElementSetMessagingTimeout(t, 0)
+        spin(0.4)
+        let found = menus(h) + menus(t)
+        if found.count > before, let m = found.last {
+            print("   menu: \(children(m).map { "\(str($0, kAXTitleAttribute) ?? "")[\(str($0, kAXIdentifierAttribute) ?? "")] h\(Int(frame($0)?.height ?? 0))" })")
+            // Which windows of Notification Center's are on screen with the menu up, at
+            // which level: the menu, and the widget it lifts beside it.
+            print("   menu frame \(frame(m).map { "(\(Int($0.minX)),\(Int($0.minY)) \(Int($0.width))x\(Int($0.height)))" } ?? "?")")
+            for w in (CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID) as? [[String: Any]] ?? [])
+            where w[kCGWindowOwnerPID as String] as? pid_t == nc.processIdentifier {
+                let b = (w[kCGWindowBounds as String] as? NSDictionary).flatMap { CGRect(dictionaryRepresentation: $0 as CFDictionary) } ?? .zero
+                print("   NC window #\(w[kCGWindowNumber as String] ?? "?") layer \(w[kCGWindowLayer as String] ?? "?") (\(Int(b.minX)),\(Int(b.minY)) \(Int(b.width))x\(Int(b.height)))")
+            }
+            for down in [true, false] { CGEvent(keyboardEventSource: nil, virtualKey: 53, keyDown: down)?.post(tap: .cghidEventTap) }
+            spin(0.3)
+        } else {
+            print("   no menu")
+        }
+    }
+    closePanel()
+    spin(0.3)
+    restore()
+
+case "widget-park":
+    // Where can the open panel's window be, unseen, and still have its widgets drawn for a
+    // capture? `widget-park <out> <x|top|off|home>`: parked as the app parks it, then moved
+    // so that only the window's left column is on screen at the right edge (x), only its
+    // bottom row at the top (top), nowhere (off), or back home. Writes the window number
+    // to <out>.wid for scripts/panel-lab/shot.sh to capture into <out>-full.png, waits for
+    // it, keeps only the widgets' crops (<out>-0.png…) and deletes the full capture.
+    let out = args.dropFirst().first ?? "build/panel-lab/park"
+    let mode = args.dropFirst(2).first ?? "x"
+    guard let screen = NSScreen.screens.first else { exit(1) }
+    guard pressClock(), waitFor(3, { isOpen() }) != nil, let h = host(), let hf = frame(h) else {
+        print("panel did not open"); restore(); exit(1)
+    }
+    hostHome = hf.origin
+    _ = setPoint(h, CGPoint(x: hf.minX, y: -9999))
+    spin(0.5)
+    let target: CGPoint
+    switch mode {
+    case "x": target = CGPoint(x: screen.frame.maxX - 1, y: hf.minY)
+    case "top": target = CGPoint(x: hf.minX, y: -(hf.height - 1))
+    case "home": target = hf.origin
+    default: target = CGPoint(x: hf.minX, y: -9999)
+    }
+    _ = setPoint(h, target)
+    // Notification Center may put it back; held where it was put.
+    for _ in 0..<8 { spin(0.1); if let p = frame(h)?.origin, hypot(p.x - target.x, p.y - target.y) > 1 { _ = setPoint(h, target) } }
+    let widgets = { () -> [CGRect] in
+        var found: [AXUIElement] = []
+        func walk(_ e: AXUIElement, _ d: Int) {
+            guard d < 10 else { return }
+            if (str(e, kAXIdentifierAttribute) ?? "").hasPrefix("widget-local:") { found.append(e); return }
+            if str(e, kAXIdentifierAttribute) == "AXNotificationListItems" { return }
+            for c in children(e) { walk(c, d + 1) }
+        }
+        walk(h, 0)
+        let o = frame(h)?.origin ?? .zero
+        return found.compactMap(frame).map { CGRect(x: $0.minX - o.x, y: $0.minY - o.y, width: $0.width, height: $0.height) }
+    }()
+    let list = CGWindowListCopyWindowInfo([.optionAll], kCGNullWindowID) as? [[String: Any]] ?? []
+    let wid = list.first { info in
+        guard info[kCGWindowOwnerPID as String] as? pid_t == nc.processIdentifier,
+              let b = info[kCGWindowBounds as String] as? NSDictionary,
+              let r = CGRect(dictionaryRepresentation: b as CFDictionary) else { return false }
+        return abs(r.width - hf.width) < 2 && abs(r.height - hf.height) < 2
+    }?[kCGWindowNumber as String] as? Int
+    if let list = find(h, { str($0, kAXIdentifierAttribute) == "AXNotificationListItems" }), let lf = frame(list), let o = frame(h)?.origin {
+        print("notification list at y \(Int(lf.minY - o.y))..\(Int(lf.maxY - o.y)), x \(Int(lf.minX - o.x))..\(Int(lf.maxX - o.x))")
+    }
+    print("mode \(mode): window \(wid.map(String.init) ?? "?") at \(frame(h).map { "(\(Int($0.minX)),\(Int($0.minY)))" } ?? "?"), \(widgets.count) widget(s): \(widgets.map { "\(Int($0.minX)),\(Int($0.minY)) \(Int($0.width))x\(Int($0.height))" })")
+    let full = out + "-full.png"
+    try? FileManager.default.removeItem(atPath: full)
+    try? "\(wid ?? 0)".write(toFile: out + ".wid", atomically: true, encoding: .utf8)
+    var waited = 0.0
+    while !FileManager.default.fileExists(atPath: full + ".txt"), waited < 15 {
+        spin(0.1); waited += 0.1
+        if let p = frame(h)?.origin, hypot(p.x - target.x, p.y - target.y) > 1 { _ = setPoint(h, target) }
+    }
+    if let img = NSImage(contentsOfFile: full), let cg = img.cgImage(forProposedRect: nil, context: nil, hints: nil) {
+        let scale = CGFloat(cg.width) / hf.width
+        for (i, r) in widgets.enumerated() {
+            guard let part = cg.cropping(to: CGRect(x: r.minX * scale, y: r.minY * scale, width: r.width * scale, height: r.height * scale)) else { continue }
+            // How much is drawn there: the spread of brightness, 0 for a blank picture.
+            let rep = NSBitmapImageRep(cgImage: part)
+            var lo = 1.0, hi = 0.0
+            for y in stride(from: 0, to: rep.pixelsHigh, by: 4) { for x in stride(from: 0, to: rep.pixelsWide, by: 4) {
+                if let c = rep.colorAt(x: x, y: y) { let v = Double(c.brightnessComponent) * Double(c.alphaComponent); lo = min(lo, v); hi = max(hi, v) }
+            } }
+            try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: "\(out)-\(i).png"))
+            print("   widget \(i): brightness spread \(String(format: "%.2f", hi - lo)) → \(out)-\(i).png")
+        }
+    } else {
+        print("   nothing captured: \((try? String(contentsOfFile: full + ".txt", encoding: .utf8)) ?? "no report")")
+    }
+    try? FileManager.default.removeItem(atPath: full)
+    try? FileManager.default.removeItem(atPath: full + ".txt")
+    try? FileManager.default.removeItem(atPath: out + ".wid")
+    closePanel()
+    spin(0.3)
     restore()
 
 case "widget-cover":
@@ -1358,7 +1488,7 @@ case "ui-menu":
         print("   press \(want): \(AXUIElementPerformAction(hit, kAXPressAction as CFString).rawValue)")
     }
 
-case "ui-state", "ui-click", "ui-close", "ui-button", "ui-winid", "ui-scroll", "ui-count", "ui-widget", "ui-hover", "ui-rect", "ui-rclick":
+case "ui-state", "ui-click", "ui-close", "ui-button", "ui-winid", "ui-scroll", "ui-count", "ui-widget", "ui-hover", "ui-rect", "ui-rclick", "ui-frames":
     guard args.count >= 2, let pid = pid_t(args[1]) else { print("usage: lab \(args[0]) <pid> [text]"); exit(64) }
     let nn = AXUIElementCreateApplication(pid)
     AXUIElementSetMessagingTimeout(nn, 2)
@@ -1400,6 +1530,28 @@ case "ui-state", "ui-click", "ui-close", "ui-button", "ui-winid", "ui-scroll", "
         // Our panel's frame as screencapture -R wants it.
         guard let f = nnWindows.compactMap(frame).first else { print("none"); exit(1) }
         print("\(Int(f.minX)),\(Int(f.minY)),\(Int(f.width)),\(Int(f.height))")
+    case "ui-frames":
+        // Where every text is, ours and Notification Center's own rows', from the top left
+        // of each row's window, to see overlaps and line counts without a screenshot.
+        func line(_ e: AXUIElement, origin: CGPoint) -> String {
+            guard let f = frame(e) else { return "?" }
+            let t = text(e).prefix(28)
+            return "y \(Int(f.minY - origin.y))..\(Int(f.maxY - origin.y)) x \(Int(f.minX - origin.x))..\(Int(f.maxX - origin.x)) h \(Int(f.height)) \"\(t)\""
+        }
+        if let w = nnWindows.first, let o = frame(w)?.origin {
+            print("ours:")
+            for e in elements where ["AXStaticText", "AXButton", "AXGroup"].contains(role(e)) && !(text(e).isEmpty && role(e) != "AXGroup") {
+                print("   \(role(e).dropFirst(2)) \(line(e, origin: o))")
+            }
+        }
+        print("Notification Center's:")
+        for row in labRows() {
+            guard let rf = frame(row) else { continue }
+            print("   row \(str(row, kAXSubroleAttribute)?.replacingOccurrences(of: "AXNotificationCenter", with: "") ?? "?") h \(Int(rf.height)) w \(Int(rf.width))")
+            for c in children(row) where str(c, kAXRoleAttribute) == "AXStaticText" {
+                print("      \(str(c, kAXIdentifierAttribute) ?? "time") \(line(c, origin: rf.origin))")
+            }
+        }
     case "ui-state":
         let panelFrame = nnWindows.compactMap(frame).max { $0.height < $1.height }
         print("our panel: \(panelFrame.map { "(\(Int($0.minX)),\(Int($0.minY)) \(Int($0.width))x\(Int($0.height)))" } ?? "none")")
@@ -1422,7 +1574,18 @@ case "ui-state", "ui-click", "ui-close", "ui-button", "ui-winid", "ui-scroll", "
             print("no widget picture"); exit(1)
         }
         print("widget picture \(Int(img.1.width))x\(Int(img.1.height))")
-        exit(click(at: CGPoint(x: img.1.midX, y: img.1.midY), ifFrontIs: pid) ? 0 : 1)
+        let point = CGPoint(x: img.1.midX, y: img.1.midY)
+        // `ui-widget <pid> right`: a right click there instead, for the widget's menu.
+        if args.dropFirst(2).first == "right" {
+            let back = CGEvent(source: nil)!.location
+            for type in [CGEventType.mouseMoved, .rightMouseDown, .rightMouseUp] {
+                CGEvent(mouseEventSource: nil, mouseType: type, mouseCursorPosition: point, mouseButton: .right)!.post(tap: .cghidEventTap)
+                usleep(40_000)
+            }
+            CGEvent(mouseEventSource: nil, mouseType: .mouseMoved, mouseCursorPosition: back, mouseButton: .left)!.post(tap: .cghidEventTap)
+            exit(0)
+        }
+        exit(click(at: point, ifFrontIs: pid) ? 0 : 1)
     case "ui-count":
         // Numbers only, for runs that show the user's own notifications.
         let allRows = windows().flatMap { rows(in: $0) }
@@ -1431,7 +1594,25 @@ case "ui-state", "ui-click", "ui-close", "ui-button", "ui-winid", "ui-scroll", "
     case "ui-scroll":
         // A scroll wheel over our panel: it must not close Notification Center's.
         guard let f = nnWindows.compactMap(frame).max(by: { $0.height < $1.height }) else { print("no panel"); exit(1) }
-        let point = CGPoint(x: f.midX, y: f.midY)
+        var point = CGPoint(x: f.midX, y: f.midY)
+        // `ui-scroll <pid> gap`: over the clear gap between two rows instead, where the
+        // window server sees no pixel of ours. A row's text ends 13 above its bottom, the
+        // next starts 12 under its top, and rows stand 6 apart.
+        let texts = elements.filter { role($0) == "AXStaticText" }.compactMap(frame).sorted { $0.minY < $1.minY }
+        // Where each text is: a text seen before and after shows how far the list moved.
+        let textYs = { () -> [String: CGFloat] in
+            var ys: [String: CGFloat] = [:]
+            for e in (attr(nn, kAXWindowsAttribute) as? [AXUIElement] ?? []).flatMap({ all($0) }) where role(e) == "AXStaticText" {
+                if let f = frame(e) { ys[text(e)] = f.minY }
+            }
+            return ys
+        }
+        if args.dropFirst(2).first == "gap" {
+            guard let next = zip(texts, texts.dropFirst()).first(where: { $1.minY - $0.maxY > 25 && $1.minY > f.minY + 100 })?.1
+            else { print("no gap between rows"); exit(1) }
+            point = CGPoint(x: f.midX, y: next.minY - 12 - 3)
+        }
+        let before = textYs()
         let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID) as? [[String: Any]] ?? []
         let front = list.first { info in
             guard let b = info[kCGWindowBounds as String] as? NSDictionary,
@@ -1443,14 +1624,18 @@ case "ui-state", "ui-click", "ui-close", "ui-button", "ui-winid", "ui-scroll", "
         CGEvent(mouseEventSource: nil, mouseType: .mouseMoved, mouseCursorPosition: point, mouseButton: .left)!.post(tap: .cghidEventTap)
         usleep(80_000)
         for _ in 0..<6 {
-            let wheel = CGEvent(scrollWheelEvent2Source: nil, units: .pixel, wheelCount: 1, wheel1: -60, wheel2: 0, wheel3: 0)!
+            // NN_LAB_WHEEL sets the step; the default -60 is up the list under natural scrolling.
+            let step = Int32(ProcessInfo.processInfo.environment["NN_LAB_WHEEL"] ?? "") ?? -60
+            let wheel = CGEvent(scrollWheelEvent2Source: nil, units: .pixel, wheelCount: 1, wheel1: step, wheel2: 0, wheel3: 0)!
             wheel.location = point
             wheel.post(tap: .cghidEventTap)
             usleep(30_000)
         }
         usleep(300_000)
         CGEvent(mouseEventSource: nil, mouseType: .mouseMoved, mouseCursorPosition: back, mouseButton: .left)!.post(tap: .cghidEventTap)
-        print("scrolled; NC panel \(isOpen() ? "open" : "CLOSED")")
+        let after = textYs()
+        let moved = before.compactMap { key, y in after[key].map { y - $0 } }.max(by: { abs($0) < abs($1) }) ?? 0
+        print("scrolled at y \(Int(point.y)); our list moved \(Int(moved)) points; NC panel \(isOpen() ? "open" : "CLOSED")")
     case "ui-click":
         // Clicks as soon as the text shows, for a click right after the panel opens.
         let want = args.dropFirst(2).joined(separator: " ")

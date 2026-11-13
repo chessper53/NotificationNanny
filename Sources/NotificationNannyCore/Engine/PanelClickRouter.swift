@@ -71,7 +71,9 @@ final class PanelClickRouter {
     /// Whether to swallow `event`; if so it has been handed to our window.
     fileprivate func route(_ type: CGEventType, _ event: CGEvent) -> Bool {
         if type == .leftMouseDown, ProcessInfo.processInfo.environment["NN_TIMING"] == "1" { // DEBUG-CLICK
-            FileHandle.standardError.write(Data("[router] down seen, panel visible=\(window?.isVisible ?? false) pass=\(passThrough) uptime \(ProcessInfo.processInfo.systemUptime)\n".utf8))
+            // How long the click waited for the main thread, from the event's own time.
+            let waited = Int((ProcessInfo.processInfo.systemUptime - Double(event.timestamp) / 1e9) * 1000)
+            FileHandle.standardError.write(Data("[router] down seen \(waited) ms after the click, panel visible=\(window?.isVisible ?? false) pass=\(passThrough) uptime \(ProcessInfo.processInfo.systemUptime)\n".utf8))
         }
         guard !passThrough, let panel = window, panel.isVisible else { return false }
         let point = Self.appKitPoint(event.location)

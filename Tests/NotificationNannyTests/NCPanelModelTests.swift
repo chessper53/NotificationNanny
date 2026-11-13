@@ -98,3 +98,30 @@ struct NCPanelModelTests {
         #expect(items.map(\.kind) == [.action, .separator, .action])
     }
 }
+
+/// Picking a widget's size moves its tick, as the real menu shows it next time.
+@Suite("Menu ticks")
+struct NCMenuTickTests {
+    private func menu(ticked: String) -> [NCMenuItem] {
+        var items = NCMenuItem.build(from: [
+            ("Edit “Featured”…", 24, true), ("", 11, false), ("Size", 24, false),
+            ("Small", 24, true), ("Medium", 24, true), ("Large", 24, true), ("", 11, false),
+            ("Remove Widget", 24, true),
+        ])
+        for i in items.indices where items[i].title == ticked { items[i].checked = true }
+        return items
+    }
+
+    @Test func tickMovesWithinItsGroup() {
+        let items = menu(ticked: "Medium")
+        let large = items.first { $0.title == "Large" }!
+        let next = NCMenuItem.choosing(large, in: items)
+        #expect(next.filter(\.checked).map(\.title) == ["Large"])
+    }
+
+    @Test func itemOutsideATickedGroup_changesNothing() {
+        let items = menu(ticked: "Medium")
+        let edit = items.first { $0.title == "Edit “Featured”…" }!
+        #expect(NCMenuItem.choosing(edit, in: items) == items)
+    }
+}

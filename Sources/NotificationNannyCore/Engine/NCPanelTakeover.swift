@@ -100,12 +100,14 @@ final class NCPanelTakeover: ObservableObject {
     private var watchdog: Timer?
     private var pendingRefresh: DispatchWorkItem?
     /// Where the real panel's window belongs while ours is up: parked off screen, or with
-    /// widgets shown, right under ours, where it is drawn and so can be captured.
+    /// widgets shown, where it is drawn unseen and so can be captured (drawnOffScreen).
     private var desiredOrigin: CGPoint?
     private var widgetElements: [String: AXUIElement] = [:]
     private let widgetCapture = WidgetCapture()
+    /// The last picture of each widget, kept across openings: the panel opens with it, not
+    /// an empty box until the first capture, some 170 ms on.
+    private var widgetImages: [String: NSImage] = [:]
     private var widgetTimer: Timer?
-    private lazy var cover = NCPanelCover()
     private let actions = NotificationActions()
     /// Mirrors a reply while one is open: the typing goes to Notification Center's field.
     private var replyTimer: Timer?
@@ -216,7 +218,7 @@ final class NCPanelTakeover: ObservableObject {
         options = readOptions()
         let screen = preferredScreen() ?? Self.screen(atAXPoint: origin) ?? NSScreen.main ?? NSScreen.screens[0]
         onBegin?()
-        refresh()
+        refresh(now: true)
         // Clicks in Settings too: dragging the panel's place there would close it otherwise.
         router.otherWindows = { [weak self] in
             NSApp.windows.filter { $0.isVisible && $0.level == .normal && $0 !== self?.panel.window }
@@ -249,6 +251,9 @@ final class NCPanelTakeover: ObservableObject {
             return
         }
         panel.show(on: screen)
+        if Self.timing { // DEBUG-CLICK
+            FileHandle.standardError.write(Data("[timing] panel shown \(Int((ProcessInfo.processInfo.systemUptime - openedAt) * 1000)) ms after Notification Center opened, \(snapshot.rowCount) rows\n".utf8))
+        }
         logger.log("Notification Center opened — showing NotificationNanny's list (\(snapshot.rowCount) notification(s))",
                    tag: "Panel")
         startWidgets()
@@ -293,8 +298,27 @@ final class NCPanelTakeover: ObservableObject {
         sectionButtons = [:]
         editWidgetsButton = nil
         clearMenuButton = nil
-        snapshot = .empty
+        // What it shows stays until its way out has played: emptied at once, the rows and
+        // widgets were gone while Edit Widgets still slid away.
+        DispatchQueue.main.asyncAfter(deadline: .now() + options.animation.outroDuration + 0.1) { [weak self] in
+            guard let self, !self.isActive else { return }
+            self.snapshot = .empty
+            self.widgets = []
+        }
         logger.log("Custom Notification Center closed (\(reason))", tag: "Panel")
+    }
+
+    /// Quitting with the panel open: the real panel's window goes home at once, and the real
+    /// panel shows, as when the feature is turned off with it open. Left where it waited, the
+    /// panel stayed open and unseen, and banners after it arrived off screen.
+    func releaseForQuit() {
+        guard isActive, let window, let home else { return finishClosing() }
+        router.stop()
+        _ = setPosition(window, home)
+        isActive = false
+        self.window = nil
+        self.home = nil
+        desiredOrigin = nil
     }
 
     /// Sends the window home now rather than after the panel's way out, when the app quits.
@@ -326,9 +350,15 @@ final class NCPanelTakeover: ObservableObject {
 
     // MARK: - Reading the list
 
+    /// At most 40 ms after the first event, not the last: Notification Center sends them
+    /// all through an animation (a stack expanding), and put off each time, ours caught
+    /// up only once it had finished.
     private func scheduleRefresh() {
-        pendingRefresh?.cancel()
-        let item = DispatchWorkItem { [weak self] in self?.refresh() }
+        if let pending = pendingRefresh, !pending.isCancelled { return }
+        let item = DispatchWorkItem { [weak self] in
+            self?.pendingRefresh = nil
+            self?.refresh()
+        }
         pendingRefresh = item
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.04, execute: item)
     }
@@ -336,50 +366,91 @@ final class NCPanelTakeover: ObservableObject {
     /// NN_TIMING=1 (scripts/notify-lab, panel-lab) writes how long each read of the list took.
     private static let timing = ProcessInfo.processInfo.environment["NN_TIMING"] == "1"
 
-    private func refresh() {
+    /// What one read of Notification Center's window found.
+    private struct ListRead {
+        /// The list's children that decide the layout, with their elements; nil with no list.
+        var entries: [(NCListEntry, AXUIElement)]?
+        var editWidgets: AXUIElement?
+        var clearMenu: AXUIElement?
+        var footer = NCPanelFooter()
+    }
+
+    /// Notification Center's own names and roles a read needs, taken on the main thread.
+    private struct ReadNames {
+        let subroles: Set<String>
+        let builtIn: Set<String>
+        let hideDetails: Set<String>
+        let labFilter: String?
+    }
+
+    private var readNames: ReadNames {
+        ReadNames(subroles: AppNameResolver.bannerSubroles, builtIn: NCActionNames.builtIn,
+                  hideDetails: NCActionNames.hideDetails, labFilter: Self.labFilter)
+    }
+
+    /// Reads of the list happen here: with many notifications one took tens of
+    /// milliseconds of Accessibility calls, and on the main thread clicks, typing and
+    /// drawing waited for each.
+    private static let readQueue = DispatchQueue(label: "com.notificationnanny.panel-read", qos: .userInteractive)
+    private var reading = false
+    private var readAgain = false
+
+    /// Reads the list again. `now` reads it on the main thread and waits, for the panel's
+    /// opening, which can't show before it has a list.
+    private func refresh(now: Bool = false) {
+        readWidgets()
+        guard let window else {
+            if snapshot != .empty { snapshot = .empty }
+            return
+        }
+        let names = readNames
+        if now {
+            apply(Self.read(window, names))
+            return
+        }
+        // One read at a time; events meanwhile make one more after it.
+        guard !reading else { readAgain = true; return }
+        reading = true
+        let started = ProcessInfo.processInfo.systemUptime
+        Self.readQueue.async {
+            let result = Self.read(window, names)
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated { [weak self] in
+                    guard let self else { return }
+                    self.reading = false
+                    if Self.timing {
+                        let ms = Int((ProcessInfo.processInfo.systemUptime - started) * 1000)
+                        FileHandle.standardError.write(Data("[timing] panel read \(ms) ms off the main thread\n".utf8))
+                    }
+                    // A read of a panel since closed, or of another window, is dropped.
+                    if self.isActive, let current = self.window, CFEqual(current, window) { self.apply(result) }
+                    if self.readAgain {
+                        self.readAgain = false
+                        self.refresh()
+                    }
+                }
+            }
+        }
+    }
+
+    private func apply(_ read: ListRead) {
         let started = ProcessInfo.processInfo.systemUptime
         defer {
             if Self.timing {
                 let ms = Int((ProcessInfo.processInfo.systemUptime - started) * 1000)
-                FileHandle.standardError.write(Data("[timing] panel refresh \(ms) ms, \(snapshot.rowCount) rows\n".utf8))
+                FileHandle.standardError.write(Data("[timing] panel apply \(ms) ms, \(snapshot.rowCount) rows\n".utf8))
             }
         }
-        readWidgets()
-        // With no notifications there may be no list, and the footer is all there is.
-        if let window { readFooter(in: window) }
-        guard let window, let list = Self.findList(in: window) else {
+        editWidgetsButton = read.editWidgets
+        clearMenuButton = read.clearMenu
+        if read.footer != footer { footer = read.footer }
+        guard let pairs = read.entries else {
             if snapshot != .empty { snapshot = .empty }
             return
         }
-        var entries: [NCListEntry] = []
-        var elements: [AXUIElement] = []
-        // In a lab run, a header of an app filtered out goes with its buttons.
-        var skippingHeader = false
-        for child in Self.visualOrder(list.children()) {
-            let role = child.stringAttribute(kAXRoleAttribute as String)
-            if skippingHeader, role == (kAXButtonRole as String) { continue }
-            skippingHeader = false
-            if let sub = child.stringAttribute(kAXSubroleAttribute as String), AppNameResolver.bannerSubroles.contains(sub) {
-                guard let row = Self.readRow(child, subrole: sub) else { continue }
-                if let only = Self.labFilter, !row.appName.hasPrefix(only) { continue }
-                entries.append(.row(row))
-            } else if role == "AXHeading" {
-                let text = cleanAXString(child.stringAttribute("AXAttributedDescription")
-                    ?? child.stringAttribute(kAXDescriptionAttribute as String) ?? "")
-                if let only = Self.labFilter, !text.hasPrefix(only) {
-                    skippingHeader = true
-                    continue
-                }
-                entries.append(.heading(text))
-            } else if role == (kAXButtonRole as String) {
-                entries.append(.button)
-            } else {
-                continue
-            }
-            elements.append(child)
-        }
+        let entries = pairs.map(\.0)
         let next = NCPanelSnapshot.build(from: entries)
-        mapElements(entries: entries, elements: elements)
+        mapElements(entries: entries, elements: pairs.map(\.1))
         if next != snapshot {
             if Self.timing { // DEBUG-CLICK
                 let rows = next.sections.flatMap(\.groups).flatMap(\.rows).map { "\($0.title):\($0.isStack ? "stack" : "row"):\(Int($0.height))" }
@@ -389,17 +460,46 @@ final class NCPanelTakeover: ObservableObject {
         }
     }
 
-    /// The buttons under the list: Edit Widgets, and the ✕ with its Clear Notifications
-    /// menu, which is only there while there is something to clear (measured on 27.0).
-    private func readFooter(in window: AXUIElement) {
-        guard let scroll = Self.find(in: window, depth: 0, { $0.stringAttribute(kAXRoleAttribute as String) == (kAXScrollAreaRole as String) })
-        else { return }
-        let kids = scroll.children()
-        editWidgetsButton = kids.first { $0.identifier == "widget-editor-button" }
-        clearMenuButton = kids.first { $0.stringAttribute(kAXRoleAttribute as String) == "AXMenuButton" && $0.identifier == "xmark" }
-        let next = NCPanelFooter(editWidgets: editWidgetsButton.flatMap { $0.stringAttribute("AXAttributedDescription") },
-                                 clear: clearMenuButton.flatMap { $0.stringAttribute(kAXTitleAttribute as String) })
-        if next != footer { footer = next }
+    /// The list and the footer under it, from Notification Center's window. Only
+    /// Accessibility reads, so it runs on any thread.
+    private nonisolated static func read(_ window: AXUIElement, _ names: ReadNames) -> ListRead {
+        var result = ListRead()
+        // The buttons under the list: Edit Widgets, and the ✕ with its Clear Notifications
+        // menu, which is only there while there is something to clear (measured on 27.0).
+        // With no notifications there may be no list, and the footer is all there is.
+        if let scroll = find(in: window, depth: 0, { $0.stringAttribute(kAXRoleAttribute as String) == (kAXScrollAreaRole as String) }) {
+            let kids = scroll.children()
+            result.editWidgets = kids.first { $0.identifier == "widget-editor-button" }
+            result.clearMenu = kids.first { $0.stringAttribute(kAXRoleAttribute as String) == "AXMenuButton" && $0.identifier == "xmark" }
+            result.footer = NCPanelFooter(editWidgets: result.editWidgets.flatMap { $0.stringAttribute("AXAttributedDescription") },
+                                          clear: result.clearMenu.flatMap { $0.stringAttribute(kAXTitleAttribute as String) })
+        }
+        guard let list = findList(in: window, subroles: names.subroles) else { return result }
+        var entries: [(NCListEntry, AXUIElement)] = []
+        // In a lab run, a header of an app filtered out goes with its buttons.
+        var skippingHeader = false
+        for child in visualOrder(list.children()) {
+            let role = child.stringAttribute(kAXRoleAttribute as String)
+            if skippingHeader, role == (kAXButtonRole as String) { continue }
+            skippingHeader = false
+            if let sub = child.stringAttribute(kAXSubroleAttribute as String), names.subroles.contains(sub) {
+                guard let row = readRow(child, subrole: sub, names) else { continue }
+                if let only = names.labFilter, !row.appName.hasPrefix(only) { continue }
+                entries.append((.row(row), child))
+            } else if role == "AXHeading" {
+                let text = cleanAXString(child.stringAttribute("AXAttributedDescription")
+                    ?? child.stringAttribute(kAXDescriptionAttribute as String) ?? "")
+                if let only = names.labFilter, !text.hasPrefix(only) {
+                    skippingHeader = true
+                    continue
+                }
+                entries.append((.heading(text), child))
+            } else if role == (kAXButtonRole as String) {
+                entries.append((.button, child))
+            }
+        }
+        result.entries = entries
+        return result
     }
 
     /// Records which element answers for which row and header button, the same way
@@ -436,7 +536,7 @@ final class NCPanelTakeover: ObservableObject {
     /// a stack expanded after others came first in the list, above rows it is drawn below
     /// (measured on 27.0). Top to bottom, and a header's buttons after its heading, which
     /// sit on the same line.
-    static func visualOrder(_ elements: [AXUIElement]) -> [AXUIElement] {
+    nonisolated static func visualOrder(_ elements: [AXUIElement]) -> [AXUIElement] {
         let framed = elements.map { ($0, $0.point() ?? .zero) }.sorted { $0.1.y < $1.1.y }
         var lines: [[(AXUIElement, CGPoint)]] = []
         for item in framed {
@@ -449,20 +549,20 @@ final class NCPanelTakeover: ObservableObject {
         return lines.flatMap { $0.sorted { $0.1.x < $1.1.x }.map(\.0) }
     }
 
-    private static func findList(in el: AXUIElement, depth: Int = 0) -> AXUIElement? {
+    private nonisolated static func findList(in el: AXUIElement, subroles: Set<String>, depth: Int = 0) -> AXUIElement? {
         guard depth < 8 else { return nil }
         if el.identifier == "AXNotificationListItems" { return el }
         // Rows sit inside the list; nothing to find below one.
-        if let sub = el.stringAttribute(kAXSubroleAttribute as String), AppNameResolver.bannerSubroles.contains(sub) {
+        if let sub = el.stringAttribute(kAXSubroleAttribute as String), subroles.contains(sub) {
             return nil
         }
         for child in el.children() {
-            if let found = findList(in: child, depth: depth + 1) { return found }
+            if let found = findList(in: child, subroles: subroles, depth: depth + 1) { return found }
         }
         return nil
     }
 
-    private static func readRow(_ el: AXUIElement, subrole: String) -> NCPanelRow? {
+    private nonisolated static func readRow(_ el: AXUIElement, subrole: String, _ names: ReadNames) -> NCPanelRow? {
         guard let id = el.identifier else { return nil }
         let description = el.stringAttribute("AXAttributedDescription") ?? ""
         let lines = el.identifiedTextValues()
@@ -474,10 +574,10 @@ final class NCPanelTakeover: ObservableObject {
         }.flatMap { $0.stringAttribute(kAXValueAttribute as String) }.map(cleanAXString).flatMap { $0.isEmpty ? nil : $0 }
         return NCPanelRow(id: id, appName: appName, title: lines["title"] ?? "", subtitle: lines["subtitle"] ?? "",
                           body: lines["body"] ?? "", isStack: subrole.hasSuffix("Stack"),
-                          actions: NotificationActions.appActions(of: el),
+                          actions: NotificationActions.appActions(of: el, builtIn: names.builtIn),
                           reply: field.map { $0.stringAttribute(kAXValueAttribute as String) ?? "" },
                           replyPlaceholder: field?.stringAttribute(kAXPlaceholderValueAttribute as String) ?? "",
-                          expanded: NotificationActions.isExpanded(el),
+                          expanded: NotificationActions.isExpanded(el, hideDetails: names.hideDetails),
                           height: el.size()?.height ?? 58, time: time)
     }
 
@@ -494,14 +594,41 @@ final class NCPanelTakeover: ObservableObject {
         }
         var found: [(String, AXUIElement)] = []
         Self.collectWidgets(in: window, into: &found)
+        // While a widget changes size Notification Center can list none for a moment: the
+        // panel jumped, its footer up under the menu bar. The last ones stay for up to a
+        // second; a widget removed is gone after that.
+        let now = ProcessInfo.processInfo.systemUptime
+        if found.isEmpty, !widgets.isEmpty {
+            if widgetsMissingSince == nil { widgetsMissingSince = now }
+            if now - (widgetsMissingSince ?? now) < 1 { return }
+        }
+        widgetsMissingSince = nil
         let previous = Dictionary(widgets.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
         var next: [NCWidget] = []
+        var elements: [String: AXUIElement] = [:]
         for (id, el) in found {
             guard let p = el.point(), let size = el.size() else { continue }
             let frame = CGRect(x: p.x - origin.x, y: p.y - origin.y, width: size.width, height: size.height)
-            next.append(NCWidget(id: id, frameInWindow: frame, image: previous[id]?.image))
+            // While a widget's menu is open, Notification Center lists the widget it lifts
+            // beside the menu too, under the same identifier: ours showed it as a second
+            // widget, under the first. One per identifier, the one where it was.
+            if let i = next.firstIndex(where: { $0.id == id }) {
+                if Self.timing {
+                    FileHandle.standardError.write(Data("[widgets] \(id.prefix(40)) twice, at \(Int(next[i].frameInWindow.minY)) and \(Int(frame.minY))\n".utf8))
+                }
+                if previous[id]?.frameInWindow != frame { continue }
+                next[i].frameInWindow = frame
+                elements[id] = el
+                continue
+            }
+            next.append(NCWidget(id: id, frameInWindow: frame, image: previous[id]?.image ?? widgetImages[id]))
+            elements[id] = el
+            // Resized: it redraws for a moment, and a picture taken meanwhile was half black.
+            if let before = previous[id]?.frameInWindow.size, before != frame.size {
+                widgetCaptureHold = max(widgetCaptureHold, now + 0.9)
+            }
         }
-        widgetElements = Dictionary(found, uniquingKeysWith: { a, _ in a })
+        widgetElements = elements
         if next.map(\.id) != widgets.map(\.id) || next.map(\.frameInWindow) != widgets.map(\.frameInWindow) {
             widgets = next
         }
@@ -531,7 +658,7 @@ final class NCPanelTakeover: ObservableObject {
         return frames.dropFirst().reduce(frames.first) { $0?.union($1) }
     }
 
-    private static func find(in el: AXUIElement, depth: Int, _ match: (AXUIElement) -> Bool) -> AXUIElement? {
+    private nonisolated static func find(in el: AXUIElement, depth: Int, _ match: (AXUIElement) -> Bool) -> AXUIElement? {
         guard depth < 6 else { return nil }
         if match(el) { return el }
         for child in el.children() {
@@ -540,43 +667,70 @@ final class NCPanelTakeover: ObservableObject {
         return nil
     }
 
-    /// Brings the real panel from parked to right under ours, so it is drawn and its
-    /// widgets can be captured: first an opaque cover where it will land, then the move.
+    /// Where the real panel's window goes while ours shows its widgets: above the top
+    /// screen, all but its bottom row, which is on screen under the menu bar. A window
+    /// wholly off screen isn't drawn and its widgets capture as nothing; with that one row
+    /// on screen they capture as they look, and the row, empty in Notification Center's
+    /// window, changes no pixel (measured on 27.0, scripts/panel-lab `widget-park`). It
+    /// used to sit right under ours behind an opaque cover, which showed through our glass
+    /// rows and the gaps between them as a box. `screens` in AX coordinates.
+    static func drawnOffScreen(windowSize: CGSize, screens: [CGRect]) -> CGPoint? {
+        // No screen is above the one whose top edge is highest.
+        guard windowSize.height > 1, let top = screens.min(by: { $0.minY < $1.minY }) else { return nil }
+        let origin = CGPoint(x: top.minX, y: top.minY - windowSize.height + 1)
+        let hidden = CGRect(x: origin.x, y: origin.y, width: windowSize.width, height: windowSize.height - 1)
+        let seen = screens.contains { s in
+            let i = s.intersection(hidden)
+            return !i.isNull && i.width > 0 && i.height > 0
+        }
+        return seen ? nil : origin
+    }
+
+    /// Every screen's frame in AX coordinates (top left origin of the main display).
+    private static var axScreens: [CGRect] {
+        guard let primary = NSScreen.screens.first else { return [] }
+        return NSScreen.screens.map { CGRect(x: $0.frame.minX, y: primary.frame.maxY - $0.frame.maxY,
+                                             width: $0.frame.width, height: $0.frame.height) }
+    }
+
+    /// Where the real panel's window puts its column right under our rows, top right to
+    /// top right, for a click on one of its widgets.
+    private func underOurs() -> CGPoint? {
+        guard let content = panelContentRect(), let primary = NSScreen.screens.first else { return nil }
+        let ours = panel.window.frame
+        // Ours in AX coordinates (top left origin).
+        let oursTop = primary.frame.maxY - ours.maxY
+        let rows = CustomNCPanelController.rowsRect(in: ours, options: options)
+        return CGPoint(x: rows.maxX - content.maxX, y: oursTop + (ours.maxY - rows.maxY) - content.minY)
+    }
+
+    /// Brings the real panel from parked to where it is drawn unseen, and captures its
+    /// widgets every 2 s.
     private func startWidgets() {
         ScreenRecordingPermission.shared.refresh()
         if options.widgets, !ScreenRecordingPermission.shared.isGranted {
             logger.log("Widgets are on, but Screen Recording isn't allowed — leaving them out", level: .warn, tag: "Panel")
         }
         readWidgets()
-        guard showsWidgets, !widgets.isEmpty, let content = panelContentRect() else { return }
-        let ours = panel.window.frame
-        guard let primary = NSScreen.screens.first else { return }
-        // Ours in AX coordinates (top left origin).
-        let oursTop = primary.frame.maxY - ours.maxY
-        // Under our rows, top right to top right, wherever they are.
-        let rows = CustomNCPanelController.rowsRect(in: ours, options: options)
-        let target = CGPoint(x: rows.maxX - content.maxX, y: oursTop + (ours.maxY - rows.maxY) - content.minY)
-        let landed = content.offsetBy(dx: target.x, dy: target.y)
-        cover.show(axRect: landed.insetBy(dx: -4, dy: -4), below: panel.window)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
-            guard let self, self.isActive else { return }
-            self.desiredOrigin = target
-            self.keepInPlace()
-            self.captureWidgets()
-            let timer = Timer(timeInterval: 2, repeats: true) { [weak self] _ in
-                MainActor.assumeIsolated { self?.captureWidgets() }
-            }
-            RunLoop.main.add(timer, forMode: .common)
-            self.widgetTimer = timer
+        guard showsWidgets, !widgets.isEmpty, let window, let size = window.size() else { return }
+        guard let target = Self.drawnOffScreen(windowSize: size, screens: Self.axScreens) else {
+            logger.log("No place to draw Notification Center's widgets unseen — leaving them out", level: .warn, tag: "Panel")
+            return
         }
+        desiredOrigin = target
+        keepInPlace()
+        captureWidgets()
+        let timer = Timer(timeInterval: 2, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.captureWidgets() }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        widgetTimer = timer
         logger.log("Showing \(widgets.count) widget(s)", tag: "Panel")
     }
 
     private func stopWidgets() {
         widgetTimer?.invalidate()
         widgetTimer = nil
-        cover.hide()
-        widgets = []
         widgetElements = [:]
     }
 
@@ -584,16 +738,28 @@ final class NCPanelTakeover: ObservableObject {
     /// and a picture cut by where a widget was a moment earlier shows the wrong part of it.
     /// Then it tries again shortly.
     private func captureWidgets(retries: Int = 6) {
-        guard isActive, let window, let id = PrivateWindowAPI.windowID(for: window) else { return }
+        if Self.timing, ProcessInfo.processInfo.systemUptime < widgetCaptureHold { // DEBUG-CLICK
+            FileHandle.standardError.write(Data("[widgets] capture held for \(Int((widgetCaptureHold - ProcessInfo.processInfo.systemUptime) * 1000)) ms more\n".utf8))
+        }
+        guard isActive, ProcessInfo.processInfo.systemUptime >= widgetCaptureHold,
+              let window, let id = PrivateWindowAPI.windowID(for: window) else { return }
         readWidgets()
         let rects = Dictionary(widgets.map { ($0.id, $0.frameInWindow) }, uniquingKeysWith: { a, _ in a })
         Task { @MainActor [weak self] in
             guard let self else { return }
+            let started = ProcessInfo.processInfo.systemUptime
             let images = await self.widgetCapture.capture(windowID: id, rects: rects)
+            if Self.timing {
+                let ms = Int((ProcessInfo.processInfo.systemUptime - started) * 1000)
+                FileHandle.standardError.write(Data("[timing] widget capture \(ms) ms, \(images.count) of \(rects.count)\n".utf8))
+            }
             guard self.isActive else { return }
             self.readWidgets()
             let settled = self.widgets.allSatisfy { w in
                 rects[w.id].map { abs($0.minX - w.frameInWindow.minX) < 1 && abs($0.minY - w.frameInWindow.minY) < 1 } ?? false
+            }
+            if !settled, Self.timing { // DEBUG-CLICK
+                FileHandle.standardError.write(Data("[widgets] capture dropped: widget moved meanwhile, \(retries) retries left\n".utf8))
             }
             guard settled else {
                 if retries > 0 {
@@ -607,25 +773,33 @@ final class NCPanelTakeover: ObservableObject {
                 self.logger.log("Captured \(images.count) of \(rects.count) widget(s)", level: .warn, tag: "Panel")
             }
             for i in self.widgets.indices {
-                if let image = images[self.widgets[i].id] { self.widgets[i].image = image }
+                if let image = images[self.widgets[i].id] {
+                    self.widgets[i].image = image
+                    self.widgetImages[self.widgets[i].id] = image
+                }
             }
         }
     }
 
     /// A click on a widget's picture, `at` as a fraction of its size. Widgets offer nothing
-    /// to Accessibility, so the click goes to the real widget, which is right under ours:
-    /// for that one click our panel and the router let everything through, and a real
-    /// click lands on Notification Center's own window, which doesn't close its panel.
-    /// The pointer goes back to where it was.
+    /// to Accessibility, so the click goes to the real widget: for that one click the real
+    /// panel comes right under ours, where ours hides it, and our panel and the router let
+    /// everything through. A real click lands on Notification Center's own window, which
+    /// doesn't close its panel. The pointer goes back to where it was, and the real panel to
+    /// where it is drawn unseen.
     func click(_ widget: NCWidget, at fraction: CGPoint) {
-        guard let window, let origin = window.point() else { return }
+        guard let under = underOurs() else { return }
+        let parked = desiredOrigin
+        desiredOrigin = under
+        keepInPlace()
         let f = widget.frameInWindow
-        let point = CGPoint(x: origin.x + f.minX + f.width * fraction.x, y: origin.y + f.minY + f.height * fraction.y)
+        let point = CGPoint(x: under.x + f.minX + f.width * fraction.x, y: under.y + f.minY + f.height * fraction.y)
         let back = CGEvent(source: nil)?.location
         panel.window.ignoresMouseEvents = true
         router.passThrough = true
-        // A beat for the window server to stop sending clicks to ours.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.03) { [weak self] in
+        // A beat for the window server to stop sending clicks to ours and to have the real
+        // panel in its new place.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
             for type in [CGEventType.mouseMoved, .leftMouseDown, .leftMouseUp] {
                 CGEvent(mouseEventSource: nil, mouseType: type, mouseCursorPosition: point, mouseButton: .left)?
                     .post(tap: .cghidEventTap)
@@ -638,6 +812,12 @@ final class NCPanelTakeover: ObservableObject {
                 guard let self else { return }
                 self.router.passThrough = false
                 self.panel.window.ignoresMouseEvents = false
+            }
+            // A widget opening its app closes the panel; one that doesn't goes back.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+                guard let self, self.isActive, self.desiredOrigin == under else { return }
+                self.desiredOrigin = parked
+                self.keepInPlace()
             }
         }
         logger.log("Widget clicked: \(widget.appBundleID ?? widget.id)", tag: "Panel")
@@ -674,7 +854,11 @@ final class NCPanelTakeover: ObservableObject {
             refreshSoon()
             // With a reply open, Notification Center spends the first press on closing it
             // and only the second expands the stack (measured on 27.0, scripts/panel-lab
-            // `real-expand-while-reply`). One click should do what it says.
+            // `real-expand-while-reply`). One click should do what it says. Only then:
+            // otherwise a stack still expanding 0.35 s on reads as a stack yet, and the
+            // second press undid the first, so a stack only sometimes opened.
+            let replyOpen = snapshot.sections.contains { $0.groups.contains { $0.rows.contains { $0.reply != nil } } }
+            guard replyOpen else { return }
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [weak self] in
                 guard let self, self.isActive, let el = self.rowElements[row.id],
                       el.stringAttribute(kAXSubroleAttribute as String)?.hasSuffix("Stack") == true else { return }
@@ -762,7 +946,7 @@ final class NCPanelTakeover: ObservableObject {
     /// Reads one row again and puts it in place, the rest of the list as it was.
     private func refreshRow(_ id: String) {
         guard let el = rowElements[id], let sub = el.stringAttribute(kAXSubroleAttribute as String),
-              let fresh = Self.readRow(el, subrole: sub) else { return }
+              let fresh = Self.readRow(el, subrole: sub, readNames) else { return }
         var next = snapshot
         for s in next.sections.indices {
             for g in next.sections[s].groups.indices {
@@ -853,6 +1037,89 @@ final class NCPanelTakeover: ObservableObject {
         menu = NCPanelMenu(target: .options(row.id), items: items, anchor: anchor, trailing: true)
     }
 
+    /// A widget's menu, as a right click on it opens it in Notification Center: Edit, its
+    /// sizes, Remove Widget, Edit Widgets (read from the real one, as a row's is).
+    ///
+    /// Read once and kept: a widget's menu can't be read unseen. It opens on a screen
+    /// wherever the panel is, with the widget lifted beside it, and stays some 250 ms
+    /// before it has closed again (filmed on 27.0). After the first, ours opens at once,
+    /// and the real one only opens for an item picked, which closes it straight away.
+    func showMenu(for widget: NCWidget, at anchor: CGPoint) {
+        if let items = widgetMenus[widget.id] {
+            menu = NCPanelMenu(target: .widget(widget.id), items: items, anchor: anchor)
+            return
+        }
+        guard let el = widgetElements[widget.id] else { return }
+        frozen(for: widget) { [weak self] finished in
+            self?.readRealMenu(of: el) { [weak self] items in
+                finished()
+                guard let self, self.isActive, let items, !items.isEmpty else { return }
+                self.widgetMenus[widget.id] = items
+                self.menu = NCPanelMenu(target: .widget(widget.id), items: items, anchor: anchor)
+            }
+        }
+    }
+
+    private let screenFreeze = ScreenFreeze()
+
+    /// Runs `body`, which opens Notification Center's menu of `widget`, behind a picture of
+    /// what was on screen where that menu and the widget it lifts show; see ScreenFreeze.
+    /// `body` calls its argument once the real menu is done: the picture goes once that
+    /// has closed and the real panel is back where it waits, half a second on.
+    private func frozen(for widget: NCWidget, _ body: @escaping (@escaping () -> Void) -> Void) {
+        let t0 = ProcessInfo.processInfo.systemUptime
+        func trace(_ what: String) { // DEBUG-CLICK
+            guard Self.timing else { return }
+            FileHandle.standardError.write(Data("[freeze] \(Int((ProcessInfo.processInfo.systemUptime - t0) * 1000)) ms \(what), real window at \(self.window?.point().map { "(\(Int($0.x)),\(Int($0.y)))" } ?? "?")\n".utf8))
+        }
+        guard let rect = menuArea(for: widget) else { trace("no area"); body {}; return }
+        trace("capturing \(Int(rect.rect.minX)),\(Int(rect.rect.minY)) \(Int(rect.rect.width))x\(Int(rect.rect.height))")
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            let image = await self.screenFreeze.take(rect.rect, on: rect.screen)
+            guard self.isActive else { return }
+            let shown = image != nil
+            if let image {
+                // Ours above the picture before it shows: shown first, it hid our panel for
+                // up to a sixth of a second.
+                self.panel.window.level = ScreenFreeze.panelLevel
+                await self.screenFreeze.show(image, over: rect.rect)
+            }
+            trace("picture \(shown ? "up" : "FAILED"), panel level \(self.panel.window.level.rawValue), body")
+            body { [weak self] in
+                trace("real menu done")
+                guard shown else { return }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.55) { [weak self] in
+                    guard let self else { return }
+                    self.screenFreeze.hide()
+                    self.panel.window.level = .statusBar
+                    trace("picture gone")
+                }
+            }
+        }
+    }
+
+    /// Where Notification Center shows a widget's menu and the widget it lifts: the
+    /// widget's column of the screen its panel is over, from the widget's left to the
+    /// screen's right, top to bottom (the menu opened under the widget's middle, at the
+    /// screen's top, measured on 27.0).
+    private func menuArea(for widget: NCWidget) -> (rect: NSRect, screen: NSScreen)? {
+        guard let window, let origin = window.point() else { return nil }
+        let x = origin.x + widget.frameInWindow.midX
+        guard let screen = NSScreen.screens.first(where: { x >= $0.frame.minX && x < $0.frame.maxX }) else { return nil }
+        let minX = max(screen.frame.minX, origin.x + widget.frameInWindow.minX - 60)
+        return (NSRect(x: minX, y: screen.frame.minY, width: screen.frame.maxX - minX, height: screen.frame.height), screen)
+    }
+
+    /// When Notification Center last listed no widget while ours had some (system uptime).
+    private var widgetsMissingSince: Double?
+
+    /// Each widget's menu, by widget ID; see showMenu(for:at:).
+    private var widgetMenus: [String: [NCMenuItem]] = [:]
+    /// No capture before this (system uptime): a widget redrawing at another size
+    /// captured half drawn.
+    private var widgetCaptureHold: Double = 0
+
     /// The footer ✕: Clear Banners Only, Clear All Notifications.
     func showClearMenu(at anchor: CGPoint) {
         guard let button = clearMenuButton else { return }
@@ -872,7 +1139,7 @@ final class NCPanelTakeover: ObservableObject {
         let rowID: String?
         switch open.target {
         case .row(let id), .options(let id): rowID = id
-        case .clear: rowID = nil
+        case .clear, .widget: rowID = nil
         }
         if let rowID, let row = snapshot.sections.lazy.flatMap({ $0.groups }).flatMap({ $0.rows }).first(where: { $0.id == rowID }),
            item.kind == .action, row.actions.contains(item.title) {
@@ -883,15 +1150,59 @@ final class NCPanelTakeover: ObservableObject {
         switch open.target {
         case .row(let id), .options(let id): element = rowElements[id].map(NCMenus.target)
         case .clear: element = clearMenuButton
+        case .widget(let id): element = widgetElements[id]
         }
         guard let element else { return }
-        readRealMenu(of: element, press: item) { [weak self] _ in self?.refreshSoon() }
+        if case .widget = open.target {
+            widgetCaptureHold = ProcessInfo.processInfo.systemUptime + 0.7
+        }
+        let pressed: ([NCMenuItem]?) -> Void = { [weak self] items in
+            guard let self else { return }
+            self.refreshSoon()
+            // A widget changes size or goes: its picture follows once it has redrawn, and
+            // its menu is the one just read, with the tick where the pick put it.
+            if case .widget(let id) = open.target {
+                if let items { self.widgetMenus[id] = NCMenuItem.choosing(item, in: items) }
+                for delay in [0.8, 1.6] {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in self?.captureWidgets() }
+                }
+            }
+        }
+        if case .widget(let id) = open.target, let widget = widgets.first(where: { $0.id == id }) {
+            frozen(for: widget) { [weak self] finished in
+                self?.readRealMenu(of: element, press: item) { items in
+                    finished()
+                    pressed(items)
+                }
+            }
+        } else {
+            readRealMenu(of: element, press: item, pressed)
+        }
         logger.log("Menu item \(item.title)", tag: "Panel")
     }
 
+    /// With widgets shown the real panel waits just above the screen, and a menu of its
+    /// opens where it is, pulled onto the screen with the panel: filmed, the real menu
+    /// showed over the menu bar and the panel under ours. While a menu is read it is
+    /// parked far off, as without widgets, and goes back once the menu has closed.
     private func readRealMenu(of el: AXUIElement, press: NCMenuItem? = nil, _ done: @escaping ([NCMenuItem]?) -> Void) {
         guard let window else { done(nil); return }
-        NCMenus.read(of: el, in: window, press: press, logger: logger, done)
+        let resting = desiredOrigin.flatMap { $0.y > Self.parkedY + 1 ? $0 : nil }
+        if let resting {
+            desiredOrigin = CGPoint(x: resting.x, y: Self.parkedY)
+            keepInPlace()
+        }
+        NCMenus.read(of: el, in: window, press: press, logger: logger) { [weak self] items in
+            done(items)
+            guard let resting else { return }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+                guard let self, self.isActive, self.desiredOrigin?.y == Self.parkedY else { return }
+                self.desiredOrigin = resting
+                self.keepInPlace()
+                // Not drawn while parked: pictured again once it is.
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in self?.captureWidgets() }
+            }
+        }
     }
 }
 
@@ -911,6 +1222,8 @@ struct NCPanelMenu: Identifiable, Equatable {
         case options(String)
         /// The footer ✕.
         case clear
+        /// A right click on a widget.
+        case widget(String)
     }
     let id = UUID()
     let target: Target

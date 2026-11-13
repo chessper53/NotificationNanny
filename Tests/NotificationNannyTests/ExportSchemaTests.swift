@@ -165,32 +165,16 @@ struct ExportSchemaTests {
         #expect(s.newestBannerAtBottom == false)   // default when absent
     }
 
-    /// A backup from a hypothetical newer schema must still import the fields we
-    /// understand (unknown keys are ignored by JSONDecoder).
-    @Test func import_newerSchema_stillApplied() throws {
+    /// A backup from a newer schema is refused whole, with nothing changed: half applied,
+    /// it restored only part of what it meant, without a word.
+    @Test func import_newerSchema_isRefused() throws {
         let future = """
-        {
-            "schemaVersion": 999,
-            "placements": {},
-            "targetDisplayID": 3,
-            "autoDismissSeconds": 5,
-            "bannerScale": 2.0,
-            "pauseWhileStreaming": false,
-            "avoidNCPanel": true,
-            "protectDesktopWidgets": false,
-            "pauseDuringFocus": true,
-            "appGroups": [],
-            "presets": [],
-            "someUnknownFutureField": 42
-        }
+        {"schemaVersion": 999, "placements": {}, "targetDisplayID": 3, "autoDismissSeconds": 5,
+         "bannerScale": 2.0, "pauseWhileStreaming": false, "appGroups": [], "presets": []}
         """.data(using: .utf8)!
-
         let s = makeSettings()
-        try s.importData(future)
-
-        #expect(s.targetDisplayID == 3)
-        #expect(s.bannerScale == 2.0)
-        #expect(s.protectDesktopWidgets == false)
-        #expect(s.pauseDuringFocus == true)
+        s.autoDismissSeconds = 0
+        #expect(throws: AppSettings.BackupError.newerVersion) { try s.importData(future) }
+        #expect(s.autoDismissSeconds == 0)
     }
 }

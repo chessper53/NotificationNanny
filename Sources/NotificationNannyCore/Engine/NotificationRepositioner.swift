@@ -160,7 +160,10 @@ package final class NotificationRepositioner: ObservableObject {
         guard axController.start(onEvent: { [weak self] element, notification in
             self?.handleAXEvent(element: element, notification: notification)
         }) else {
-            logger.log("NC process not found — will retry when it launches", level: .warn, tag: "AX")
+            // Tried again every second by the watchdog, which only started after a start
+            // that worked: one that failed first was never tried again.
+            logger.log("Observer not started: \(axController.lastStartFailure ?? "unknown"). Trying again every second", level: .warn, tag: "AX")
+            startAttachmentWatchdog()
             return
         }
         isObserving = true
@@ -184,6 +187,7 @@ package final class NotificationRepositioner: ObservableObject {
         guard attachmentWatchdog == nil else { return }
         let timer = Timer(timeInterval: 1, repeats: true) { [weak self] _ in
             Task { @MainActor [weak self] in
+                self?.checkPermissionStillGranted()
                 self?.checkObserverAttachment(reason: "watchdog")
                 self?.checkPauseLifted()
             }
@@ -239,11 +243,35 @@ package final class NotificationRepositioner: ObservableObject {
     }
 
     /// Reattaches if Notification Center is no longer the process the observer is bound to.
+    /// Accessibility turned off while running: the observer went on as if nothing had
+    /// happened, every call into Notification Center failing, and Settings still showed it
+    /// working. Now everything that needs it stops, and starts again by itself once it is
+    /// allowed again, no relaunch needed. Notification Center's windows can't be moved any
+    /// more by then: one parked for a custom banner stays until macOS moves it.
+    private func checkPermissionStillGranted() {
+        guard hasAccessibilityPermission, !AXIsProcessTrusted() else { return }
+        logger.log("Accessibility was turned off: banners are left to macOS until it is allowed again", level: .warn, tag: "AX")
+        customBannerManager.dismissAll()
+        teardownObserver()
+        permissionMonitor.refresh()
+        hasAccessibilityPermission = false
+        permissionMonitor.startPollingIfNeeded { [weak self] in
+            guard let self else { return }
+            self.logger.log("Accessibility allowed again: placing banners again", tag: "AX")
+            self.hasAccessibilityPermission = true
+            self.startObserving()
+        }
+    }
+
     private func checkObserverAttachment(reason: String) {
         guard hasAccessibilityPermission else { return }
         let live = axController.currentProcessPid
         guard live > 0, live != axController.ncPid else { return }
-        logger.log("NC PID changed (\(axController.ncPid) → \(live)), found by \(reason) — reattaching", level: .warn, tag: "AX")
+        if axController.isObserving {
+            logger.log("NC PID changed (\(axController.ncPid) → \(live)), found by \(reason): reattaching", level: .warn, tag: "AX")
+        } else {
+            logger.log("Not observing yet: trying again (\(reason))", tag: "AX")
+        }
         startObserving()
     }
 
@@ -265,6 +293,7 @@ package final class NotificationRepositioner: ObservableObject {
         followTimer?.cancel()
         followTimer = nil
         closedBannerIDs.removeAll()
+        expiredBannerIDs.removeAll()
         unreadableBannerSweeps.removeAll()
         loggedSkippedKeys.removeAll()
         resolver.invalidateAll()
@@ -296,7 +325,7 @@ package final class NotificationRepositioner: ObservableObject {
             let hadOverlay = customBannerManager.isActive(key: key)
             let wasTrackedBanner = lastSelfSetPositions[key] != nil
             if hadOverlay || wasTrackedBanner {
-                logger.log("Window destroyed\(hadOverlay ? " — overlay dismissed" : "")", tag: "AX")
+                logger.log("Window destroyed\(hadOverlay ? " — overlay dismissed" : "")", level: hadOverlay ? .info : .debug, tag: "AX")
             } else {
                 axLog.debug("Window destroyed — untracked (widget/chrome churn)")
             }
@@ -576,11 +605,84 @@ package final class NotificationRepositioner: ObservableObject {
         }
     }
 
+    /// Notification Center, asked with a short timeout before each sweep. A sweep is many
+    /// calls into it on the main thread, each waiting up to a second for an answer: while
+    /// it was busy (seen after it opened a window of unknown kind), sweeps of 1 to 3.4 s
+    /// came back to back, and the app froze with it for a minute.
+    private var ncProbe: (pid: pid_t, element: AXUIElement)?
+    /// When Notification Center stopped answering, nil while it answers.
+    private var ncUnresponsiveSince: Date?
+    private var unresponsiveRetry: DispatchWorkItem?
+    /// Each probe that goes unanswered waits its timeout on the main thread: the retries
+    /// spread out, 0.25 s doubling up to 2 s, so a long stall costs little.
+    private var unresponsiveRetryDelay: Double = 0.25
+    static let probeTimeout: Float = 0.15
+
+    private func notificationCenterAnswers() -> Bool {
+        guard ncPid > 0 else { return true }
+        if ncProbe?.pid != ncPid {
+            let element = AXUIElementCreateApplication(ncPid)
+            // This element only: actions elsewhere keep the full second, as one that takes
+            // effect after its answer timed out was tried again under another name.
+            AXUIElementSetMessagingTimeout(element, Self.probeTimeout)
+            ncProbe = (ncPid, element)
+        }
+        guard let probe = ncProbe?.element else { return true }
+        var value: CFTypeRef?
+        return AXUIElementCopyAttributeValue(probe, kAXWindowsAttribute as CFString, &value) != .cannotComplete
+    }
+
+    /// Notification Center can also stop answering in the middle of a sweep, after the
+    /// probe: then every call left waited its second, 6 s in all for a 6 s stall. A sweep
+    /// takes under 50 ms; past this one stops at the next window and waits as above.
+    static let sweepBudget: UInt64 = 400_000_000
+    private var sweepStarted: UInt64?
+
+    private var sweepOverran: Bool {
+        guard let started = sweepStarted else { return false }
+        return DispatchTime.now().uptimeNanoseconds - started > Self.sweepBudget
+    }
+
+    /// Skips the sweep while Notification Center doesn't answer, and tries again shortly,
+    /// so the windows are placed once it does. Logged once per stall, not once per sweep.
+    private func sweepIfNotificationCenterAnswers() -> Bool {
+        guard notificationCenterAnswers() else {
+            waitForNotificationCenter()
+            return false
+        }
+        if let since = ncUnresponsiveSince {
+            ncUnresponsiveSince = nil
+            unresponsiveRetryDelay = 0.25
+            logger.log("Notification Center answering again after \(String(format: "%.1f", Date().timeIntervalSince(since)))s", tag: "AX")
+        }
+        return true
+    }
+
+    private func waitForNotificationCenter() {
+        if ncUnresponsiveSince == nil {
+            ncUnresponsiveSince = Date()
+            logger.log("Notification Center isn't answering — waiting before placing banners", level: .warn, tag: "AX")
+        }
+        if unresponsiveRetry == nil {
+            let item = DispatchWorkItem { [weak self] in
+                self?.unresponsiveRetry = nil
+                self?.repositionVisibleWindows()
+            }
+            unresponsiveRetry = item
+            DispatchQueue.main.asyncAfter(deadline: .now() + unresponsiveRetryDelay, execute: item)
+            unresponsiveRetryDelay = min(unresponsiveRetryDelay * 2, 2)
+        }
+    }
+
     /// Returns whether any window had something to place.
     @discardableResult
     private func repositionVisibleWindows() -> Bool {
+        guard sweepIfNotificationCenterAnswers() else { return false }
         let started = DispatchTime.now().uptimeNanoseconds
+        sweepStarted = started
         defer {
+            if sweepOverran { waitForNotificationCenter() }
+            sweepStarted = nil
             let ms = Double(DispatchTime.now().uptimeNanoseconds - started) / 1_000_000
             nnTiming("sweep", ms)
             if ms > 1000 {
@@ -601,12 +703,14 @@ package final class NotificationRepositioner: ObservableObject {
         sweepBanners = [:]
         defer { sweepBanners = nil }
         playSounds(in: windows)
-        if !dismissTimers.armedIDs.isEmpty || !closedBannerIDs.isEmpty || !unreadableBannerSweeps.isEmpty
+        if !dismissTimers.armedIDs.isEmpty || !closedBannerIDs.isEmpty || !expiredBannerIDs.isEmpty
+            || !unreadableBannerSweeps.isEmpty
             || !bannerFirstSeen.isEmpty || !stackPresses.isEmpty {
             let refs = windows.flatMap { banners(in: $0) }
             let present = Set(refs.compactMap(\.id))
             dismissTimers.prune(keeping: present)
             closedBannerIDs.formIntersection(present)
+            expiredBannerIDs.formIntersection(present)
             // A collapsed stack hides the cards behind its top one. They're still
             // up, and forgetting when they came would reorder the pile once the
             // stack is open.
@@ -619,11 +723,16 @@ package final class NotificationRepositioner: ObservableObject {
             unreadableBannerSweeps = unreadableBannerSweeps.filter { present.contains($0.key) }
         }
         let baseTargets: [(AXUIElement, RepositionTarget)] = windows.compactMap { w in
-            guard let t = targetOrigin(for: w, stackIndex: 0) else { return nil }
+            guard !sweepOverran, let t = targetOrigin(for: w, stackIndex: 0) else { return nil }
             return (w, t)
         }
         log.debug("repositionVisibleWindows: \(baseTargets.count) repositionable target(s)")
         for (i, (window, base)) in baseTargets.enumerated() {
+            guard !sweepOverran else { break }
+            if allExpired(window) {
+                hideOffscreen(window, atX: base.windowOrigin.x)
+                continue
+            }
             let idx = baseTargets[..<i].filter { sameAnchor($0.1, base) }.count
             log.debug("repositionVisibleWindows: window[\(i)] stackIndex=\(idx) anchor=\(base.placement.position.rawValue, privacy: .public)")
             // `base` was computed above with stackIndex 0, and snapWindow would
@@ -781,6 +890,9 @@ package final class NotificationRepositioner: ObservableObject {
     /// Banners closed through their Close action. macOS takes a moment to remove
     /// them, and a sweep in that moment must not give them a fresh overlay.
     private var closedBannerIDs: Set<String> = []
+    /// Banners whose auto-dismiss time is up: no overlay and no place on screen any more,
+    /// and never closed, so the notification stays in Notification Center.
+    private var expiredBannerIDs: Set<String> = []
     /// When each banner was first seen (system uptime), for ordering a custom pile.
     private var bannerFirstSeen: [String: Double] = [:]
     /// Sweeps a banner's content could not be read in, so it gets a plain overlay
@@ -941,9 +1053,49 @@ package final class NotificationRepositioner: ObservableObject {
     private var targetBannerSize: CGSize = .zero
 
     /// Puts back what can't wait for later: Notification Center's window, if the custom
-    /// panel just closed and is still waiting for the real one to finish leaving.
+    /// panel just closed and is still waiting for the real one to finish leaving, and any
+    /// of its windows still hidden for a custom banner. Left there once we are gone, every
+    /// banner after it arrived in it, off screen (seen on 27.0: a banner up at quit, one
+    /// more posted after, and it never showed).
     package func prepareForQuit() {
-        panelTakeover.finishClosing()
+        panelTakeover.releaseForQuit()
+        guard let ncApp else { return }
+        var value: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(ncApp, kAXWindowsAttribute as CFString, &value) == .success,
+              let windows = value as? [AXUIElement] else { return }
+        let screens = Self.axScreenFrames
+        for window in windows where !isProtectedWidget(window) {
+            guard let p = window.point(), let size = window.size(),
+                  let home = Self.homeOrigin(forParked: p, size: size, screens: screens) else { continue }
+            setWindowPosition(window, to: home)
+            logger.log("Quitting — put Notification Center's window back from (\(Int(p.x)),\(Int(p.y))) to (\(Int(home.x)),\(Int(home.y)))", tag: "AX")
+        }
+    }
+
+    /// Where a window parked off screen belongs: the top left of the screen across from it
+    /// (hidden for a banner, it keeps its x), or of the main screen when its x is parked
+    /// too (display sleep). Nil for a window on any screen, wherever that is: a screen left
+    /// of or above the main one has negative coordinates, and its windows aren't parked.
+    /// AX coordinates.
+    static func homeOrigin(forParked p: CGPoint, size: CGSize, screens: [CGRect]) -> CGPoint? {
+        let frame = CGRect(origin: p, size: CGSize(width: max(size.width, 1), height: max(size.height, 1)))
+        // A sliver counts as off screen: the panel waits with one row on screen to have its
+        // widgets drawn (NCPanelTakeover.drawnOffScreen).
+        let onScreen = screens.contains { s in
+            let i = s.intersection(frame)
+            return !i.isNull && i.width >= 8 && i.height >= 8
+        }
+        guard !onScreen, let main = screens.first else { return nil }
+        let across = screens.first { p.x >= $0.minX && p.x < $0.maxX }
+        let screen = across ?? main
+        return CGPoint(x: screen.minX, y: screen.minY)
+    }
+
+    /// Every screen's frame in AX coordinates (top left origin of the main display).
+    private static var axScreenFrames: [CGRect] {
+        guard let primary = NSScreen.screens.first else { return [] }
+        return NSScreen.screens.map { CGRect(x: $0.frame.minX, y: primary.frame.maxY - $0.frame.maxY,
+                                             width: $0.frame.width, height: $0.frame.height) }
     }
 
     func sendTestNotification(groupID: UUID?) {
@@ -997,10 +1149,10 @@ package final class NotificationRepositioner: ObservableObject {
         var parts = [indent + (el.stringAttribute(kAXRoleAttribute as String) ?? "?")]
         if let sub = el.stringAttribute(kAXSubroleAttribute as String) { parts.append("[\(sub)]") }
         if let desc = el.stringAttribute("AXAttributedDescription"), !desc.isEmpty {
-            parts.append("desc=\"\(desc.replacingOccurrences(of: "\n", with: "⏎"))\"")
+            parts.append("desc=\(LogPrivacy.describe(desc))")
         }
         if let v = el.stringAttribute(kAXValueAttribute as String), !v.isEmpty {
-            parts.append("value=\"\(v.replacingOccurrences(of: "\n", with: "⏎"))\"")
+            parts.append("value=\(LogPrivacy.describe(v))")
         }
         if let p = el.point(), let s = el.size() {
             parts.append("@(\(Int(p.x)),\(Int(p.y)) \(Int(s.width))×\(Int(s.height)))")
@@ -1268,7 +1420,7 @@ package final class NotificationRepositioner: ObservableObject {
 
         if testGroupID == nil, attempt < 3, !isBannerReady(window) {
             let delay: Double = [0.05, 0.15, 0.35][attempt]
-            logger.log("Banner not ready — retry \(attempt + 1)/3 in \(Int(delay * 1000))ms", tag: "Banner")
+            logger.log("Banner not ready — retry \(attempt + 1)/3 in \(Int(delay * 1000))ms", level: .debug, tag: "Banner")
             DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
                 guard let self, self.isCurrentGeneration(gen, for: CFHash(window)) else { return }
                 self.repositionWindow(window, attempt: attempt + 1)
@@ -1387,8 +1539,7 @@ package final class NotificationRepositioner: ObservableObject {
                 )
             }
             if let content {
-                let preview = content.title.isEmpty ? content.body.prefix(50) : content.title.prefix(50)
-                logger.log("Overlay: \(content.appName) — \"\(preview)\"", tag: "Custom")
+                logger.log("Overlay: \(content.appName) — \(LogPrivacy.describe(content.title.isEmpty ? content.body : content.title))", tag: "Custom")
                 hideOffscreen(window, atX: info.windowOrigin.x)
 
                 let scaledWidth = info.bannerSize.width * scale
@@ -1454,6 +1605,10 @@ package final class NotificationRepositioner: ObservableObject {
             overlayContent.removeValue(forKey: CFHash(window))
         }
 
+        if allExpired(window) {
+            hideOffscreen(window, atX: info.windowOrigin.x)
+            return
+        }
         placeNative(window, at: info)
 
         scheduleHolds(window: window, stackIndex: stackIndex, generation: gen)
@@ -1575,9 +1730,24 @@ package final class NotificationRepositioner: ObservableObject {
         let ids = banners(in: window).compactMap(\.id)
         guard !ids.isEmpty else { return false }
         dismissTimers.arm(ids, delay: delay) { [weak self] id in
-            self?.closeBanner(id: id, reason: "Auto-dismiss")
+            self?.expireBanner(id: id)
         }
         return true
+    }
+
+    /// A banner's auto-dismiss time is up: off the screen, left in Notification Center.
+    private func expireBanner(id: String) {
+        guard !expiredBannerIDs.contains(id) else { return }
+        expiredBannerIDs.insert(id)
+        logger.log("Auto-dismiss: banner off screen, kept in Notification Center", tag: "Banner")
+        repositionVisibleWindows()
+    }
+
+    /// Every banner in the window has had its time: the window goes off screen, the
+    /// notifications stay in Notification Center.
+    private func allExpired(_ window: AXUIElement) -> Bool {
+        let ids = banners(in: window).compactMap(\.id)
+        return !ids.isEmpty && ids.allSatisfy { expiredBannerIDs.contains($0) || closedBannerIDs.contains($0) }
     }
 
     /// Closes one banner through its own Close action, the same as clicking its ✕
@@ -1747,7 +1917,7 @@ package final class NotificationRepositioner: ObservableObject {
         }
         let now = ProcessInfo.processInfo.systemUptime
         let items: [Item] = banners(in: window).compactMap { ref in
-            guard let id = ref.id, !closedBannerIDs.contains(id) else { return nil }
+            guard let id = ref.id, !closedBannerIDs.contains(id), !expiredBannerIDs.contains(id) else { return nil }
             let el = ref.element
             let description = el.stringAttribute("AXAttributedDescription") ?? ""
             let isTest = testGroupID != nil && pendingTestTitle.map { description.contains($0) } == true
@@ -1923,8 +2093,7 @@ package final class NotificationRepositioner: ObservableObject {
             ?? settings.effectiveBannerColor(for: appName)
         let animation = testGroup.map { settings.effectiveBannerAnimation(forGroupID: $0) }
             ?? settings.effectiveBannerAnimation(for: appName)
-        let preview = content.title.isEmpty ? content.body.prefix(50) : content.title.prefix(50)
-        logger.log("Overlay: \(content.appName) — \"\(preview)\"", tag: "Custom")
+        logger.log("Overlay: \(content.appName) — \(LogPrivacy.describe(content.title.isEmpty ? content.body : content.title))", tag: "Custom")
         let tapName = content.appName
         customBannerManager.showBanner(
             content: content,
@@ -1939,6 +2108,7 @@ package final class NotificationRepositioner: ObservableObject {
             animation: animation,
             onOpen: { [weak self] in self?.handleBannerTap(appName: tapName, bannerElement: element) },
             onUnderlyingDismiss: { [weak self] in self?.closeBanner(id: id, reason: "Custom banner dismissed") },
+            onExpire: { [weak self] in self?.expireBanner(id: id) },
             onAction: { [weak self] name in self?.performBannerAction(name, id: id) },
             onDetails: { [weak self] in self?.toggleBannerDetails(id: id) },
             menuSource: bannerMenu(id: id),
@@ -2232,6 +2402,6 @@ package final class NotificationRepositioner: ObservableObject {
         guard !loggedSkippedKeys.contains(key) else { return }
         loggedSkippedKeys.insert(key)
         let subrole = window.stringAttribute(kAXSubroleAttribute as String) ?? "none"
-        logger.log("\(reason) — \(Int(size.width))×\(Int(size.height)) at (\(Int(pos.x)),\(Int(pos.y))), subrole=\(subrole)", tag: tag)
+        logger.log("\(reason) — \(Int(size.width))×\(Int(size.height)) at (\(Int(pos.x)),\(Int(pos.y))), subrole=\(subrole)", level: .debug, tag: tag)
     }
 }

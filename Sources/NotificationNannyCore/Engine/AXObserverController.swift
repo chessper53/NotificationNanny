@@ -13,6 +13,15 @@ final class AXObserverController {
 
     private var observer: AXObserver?
     private var onEvent: ((AXUIElement, String) -> Void)?
+    /// Why the last start failed, for the log; nil after one that worked.
+    private(set) var lastStartFailure: String?
+
+    /// Without these, banners are never seen: layout changes are the only sign one arrived
+    /// (see watchedNotifications), and destroyed elements end overlays and sounds. The rest
+    /// help, and a start goes on without them.
+    private static let requiredNotifications: Set<String> = [
+        kAXLayoutChangedNotification, kAXUIElementDestroyedNotification,
+    ]
 
     /// `kAXLayoutChangedNotification` matters from macOS 26 on. A banner is no longer its own
     /// window: it is a SwiftUI view added inside one persistent fullscreen `AXSystemDialog`
@@ -42,9 +51,13 @@ final class AXObserverController {
     func start(onEvent: @escaping (AXUIElement, String) -> Void) -> Bool {
         stop()
         self.onEvent = onEvent
+        lastStartFailure = nil
 
         let pid = Self.findNotificationProcessPid()
-        guard pid > 0 else { return false }
+        guard pid > 0 else {
+            lastStartFailure = "Notification Center isn't running"
+            return false
+        }
         // Every call into Notification Center otherwise waits up to the system default of
         // six seconds. Right after a display wake NC was measured taking about fifteen
         // seconds to answer; at six seconds per call a sweep stalled the main thread and
@@ -54,12 +67,26 @@ final class AXObserverController {
         let app = AXUIElementCreateApplication(pid)
 
         var newObserver: AXObserver?
-        guard AXObserverCreate(pid, axObserverControllerCallback, &newObserver) == .success,
-              let newObserver else { return false }
+        let created = AXObserverCreate(pid, axObserverControllerCallback, &newObserver)
+        guard created == .success, let newObserver else {
+            lastStartFailure = "observer not created (\(created.rawValue))"
+            return false
+        }
 
+        // Its answers were ignored, and observing was reported whatever they were.
         let selfPtr = Unmanaged.passUnretained(self).toOpaque()
+        var failed: [String] = []
         for name in Self.watchedNotifications {
-            AXObserverAddNotification(newObserver, app, name as CFString, selfPtr)
+            let result = AXObserverAddNotification(newObserver, app, name as CFString, selfPtr)
+            if result != .success, result != .notificationAlreadyRegistered { failed.append("\(name) (\(result.rawValue))") }
+        }
+        if failed.contains(where: { f in Self.requiredNotifications.contains { f.hasPrefix($0) } }) {
+            for name in Self.watchedNotifications { AXObserverRemoveNotification(newObserver, app, name as CFString) }
+            lastStartFailure = "Notification Center refused \(failed.joined(separator: ", "))"
+            return false
+        }
+        if !failed.isEmpty {
+            NannyLogger.shared.log("Observing without \(failed.joined(separator: ", "))", level: .warn, tag: "AX")
         }
         CFRunLoopAddSource(CFRunLoopGetMain(), AXObserverGetRunLoopSource(newObserver), .defaultMode)
 
@@ -89,16 +116,19 @@ final class AXObserverController {
         onEvent?(element, notification)
     }
 
-    /// Finds the notification-center process: exact bundle ID match, then any running app whose
-    /// bundle ID contains "notification", then a `CGWindowList` scan for a window owner whose
-    /// name contains "notification". No subprocess spawned.
+    /// Finds the notification-center process: exact bundle ID match, then any running Apple app
+    /// whose bundle ID contains "notification", then a `CGWindowList` scan for a window owner
+    /// whose name contains "notification". No subprocess spawned. Never this app, whose bundle
+    /// ID and name both contain "notification": attached to itself, it reported observing.
     private static func findNotificationProcessPid() -> pid_t {
+        let ourPid = ProcessInfo.processInfo.processIdentifier
         if let app = NSRunningApplication
             .runningApplications(withBundleIdentifier: "com.apple.notificationcenterui").first {
             return app.processIdentifier
         }
         for app in NSWorkspace.shared.runningApplications {
-            if app.bundleIdentifier?.localizedCaseInsensitiveContains("notification") == true {
+            if app.processIdentifier != ourPid, let id = app.bundleIdentifier, id.hasPrefix("com.apple."),
+               id.localizedCaseInsensitiveContains("notification") {
                 return app.processIdentifier
             }
         }
@@ -106,7 +136,7 @@ final class AXObserverController {
         for info in windows {
             guard let ownerName = info[kCGWindowOwnerName as String] as? String,
                   ownerName.localizedCaseInsensitiveContains("notification"),
-                  let pid = info[kCGWindowOwnerPID as String] as? Int32 else { continue }
+                  let pid = info[kCGWindowOwnerPID as String] as? Int32, pid != ourPid else { continue }
             return pid
         }
         return 0

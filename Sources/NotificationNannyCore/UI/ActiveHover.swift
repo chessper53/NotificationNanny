@@ -45,21 +45,27 @@ final class HoverView: NSView {
     }
 }
 
-/// One timer for every hover area on screen, running only while there is one.
+/// One timer for every hover area on screen, running only while one is: hover areas stay
+/// in windows put away (the panel's rows while it is closed), and with them the timer ran
+/// 30 times a second with nothing on screen, waking the Mac for nothing (`top`, idle).
+/// It wakes again when one of their windows shows.
 @MainActor
 private final class PointerWatcher {
     static let shared = PointerWatcher()
     private let views = NSHashTable<HoverView>.weakObjects()
     private var timer: Timer?
+    private var shown: NSObjectProtocol?
+
+    private init() {
+        shown = NotificationCenter.default.addObserver(forName: NSWindow.didChangeOcclusionStateNotification,
+                                                       object: nil, queue: .main) { _ in
+            MainActor.assumeIsolated { PointerWatcher.shared.wakeIfNeeded() }
+        }
+    }
 
     func add(_ view: HoverView) {
         views.add(view)
-        guard timer == nil else { return }
-        let timer = Timer(timeInterval: 1.0 / 30, repeats: true) { _ in
-            MainActor.assumeIsolated { PointerWatcher.shared.tick() }
-        }
-        RunLoop.main.add(timer, forMode: .common)
-        self.timer = timer
+        wakeIfNeeded()
     }
 
     func remove(_ view: HoverView) {
@@ -70,9 +76,25 @@ private final class PointerWatcher {
         }
     }
 
+    private var anyShown: Bool { views.allObjects.contains { $0.window?.isVisible == true } }
+
+    private func wakeIfNeeded() {
+        guard timer == nil, anyShown else { return }
+        let timer = Timer(timeInterval: 1.0 / 30, repeats: true) { _ in
+            MainActor.assumeIsolated { PointerWatcher.shared.tick() }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        self.timer = timer
+    }
+
     private func tick() {
         let pointer = NSEvent.mouseLocation
+        // Once more for those put away, so none of them stays hovered.
         for view in views.allObjects { view.check(pointer) }
+        if !anyShown {
+            timer?.invalidate()
+            timer = nil
+        }
     }
 }
 

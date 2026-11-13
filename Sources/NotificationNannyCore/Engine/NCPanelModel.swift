@@ -38,7 +38,22 @@ struct NCMenuItem: Equatable, Identifiable {
     let title: String
     /// Which of the menu's items with this title it is, to find it again.
     let occurrence: Int
+    /// Ticked, as a widget's current size is.
+    var checked = false
     var id: String { "\(kind)-\(title)-\(occurrence)" }
+
+    /// The menu once `chosen` is picked: a tick moves to it from the other items of its
+    /// group, between separators (a widget's sizes). Items of a group without a tick stay.
+    static func choosing(_ chosen: NCMenuItem, in items: [NCMenuItem]) -> [NCMenuItem] {
+        guard let at = items.firstIndex(where: { $0.id == chosen.id }) else { return items }
+        var start = at, end = at
+        while start > 0, items[start - 1].kind != .separator { start -= 1 }
+        while end < items.count - 1, items[end + 1].kind != .separator { end += 1 }
+        guard items[start...end].contains(where: \.checked) else { return items }
+        var next = items
+        for i in start...end { next[i].checked = i == at }
+        return next
+    }
 
     /// The menu's items from its AX children, as (title, height) in order. Separators are
     /// short untitled items; untitled full height items are containers and are left out;

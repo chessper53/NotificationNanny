@@ -3,7 +3,7 @@ name: Deploy landing page
 on:
   push:
     branches: [main]
-    paths: [site/**]
+    paths: [site/**, .github/workflows/pages.yml, .github/workflows/site.yml]
   workflow_dispatch:
 
 permissions:
@@ -16,15 +16,28 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # The same checks as on a pull request, here in the deploy's own run: on their own,
+  # a push straight to main deployed even while they failed.
+  validate:
+    uses: ./.github/workflows/site.yml
+
   deploy:
+    needs: validate
     runs-on: ubuntu-latest
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v7
+
+      # Only what the page serves: not its sources, packages or lockfile.
+      - name: Collect the site
+        run: |
+          mkdir -p _site
+          cp -R site/index.html site/main.js site/styles.css site/robots.txt site/sitemap.xml site/assets _site/
+
       - uses: actions/upload-pages-artifact@v5
         with:
-          path: site
+          path: _site
       - id: deployment
         uses: actions/deploy-pages@v5
