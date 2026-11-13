@@ -887,14 +887,80 @@ package final class AppSettings: ObservableObject {
         return try encoder.encode(export)
     }
 
-    func importData(_ data: Data) throws {
-        let imported = try JSONDecoder().decode(SettingsExport.self, from: data)
-        let version = imported.schemaVersion ?? 1
-        if version > Self.currentExportSchemaVersion {
-            NannyLogger.shared.log(
-                "Importing backup from a newer schema (v\(version) > v\(Self.currentExportSchemaVersion)) — unknown fields ignored",
-                level: .warn, tag: "Backup")
+    /// Why a backup can't be imported. Nothing is changed when one is refused.
+    package enum BackupError: Error, Equatable {
+        /// Not JSON, or not a NotificationNanny backup.
+        case notABackup
+        /// Made by a newer NotificationNanny, with settings this one doesn't know.
+        case newerVersion
+        /// A value outside what Settings allows; which one, for the log.
+        case invalid(String)
+
+        /// What Settings says, a key of Localizable.strings.
+        package var messageKey: String {
+            switch self {
+            case .notABackup: return "This file isn't a NotificationNanny backup."
+            case .newerVersion: return "This backup was made by a newer version of NotificationNanny. Update NotificationNanny, then import it again."
+            case .invalid: return "This backup has values NotificationNanny doesn't allow, so nothing was imported."
+            }
         }
+    }
+
+    /// The backup in `data`, checked whole before any of it is applied: a backup edited by
+    /// hand could set a banner to zero size, or one from a newer version half apply.
+    func validatedBackup(_ data: Data) throws -> SettingsExport {
+        let imported: SettingsExport
+        do { imported = try JSONDecoder().decode(SettingsExport.self, from: data) } catch { throw BackupError.notABackup }
+        let version = imported.schemaVersion ?? 1
+        guard version <= Self.currentExportSchemaVersion else {
+            NannyLogger.shared.log("Backup refused: schema v\(version), this version reads up to v\(Self.currentExportSchemaVersion)",
+                                   level: .warn, tag: "Backup")
+            throw BackupError.newerVersion
+        }
+        if let problem = Self.problem(in: imported) {
+            NannyLogger.shared.log("Backup refused: \(problem)", level: .warn, tag: "Backup")
+            throw BackupError.invalid(problem)
+        }
+        return imported
+    }
+
+    /// The first value outside what Settings lets you set, nil when there is none.
+    static func problem(in b: SettingsExport) -> String? {
+        func bad(_ v: Double, _ range: ClosedRange<Double>) -> Bool { !v.isFinite || !range.contains(v) }
+        let offsets = -10_000.0...10_000.0
+        func badPlacement(_ p: ScreenPlacement) -> Bool { bad(p.xOffset, offsets) || bad(p.yOffset, offsets) }
+        func badTint(_ t: BannerTint?) -> Bool { t.map { [$0.r, $0.g, $0.b].contains { bad($0, 0...1) } } ?? false }
+        func badGroups(_ groups: [AppGroup]) -> String? {
+            for g in groups {
+                if let s = g.bannerScale, bad(s, 0.5...2.5) { return "group banner size \(s)" }
+                if badPlacement(g.placement) { return "group position offset" }
+                if badTint(g.bannerTint) { return "group colour" }
+            }
+            return nil
+        }
+        if bad(b.bannerScale, 0.5...2.5) { return "banner size \(b.bannerScale)" }
+        if bad(b.autoDismissSeconds, 0...300) { return "auto-dismiss \(b.autoDismissSeconds)" }
+        if b.placements.values.contains(where: badPlacement) { return "position offset" }
+        if badTint(b.bannerTint) || badTint(b.bannerTextTint) { return "banner colour" }
+        if let s = b.customNotificationCenterScale, bad(s, 0.8...1.4) { return "Notification Center size \(s)" }
+        if let o = b.customNotificationCenterTopOffset, bad(o, offsets) { return "Notification Center offset" }
+        if let o = b.customNotificationCenterXOffset, bad(o, offsets) { return "Notification Center offset" }
+        if badTint(b.customNotificationCenterTint) || badTint(b.customNotificationCenterTextTint) { return "Notification Center colour" }
+        if let v = b.allAppsSoundVolume, bad(v, 0...1) { return "volume \(v)" }
+        if (b.soundGroups ?? []).contains(where: { bad($0.volume, 0...1) }) { return "sound group volume" }
+        if let p = badGroups(b.appGroups) { return p }
+        for preset in b.presets {
+            if bad(preset.bannerScale, 0.5...2.5) || bad(preset.autoDismissSeconds, 0...300)
+                || preset.placements.values.contains(where: badPlacement) || badTint(preset.bannerTint) {
+                return "preset \"\(preset.name)\""
+            }
+            if let p = badGroups(preset.appGroups) { return "preset \"\(preset.name)\": \(p)" }
+        }
+        return nil
+    }
+
+    func importData(_ data: Data) throws {
+        let imported = try validatedBackup(data)
         placements          = imported.placements
         // The same screen by its stable key when it is connected; when it isn't, the key
         // is kept for when it is again. The number alone found whichever screen had it now.
@@ -976,24 +1042,19 @@ package final class AppSettings: ObservableObject {
         presets.removeAll { $0.id == preset.id }
     }
 
+    /// Every setting as a fresh install has it, taken from one through the backup, which
+    /// carries every setting (BackupCompletenessTests): a list of its own here had fallen
+    /// behind, and reset left the custom Notification Center, the pauses, widget protection,
+    /// following the screen and the Settings appearance as they were. A snooze running ends.
+    /// Kept: the apps seen, learned rather than set (an import adds them, never removes).
     package func resetAllSettings() {
-        isEnabled          = true
-        autoDismissSeconds = 0
-        targetDisplayID    = 0
-        placements         = [:]
-        presets            = []
-        appGroups          = []
-        soundGroups        = []
-        allAppsSound       = nil
-        allAppsSoundVolume = 1
-        bannerScale        = 1.0
-        holdWhileAsleep    = false
-        bannerTint         = nil
-        bannerTextTint     = nil
-        bannerAnimation    = .default
-        hideMenuBarIcon    = false
-        redactBannerContent = false
-        newestBannerAtBottom = false
+        let name = "NotificationNanny-reset-\(UUID().uuidString)"
+        guard let freshDefaults = UserDefaults(suiteName: name) else { return }
+        defer { UserDefaults.standard.removePersistentDomain(forName: name) }
+        let fresh = AppSettings(defaults: freshDefaults,
+                                knownAppsFileURL: FileManager.default.temporaryDirectory.appendingPathComponent("\(name).json"))
+        endSnooze()
+        if let data = try? fresh.exportData() { try? importData(data) }
         flushPendingSaves()
     }
 

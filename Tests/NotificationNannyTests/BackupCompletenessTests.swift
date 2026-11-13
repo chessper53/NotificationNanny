@@ -142,3 +142,80 @@ struct BackupKnownAppsTests {
         #expect(s.hideMenuBarIcon == true)
     }
 }
+
+/// A backup is checked whole before any of it applies; one that can't be imported leaves
+/// every setting as it was.
+@Suite("Backup validation") @MainActor
+struct BackupValidationTests {
+    private func make() -> AppSettings {
+        let name = "NotificationNannyTests_\(UUID().uuidString)"
+        return AppSettings(defaults: UserDefaults(suiteName: name)!,
+                           knownAppsFileURL: FileManager.default.temporaryDirectory.appendingPathComponent("\(name).json"))
+    }
+    private func backup(_ extra: String = "", scale: String = "1.0", version: Int = 3) -> Data {
+        """
+        {"schemaVersion": \(version), "placements": {}, "targetDisplayID": 0, "autoDismissSeconds": 0,
+         "bannerScale": \(scale), "pauseWhileStreaming": false, "appGroups": [], "presets": []\(extra)}
+        """.data(using: .utf8)!
+    }
+
+    @Test func notJSON_isRefused_andNothingChanges() {
+        let s = make(); s.bannerScale = 1.3
+        #expect(throws: AppSettings.BackupError.notABackup) { try s.importData(Data("hello".utf8)) }
+        #expect(s.bannerScale == 1.3)
+    }
+
+    @Test func newerVersion_isRefused() {
+        let s = make()
+        #expect(throws: AppSettings.BackupError.newerVersion) { try s.importData(backup(version: 99)) }
+    }
+
+    @Test func outOfRangeValues_areRefused_andNothingChanges() {
+        let s = make(); s.bannerScale = 1.3; s.redactBannerContent = true
+        for bad in [backup(scale: "0"), backup(scale: "-1"), backup(scale: "40"),
+                    backup(", \"customNotificationCenterScale\": 5"), backup(", \"allAppsSoundVolume\": 3"),
+                    backup(", \"bannerTint\": {\"r\": 2, \"g\": 0, \"b\": 0}")] {
+            #expect(throws: (any Error).self) { try s.importData(bad) }
+        }
+        #expect(s.bannerScale == 1.3)
+        #expect(s.redactBannerContent == true)
+    }
+
+    @Test func validBackup_imports() throws {
+        let s = make()
+        try s.importData(backup(scale: "1.5"))
+        #expect(s.bannerScale == 1.5)
+    }
+}
+
+/// Reset All Settings: every setting as a fresh install has it.
+@Suite("Reset all settings") @MainActor
+struct ResetAllSettingsTests {
+    @Test func resetMatchesAFreshInstall() throws {
+        func make() -> AppSettings {
+            let name = "NotificationNannyTests_\(UUID().uuidString)"
+            return AppSettings(defaults: UserDefaults(suiteName: name)!,
+                               knownAppsFileURL: FileManager.default.temporaryDirectory.appendingPathComponent("\(name).json"))
+        }
+        let s = make()
+        s.bannerScale = 1.4; s.customNotificationCenter = true; s.customNotificationCenterWidgets = true
+        s.pauseDuringFocus = true; s.pauseWhileStreaming = true; s.protectDesktopWidgets = false
+        s.followActiveScreen = true; s.hideMenuBarIcon = true; s.redactBannerContent = true
+        s.bannerTint = BannerTint(r: 1, g: 0, b: 0); s.saveCurrentAsPreset(name: "Desk")
+        _ = s.addGroup(name: "Work")
+        s.recordAppName("Slack")
+        s.snooze(minutes: 30)
+        s.resetAllSettings()
+
+        let fresh = make()
+        func backup(_ x: AppSettings) throws -> NSObject? {
+            var json = try JSONSerialization.jsonObject(with: try x.exportData()) as? [String: Any]
+            json?["knownAppNames"] = nil
+            return json as NSObject?
+        }
+        #expect(try backup(s)?.isEqual(try backup(fresh)) == true)
+        #expect(s.isSnoozed == false)
+        // Learned, not set: kept.
+        #expect(s.knownAppNames == ["Slack"])
+    }
+}
