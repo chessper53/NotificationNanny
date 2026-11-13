@@ -1,6 +1,7 @@
 import NotificationNannyCore
 import SwiftUI
 import AppKit
+import ApplicationServices
 import UserNotifications
 import Combine
 
@@ -305,6 +306,11 @@ final class AppCoordinator: NSObject, ObservableObject, NSApplicationDelegate, N
         exit(0)
     }
 
+    /// After an update to a build signed differently, the grant macOS has is for the old
+    /// signature: System Settings still shows NotificationNanny on, and it doesn't work.
+    /// Reset, macOS asks again cleanly. Only then: releases are signed with the same
+    /// certificate every time, so an update is still allowed, and a reset threw that away
+    /// at every update.
     private static func resetTCCIfBinaryChanged() {
         guard let execURL = Bundle.main.executableURL,
               let attrs = try? FileManager.default.attributesOfItem(atPath: execURL.path),
@@ -313,6 +319,7 @@ final class AppCoordinator: NSObject, ObservableObject, NSApplicationDelegate, N
         let stored = UserDefaults.standard.object(forKey: key) as? Date
         guard mtime != stored else { return }
         UserDefaults.standard.set(mtime, forKey: key)
+        guard !AXIsProcessTrusted() else { return }
         DispatchQueue.global(qos: .utility).async {
             let task = Process()
             task.launchPath = "/usr/bin/tccutil"
