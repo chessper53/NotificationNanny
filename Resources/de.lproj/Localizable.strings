@@ -262,3 +262,11 @@
 "Pick a sound for all apps" = "Wähle einen Ton für alle Apps";
 "Pick a sound for this sound group" = "Wähle einen Ton für diese Tongruppe";
 "Pause during Focus needs Full Disk Access. Without it, NotificationNanny can't tell when a Focus is on, so it never pauses. After allowing it, quit and reopen NotificationNanny." = "Pausieren im Fokus braucht den Festplattenvollzugriff. Ohne ihn erkennt NotificationNanny nicht, wann ein Fokus aktiv ist, und pausiert nie. Nach dem Erlauben NotificationNanny beenden und neu öffnen.";
+"Import failed" = "Import fehlgeschlagen";
+"Export failed" = "Export fehlgeschlagen";
+"This file isn't a NotificationNanny backup." = "Diese Datei ist keine NotificationNanny Sicherung.";
+"This backup was made by a newer version of NotificationNanny. Update NotificationNanny, then import it again." = "Diese Sicherung stammt von einer neueren Version von NotificationNanny. Aktualisiere NotificationNanny und importiere sie dann erneut.";
+"This backup has values NotificationNanny doesn't allow, so nothing was imported." = "Diese Sicherung enthält Werte, die NotificationNanny nicht erlaubt, daher wurde nichts importiert.";
+"This file couldn't be read." = "Diese Datei konnte nicht gelesen werden.";
+"The backup couldn't be saved." = "Die Sicherung konnte nicht gespeichert werden.";
+"OK" = "OK";

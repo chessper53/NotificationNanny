@@ -262,3 +262,11 @@
 "Pick a sound for all apps" = "Pick a sound for all apps";
 "Pick a sound for this sound group" = "Pick a sound for this sound group";
 "Pause during Focus needs Full Disk Access. Without it, NotificationNanny can't tell when a Focus is on, so it never pauses. After allowing it, quit and reopen NotificationNanny." = "Pause during Focus needs Full Disk Access. Without it, NotificationNanny can't tell when a Focus is on, so it never pauses. After allowing it, quit and reopen NotificationNanny.";
+"Import failed" = "Import failed";
+"Export failed" = "Export failed";
+"This file isn't a NotificationNanny backup." = "This file isn't a NotificationNanny backup.";
+"This backup was made by a newer version of NotificationNanny. Update NotificationNanny, then import it again." = "This backup was made by a newer version of NotificationNanny. Update NotificationNanny, then import it again.";
+"This backup has values NotificationNanny doesn't allow, so nothing was imported." = "This backup has values NotificationNanny doesn't allow, so nothing was imported.";
+"This file couldn't be read." = "This file couldn't be read.";
+"The backup couldn't be saved." = "The backup couldn't be saved.";
+"OK" = "OK";

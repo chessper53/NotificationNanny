@@ -76,7 +76,7 @@ jobs:
       matrix:
         include:
           - name: settings and backup
-            filter: 'NotificationNannyTests\.(AppGroupTests|AppSettingsPersistenceTests|AppSettingsTests|ApplyReportTests|BackupCompletenessTests|BackupKnownAppsTests|E2ESettingsTests|ExportSchemaTests|PresetTests|SettingsSnapshotTests|SnoozeTests|SoundGroupTests|TintMigrationTests)'
+            filter: 'NotificationNannyTests\.(AppGroupTests|AppSettingsPersistenceTests|AppSettingsTests|ApplyReportTests|BackupCompletenessTests|BackupKnownAppsTests|BackupValidationTests|E2ESettingsTests|ExportSchemaTests|PresetTests|ResetAllSettingsTests|SettingsSnapshotTests|SnoozeTests|SoundGroupTests|TintMigrationTests)'
           - name: banners and placement
             filter: 'NotificationNannyTests\.(BannerDecisionTests|BannerDismissTimersTests|BannerPileGeometryTests|NotificationPositionGeometryTests|NotificationPositionTests|ParkedWindowHomeTests|PileOrderTests|ScreenPlacementTests)'
           - name: Notification Center panel and widgets
