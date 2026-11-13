@@ -17,8 +17,41 @@ jobs:
         id: version
         run: echo "version=${GITHUB_REF_NAME#v}" >> $GITHUB_OUTPUT
 
+      # Every release signed with the same certificate, so macOS keeps a user's
+      # Accessibility and Screen Recording across updates (ad-hoc, each update was a
+      # new app to allow again). A release without it fails rather than going out
+      # ad-hoc: those who had allowed the last one would have to again.
+      - name: Import signing certificate
+        env:
+          SIGNING_P12: ${{ secrets.SIGNING_P12 }}
+          SIGNING_P12_PASSWORD: ${{ secrets.SIGNING_P12_PASSWORD }}
+        run: |
+          if [[ -z "$SIGNING_P12" || -z "$SIGNING_P12_PASSWORD" ]]; then
+            echo "error: SIGNING_P12 and SIGNING_P12_PASSWORD secrets are required to sign a release" >&2
+            exit 1
+          fi
+          keychain="$RUNNER_TEMP/signing.keychain-db"
+          pass="$(uuidgen)"
+          echo "$SIGNING_P12" | base64 --decode > "$RUNNER_TEMP/signing.p12"
+          security create-keychain -p "$pass" "$keychain"
+          security set-keychain-settings "$keychain"
+          security unlock-keychain -p "$pass" "$keychain"
+          security import "$RUNNER_TEMP/signing.p12" -k "$keychain" -P "$SIGNING_P12_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$pass" "$keychain" >/dev/null
+          rm -f "$RUNNER_TEMP/signing.p12"
+          identity="$(security find-identity -p codesigning "$keychain" | awk '/"/ { print $2; exit }')"
+          [[ -n "$identity" ]] || { echo "error: no signing identity in SIGNING_P12" >&2; exit 1; }
+          echo "SIGN_KEYCHAIN=$keychain" >> "$GITHUB_ENV"
+          echo "SIGN_IDENTITY=$identity" >> "$GITHUB_ENV"
+
       - name: Build
         run: UNIVERSAL=1 ./scripts/build-app.sh
+
+      - name: Verify signature
+        run: |
+          requirement="$(codesign -dr - build/NotificationNanny.app 2>&1)"
+          echo "$requirement"
+          [[ "$requirement" == *"certificate leaf"* ]] || { echo "error: release is not signed with the certificate" >&2; exit 1; }
 
       - name: Verify universal binary
         run: |
