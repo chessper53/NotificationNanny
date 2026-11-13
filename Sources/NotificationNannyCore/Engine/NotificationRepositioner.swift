@@ -1027,10 +1027,10 @@ package final class NotificationRepositioner: ObservableObject {
         var parts = [indent + (el.stringAttribute(kAXRoleAttribute as String) ?? "?")]
         if let sub = el.stringAttribute(kAXSubroleAttribute as String) { parts.append("[\(sub)]") }
         if let desc = el.stringAttribute("AXAttributedDescription"), !desc.isEmpty {
-            parts.append("desc=\"\(desc.replacingOccurrences(of: "\n", with: "⏎"))\"")
+            parts.append("desc=\(LogPrivacy.describe(desc))")
         }
         if let v = el.stringAttribute(kAXValueAttribute as String), !v.isEmpty {
-            parts.append("value=\"\(v.replacingOccurrences(of: "\n", with: "⏎"))\"")
+            parts.append("value=\(LogPrivacy.describe(v))")
         }
         if let p = el.point(), let s = el.size() {
             parts.append("@(\(Int(p.x)),\(Int(p.y)) \(Int(s.width))×\(Int(s.height)))")
@@ -1417,8 +1417,7 @@ package final class NotificationRepositioner: ObservableObject {
                 )
             }
             if let content {
-                let preview = content.title.isEmpty ? content.body.prefix(50) : content.title.prefix(50)
-                logger.log("Overlay: \(content.appName) — \"\(preview)\"", tag: "Custom")
+                logger.log("Overlay: \(content.appName) — \(LogPrivacy.describe(content.title.isEmpty ? content.body : content.title))", tag: "Custom")
                 hideOffscreen(window, atX: info.windowOrigin.x)
 
                 let scaledWidth = info.bannerSize.width * scale
@@ -1953,8 +1952,7 @@ package final class NotificationRepositioner: ObservableObject {
             ?? settings.effectiveBannerColor(for: appName)
         let animation = testGroup.map { settings.effectiveBannerAnimation(forGroupID: $0) }
             ?? settings.effectiveBannerAnimation(for: appName)
-        let preview = content.title.isEmpty ? content.body.prefix(50) : content.title.prefix(50)
-        logger.log("Overlay: \(content.appName) — \"\(preview)\"", tag: "Custom")
+        logger.log("Overlay: \(content.appName) — \(LogPrivacy.describe(content.title.isEmpty ? content.body : content.title))", tag: "Custom")
         let tapName = content.appName
         customBannerManager.showBanner(
             content: content,
