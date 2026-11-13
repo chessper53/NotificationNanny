@@ -248,8 +248,8 @@ package final class AppSettings: ObservableObject {
         didSet { defaults.set(hideMenuBarIcon, forKey: Key.hideMenuBarIcon) }
     }
 
-    /// A preference about this app's own window, like `hideMenuBarIcon`, so it is
-    /// not part of backups or presets.
+    /// A preference about this app's own window, like `hideMenuBarIcon`: in backups, not in
+    /// presets.
     @Published package var settingsAppearance: SettingsAppearance {
         didSet { defaults.set(settingsAppearance.rawValue, forKey: Key.settingsAppearance) }
     }
@@ -784,7 +784,10 @@ package final class AppSettings: ObservableObject {
 
     /// 2: the global banner colour, text colour and animation, hold while asleep, and the
     /// target screen's stable key, which version 1 left out.
-    static let currentExportSchemaVersion = 2
+    /// 3: everything else that is a setting: whether it is on, the menu bar icon, the
+    /// Settings window's appearance, and the apps it has seen. Only a snooze running
+    /// (a countdown, stale by any restore) and the app's own bookkeeping stay out.
+    static let currentExportSchemaVersion = 3
 
     struct SettingsExport: Codable {
         var schemaVersion: Int?
@@ -829,6 +832,12 @@ package final class AppSettings: ObservableObject {
         var allAppsSound: String?
         var allAppsSoundVolume: Double?
         var presets: [Preset]
+        /// Optional from here: before version 3, kept as they are on import.
+        var isEnabled: Bool?
+        var hideMenuBarIcon: Bool?
+        var settingsAppearance: SettingsAppearance?
+        /// Added to the apps this install has seen, never replacing them.
+        var knownAppNames: [String]?
     }
 
     func exportData() throws -> Data {
@@ -867,7 +876,11 @@ package final class AppSettings: ObservableObject {
             soundGroups: soundGroups,
             allAppsSound: allAppsSound,
             allAppsSoundVolume: allAppsSoundVolume,
-            presets: presets
+            presets: presets,
+            isEnabled: isEnabled,
+            hideMenuBarIcon: hideMenuBarIcon,
+            settingsAppearance: settingsAppearance,
+            knownAppNames: knownAppNames
         )
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
@@ -921,6 +934,12 @@ package final class AppSettings: ObservableObject {
         allAppsSound        = imported.allAppsSound
         allAppsSoundVolume  = imported.allAppsSoundVolume ?? 1
         presets             = imported.presets
+        if let on = imported.isEnabled { isEnabled = on }
+        if let hide = imported.hideMenuBarIcon { hideMenuBarIcon = hide }
+        if let look = imported.settingsAppearance { settingsAppearance = look }
+        if let apps = imported.knownAppNames {
+            knownAppNames = Array(Set(knownAppNames).union(apps.filter { !$0.isEmpty })).sorted()
+        }
         flushPendingSaves()
     }
 
