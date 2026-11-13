@@ -164,7 +164,7 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-spm-release-
 
-      # Assembles and ad-hoc signs NotificationNanny.app — catches packaging /
+      # Assembles and ad-hoc signs NotificationNanny.app: catches packaging /
       # Info.plist / entitlements breakage that `swift build` alone won't.
       - name: Build .app bundle
         run: ./scripts/build-app.sh

@@ -3,8 +3,10 @@ name: Site
 # The landing page ships as a prebuilt artifact: pages.yml uploads site/ as-is,
 # including the committed main.js. Nothing else in CI compiles the TypeScript,
 # so without this workflow a broken tsc or a stale main.js reaches production
-# unnoticed — which is how the TypeScript 7 bump landed green.
+# unnoticed, which is how the TypeScript 7 bump landed green.
 on:
+  # pages.yml runs this first and deploys only what passes it.
+  workflow_call:
   push:
     branches: [main]
     paths: [site/**, .github/workflows/site.yml]
@@ -13,7 +15,7 @@ on:
     paths: [site/**, .github/workflows/site.yml]
 
 concurrency:
-  group: site-${{ github.ref }}
+  group: site-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -54,5 +56,5 @@ jobs:
               exit 1
             fi
           else
-            echo "site/main.js is not tracked — built at deploy time, nothing to verify."
+            echo "site/main.js is not tracked: built at deploy time, nothing to verify."
           fi
