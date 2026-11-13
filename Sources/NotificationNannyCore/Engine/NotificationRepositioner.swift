@@ -953,7 +953,8 @@ package final class NotificationRepositioner: ObservableObject {
               let windows = value as? [AXUIElement] else { return }
         let screens = Self.axScreenFrames
         for window in windows where !isProtectedWidget(window) {
-            guard let p = window.point(), let home = Self.homeOrigin(forParked: p, screens: screens) else { continue }
+            guard let p = window.point(), let size = window.size(),
+                  let home = Self.homeOrigin(forParked: p, size: size, screens: screens) else { continue }
             setWindowPosition(window, to: home)
             logger.log("Quitting — put Notification Center's window back from (\(Int(p.x)),\(Int(p.y))) to (\(Int(home.x)),\(Int(home.y)))", tag: "AX")
         }
@@ -961,10 +962,17 @@ package final class NotificationRepositioner: ObservableObject {
 
     /// Where a window parked off screen belongs: the top left of the screen across from it
     /// (hidden for a banner, it keeps its x), or of the main screen when its x is parked
-    /// too (display sleep). Nil for a window that isn't parked. AX coordinates.
-    static func homeOrigin(forParked p: CGPoint, screens: [CGRect]) -> CGPoint? {
-        guard p.x < -1000 || p.y < -1000, let main = screens.first else { return nil }
-        let across = p.x < -1000 ? nil : screens.first { p.x >= $0.minX && p.x < $0.maxX }
+    /// too (display sleep). Nil for a window on any screen, wherever that is: a screen left
+    /// of or above the main one has negative coordinates, and its windows aren't parked.
+    /// AX coordinates.
+    static func homeOrigin(forParked p: CGPoint, size: CGSize, screens: [CGRect]) -> CGPoint? {
+        let frame = CGRect(origin: p, size: CGSize(width: max(size.width, 1), height: max(size.height, 1)))
+        let onScreen = screens.contains { s in
+            let i = s.intersection(frame)
+            return !i.isNull && i.width > 0 && i.height > 0
+        }
+        guard !onScreen, let main = screens.first else { return nil }
+        let across = screens.first { p.x >= $0.minX && p.x < $0.maxX }
         let screen = across ?? main
         return CGPoint(x: screen.minX, y: screen.minY)
     }
