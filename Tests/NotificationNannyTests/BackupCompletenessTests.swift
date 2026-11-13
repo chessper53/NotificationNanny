@@ -4,13 +4,11 @@ import Testing
 
 /// A backup restores the configuration it was made from, all of it: every setting off its
 /// default, exported, imported into a fresh install, and then every stored value compared.
-/// Left out on purpose: whether it is on or snoozed right now, the apps it has learned,
-/// and the two preferences about this Mac's own copy (menu bar icon, Settings appearance).
+/// Left out on purpose: a snooze running, a countdown stale by any restore, and the app's
+/// own bookkeeping.
 @Suite("Backup completeness") @MainActor
 struct BackupCompletenessTests {
-    private static let notInBackups: Set<String> = [
-        "isEnabled", "snoozedUntil", "knownAppNames", "hideMenuBarIcon", "settingsAppearance", "lastBinaryMtime",
-    ]
+    private static let notInBackups: Set<String> = ["snoozedUntil", "lastBinaryMtime"]
 
     private func makeSettings() -> (AppSettings, UserDefaults, String) {
         let name = "NotificationNannyTests_\(UUID().uuidString)"
@@ -60,6 +58,11 @@ struct BackupCompletenessTests {
         s.addApp("Microsoft Teams", toGroup: group)
         s.addApp("Microsoft Outlook", toGroup: group)
         s.saveCurrentAsPreset(name: "Desk")
+        s.isEnabled = false
+        s.hideMenuBarIcon = true
+        s.settingsAppearance = SettingsAppearance.allCases.first { $0 != s.settingsAppearance } ?? s.settingsAppearance
+        s.recordAppName("Slack")
+        s.recordAppName("Microsoft Teams")
         s.flushPendingSaves()
 
         let (restored, restoredDefaults, restoredName) = makeSettings()
@@ -77,9 +80,11 @@ struct BackupCompletenessTests {
         for (key, value) in source where !Self.notInBackups.contains(key) {
             #expect(content(result[key])?.isEqual(content(value)) == true, "\(key) didn't come back from the backup")
         }
-        // The restored install has seen no notification yet, and still sends both apps'
-        // banners by the group.
-        #expect(restored.knownAppNames.isEmpty)
+        // The apps seen come along, and both group apps' banners still go by the group.
+        #expect(restored.knownAppNames == ["Microsoft Teams", "Slack"])
+        #expect(restored.isEnabled == false)
+        #expect(restored.hideMenuBarIcon == true)
+        #expect(restored.settingsAppearance == s.settingsAppearance)
         #expect(restored.group(for: "Microsoft Teams")?.name == "Work")
         #expect(restored.group(for: "Microsoft Outlook")?.id == group)
         #expect(restored.bannerTint == s.bannerTint)
@@ -101,5 +106,39 @@ struct BackupCompletenessTests {
         #expect(s.bannerTint == nil)
         #expect(s.bannerAnimation == .default)
         #expect(s.holdWhileAsleep == false)
+    }
+}
+
+/// Importing into an install that has seen other apps adds the backup's to them.
+@Suite("Backup known apps") @MainActor
+struct BackupKnownAppsTests {
+    @Test func importMergesTheAppsSeen() throws {
+        func make() -> AppSettings {
+            let name = "NotificationNannyTests_\(UUID().uuidString)"
+            return AppSettings(defaults: UserDefaults(suiteName: name)!,
+                               knownAppsFileURL: FileManager.default.temporaryDirectory.appendingPathComponent("\(name).json"))
+        }
+        let source = make()
+        source.recordAppName("Slack")
+        let here = make()
+        here.recordAppName("Mail")
+        try here.importData(try source.exportData())
+        #expect(here.knownAppNames == ["Mail", "Slack"])
+    }
+
+    /// A backup from before version 3 leaves them as they are.
+    @Test func olderBackupKeepsWhatIsHere() throws {
+        let name = "NotificationNannyTests_\(UUID().uuidString)"
+        let s = AppSettings(defaults: UserDefaults(suiteName: name)!,
+                            knownAppsFileURL: FileManager.default.temporaryDirectory.appendingPathComponent("\(name).json"))
+        s.recordAppName("Mail")
+        s.hideMenuBarIcon = true
+        let backup = """
+        {"schemaVersion": 2, "placements": {}, "targetDisplayID": 0, "autoDismissSeconds": 0, "bannerScale": 1.0,
+         "pauseWhileStreaming": false, "appGroups": [], "presets": []}
+        """.data(using: .utf8)!
+        try s.importData(backup)
+        #expect(s.knownAppNames == ["Mail"])
+        #expect(s.hideMenuBarIcon == true)
     }
 }
