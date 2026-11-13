@@ -28,6 +28,7 @@ import UserNotifications
 
 let categoryID = "lab.actions"
 let replyCategoryID = "lab.reply"
+let archiveCategoryID = "lab.archive"
 
 final class Delegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelegate {
     private var handledResponse = false
@@ -42,11 +43,26 @@ final class Delegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterD
         UNUserNotificationCenter.current().setNotificationCategories([
             UNNotificationCategory(identifier: categoryID, actions: [reply, archive, snooze], intentIdentifiers: []),
             UNNotificationCategory(identifier: replyCategoryID, actions: [reply], intentIdentifiers: []),
+            UNNotificationCategory(identifier: archiveCategoryID, actions: [archive], intentIdentifiers: []),
         ])
     }
 
     func applicationDidFinishLaunching(_ note: Notification) {
         let args = Array(CommandLine.arguments.dropFirst())
+        if args.first == "--status" {
+            Task { @MainActor in
+                let settings = await UNUserNotificationCenter.current().notificationSettings()
+                let status: [String: Bool] = [
+                    "authorized": settings.authorizationStatus == .authorized || settings.authorizationStatus == .provisional,
+                    "alertsEnabled": settings.alertSetting == .enabled,
+                    "persistent": settings.alertStyle == .alert,
+                ]
+                let data = try! JSONSerialization.data(withJSONObject: status, options: [.sortedKeys])
+                print(String(decoding: data, as: UTF8.self))
+                NSApp.terminate(nil)
+            }
+            return
+        }
         if args.first == "--clear" {
             UNUserNotificationCenter.current().removeAllDeliveredNotifications()
             // The removal is handed to the notification daemon asynchronously.
@@ -60,7 +76,8 @@ final class Delegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterD
         }
         let title = args[0]
         let body = args.count > 1 && !args[1].hasPrefix("--") ? args[1] : "Sent by notify-lab"
-        let category = args.contains("--actions") ? categoryID : args.contains("--reply") ? replyCategoryID : nil
+        let category = args.contains("--archive-only") ? archiveCategoryID
+            : args.contains("--actions") ? categoryID : args.contains("--reply") ? replyCategoryID : nil
         // --subtitle Text: a second bold line, as mail apps send.
         let subtitle = args.firstIndex(of: "--subtitle").flatMap { $0 + 1 < args.count ? args[$0 + 1] : nil } ?? ""
         Task { @MainActor in
