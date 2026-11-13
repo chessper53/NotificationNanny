@@ -3,191 +3,76 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>NotificationNanny: put macOS notification banners where you want them</title>
-  <meta name="description" content="NotificationNanny is a free, open source macOS menu bar app that puts notification banners wherever you want. Position, scale, tint, and animate them per app, on any display. No telemetry." />
+  <title>NotificationNanny — Your notifications. Your rules.</title>
+  <meta name="description" content="Make yourself at home on your Mac. Move, resize and colour your notification banners, with rules for every app and display. Free and open source." />
   <meta name="author" content="chessper53" />
+  <meta name="theme-color" content="#faf9f6" />
   <link rel="canonical" href="https://chessper53.github.io/NotificationNanny/" />
-
   <link rel="icon" type="image/png" sizes="32x32" href="assets/favicon-32.png" />
   <link rel="apple-touch-icon" href="assets/apple-touch-icon.png" />
-  <meta name="theme-color" content="#15152a" media="(prefers-color-scheme: dark)" />
-  <meta name="theme-color" content="#f6f6f9" media="(prefers-color-scheme: light)" />
-
   <meta property="og:site_name" content="NotificationNanny" />
-  <meta property="og:title" content="NotificationNanny: take control of your macOS notification banners" />
-  <meta property="og:description" content="Position, scale, tint, and animate macOS notification banners per app, on any display. Free, open source, no telemetry." />
+  <meta property="og:title" content="NotificationNanny — Your notifications. Your rules." />
+  <meta property="og:description" content="Move, resize and colour your Mac’s notifications. A small menu bar app for a workspace that feels like you. Free and open source." />
   <meta property="og:image" content="https://chessper53.github.io/NotificationNanny/assets/social-card.png" />
   <meta property="og:image:width" content="1200" />
   <meta property="og:image:height" content="630" />
-  <meta property="og:image:alt" content="NotificationNanny: Don't let macOS decide where your notifications go." />
+  <meta property="og:image:alt" content="NotificationNanny: put macOS notification banners where you want them." />
   <meta property="og:url" content="https://chessper53.github.io/NotificationNanny/" />
   <meta property="og:type" content="website" />
-
   <meta name="twitter:card" content="summary_large_image" />
-  <meta name="twitter:title" content="NotificationNanny: take control of your macOS notification banners" />
-  <meta name="twitter:description" content="Position, scale, tint, and animate macOS notification banners per app, on any display. Free, open source, no telemetry." />
+  <meta name="twitter:title" content="NotificationNanny — Your notifications. Your rules." />
+  <meta name="twitter:description" content="A little more control over your Mac. Free, open source, and made for your menu bar." />
   <meta name="twitter:image" content="https://chessper53.github.io/NotificationNanny/assets/social-card.png" />
-
   <script type="application/ld+json">
-  {
-    "@context": "https://schema.org",
-    "@type": "SoftwareApplication",
-    "name": "NotificationNanny",
-    "alternateName": "Notification Nanny",
-    "url": "https://chessper53.github.io/NotificationNanny/",
-    "description": "A free, open source macOS menu bar app that repositions, scales, tints, and animates notification banners per app, on any display.",
-    "applicationCategory": "UtilitiesApplication",
-    "operatingSystem": "macOS 14+",
-    "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
-    "author": { "@type": "Person", "name": "chessper53" },
-    "downloadUrl": "https://github.com/chessper53/NotificationNanny/releases/latest",
-    "softwareHelp": "https://github.com/chessper53/NotificationNanny",
-    "image": "https://chessper53.github.io/NotificationNanny/assets/icon-512.png"
-  }
+  {"@context":"https://schema.org","@type":"SoftwareApplication","name":"NotificationNanny","url":"https://chessper53.github.io/NotificationNanny/","description":"A free, open source macOS menu bar app to position, scale, tint and animate notification banners per app, on any display.","applicationCategory":"UtilitiesApplication","operatingSystem":"macOS 14+","offers":{"@type":"Offer","price":"0","priceCurrency":"USD"},"author":{"@type":"Person","name":"chessper53"},"downloadUrl":"https://github.com/chessper53/NotificationNanny/releases/latest"}
   </script>
-
   <link rel="stylesheet" href="styles.css" />
   <script src="main.js" defer></script>
 </head>
 <body>
-
-  <header class="wrap top">
-    <a class="brand" href="./">
-      <img src="assets/icon-512.png" alt="" width="22" height="22" />
-      NotificationNanny
-    </a>
-    <nav>
-      <a href="#install">Install</a>
-      <a href="https://github.com/chessper53/NotificationNanny/blob/main/docs/CHANGELOG.md">Changelog</a>
-      <a href="https://github.com/chessper53/NotificationNanny">GitHub</a>
-    </nav>
+  <a class="skip-link" href="#main">Skip to content</a>
+  <header class="site-header">
+    <div class="wrap header-inner">
+      <a class="brand" href="./" aria-label="NotificationNanny home"><img src="assets/icon-512.png" width="34" height="34" alt="" /><span>Notification<span class="brand-light">Nanny</span></span></a>
+      <nav aria-label="Main navigation"><a href="#features">Features</a><a href="#in-action">In action</a><a href="https://github.com/chessper53/NotificationNanny" class="github-link">GitHub <span aria-hidden="true">↗</span></a></nav>
+      <a class="button button-small" href="#install">Get the app <span aria-hidden="true">↓</span></a>
+    </div>
   </header>
+  <main id="main">
+    <section class="hero wrap" aria-labelledby="hero-title">
+      <h1 id="hero-title">Your notifications.<br /><span>Your rules.</span></h1>
+      <p class="hero-description">The right notification, in the right place. Move, resize and colour<br class="desktop-break" /> your Mac’s banners to make your workspace feel like yours.</p>
+      <div class="hero-actions"><a class="button" href="https://github.com/chessper53/NotificationNanny/releases/latest"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m-5-5 5 5 5-5M5 16v5h14v-5" /></svg>Download for macOS</a><a class="text-link" href="#in-action">See it in action <span aria-hidden="true">↘</span></a></div>
+      <p class="hero-meta">Free &amp; open source <span>·</span> macOS 14+ <span>·</span> No telemetry</p>
 
-  <main>
-
-    <section class="wrap hero">
-      <h1>Don't let macOS decide where your notifications go.</h1>
-      <p class="lede">
-        A small menu bar app that positions, scales, tints, and animates notification banners,
-        globally or per app, on whichever display you want. It can even give you a Notification
-        Center of its own.
-      </p>
-      <div class="actions">
-        <a class="button" href="https://github.com/chessper53/NotificationNanny/releases/latest">Download for macOS</a>
-        <a class="link" href="#install">or install with Homebrew</a>
-      </div>
-      <p class="meta">
-        Free and open source · macOS 14 or later · No telemetry
-      </p>
-      <dl class="stats" id="stats" hidden>
-        <div><dt>Downloads</dt><dd data-stat="downloads"></dd></div>
-        <div><dt>GitHub stars</dt><dd data-stat="stars"></dd></div>
-        <div><dt>Latest release</dt><dd data-stat="version"></dd></div>
-      </dl>
     </section>
 
-    <section class="wrap demo" aria-label="Demo">
-      <video src="assets/demo.mp4" poster="assets/demo-poster.webp" width="1720" height="888"
-             autoplay muted loop playsinline preload="metadata"
-             aria-label="Dragging the banner in Settings moves the real notification with it, and picking purple tints it"></video>
-    </section>
-
-    <section class="wrap section">
-      <h2>What it does</h2>
-      <ul class="features">
-        <li>
-          <h3>Any position, any display</h3>
-          <p>Nine anchor points plus a fine offset, with independent settings for each screen.</p>
-        </li>
-        <li>
-          <h3>Size and colour</h3>
-          <p>Scale banners from 50% to 250%, tint the background or text, or swap in a custom styled banner.</p>
-        </li>
-        <li>
-          <h3>Rules per app</h3>
-          <p>Put apps into named groups, each with its own position, display, scale, and tint.</p>
-        </li>
-        <li>
-          <h3>Animations</h3>
-          <p>Keep the system animation, or pick slide, bounce, fade, scale and more.</p>
-        </li>
-        <li>
-          <h3>Nothing missed</h3>
-          <p>Hold banners until your display wakes up, so nothing disappears while you are away.</p>
-        </li>
-        <li>
-          <h3>Auto dismiss</h3>
-          <p>Close banners on a timer from 1 to 300 seconds, or leave them until you are ready.</p>
-        </li>
-        <li>
-          <h3>Your own Notification Center</h3>
-          <p>Click the clock and get a Notification Center that takes your colours, size and side, and shows when each notification arrived. Experimental.</p>
-        </li>
-        <li>
-          <h3>Answer from the banner</h3>
-          <p>Custom banners keep the app's own buttons, Reply included, so you can type your answer right where it came in.</p>
-        </li>
-        <li>
-          <h3>Looks like macOS</h3>
-          <p>Custom banners and the custom Notification Center are measured against the real ones, in Light and Dark Mode.</p>
-        </li>
-      </ul>
-    </section>
-
-    <section class="wrap section" id="install">
-      <h2>Install</h2>
-
-      <h3>With Homebrew</h3>
-      <div class="code">
-        <pre><code id="brew">brew tap chessper53/notificationnanny https://github.com/chessper53/NotificationNanny
-brew install --cask notificationnanny</code></pre>
-        <button type="button" class="copy" data-copy="brew">Copy</button>
-      </div>
-      <p>Updates are then one click from the settings panel.</p>
-
-      <h3>Manually</h3>
-      <ol>
-        <li><a href="https://github.com/chessper53/NotificationNanny/releases/latest">Download the latest zip</a> and open it.</li>
-        <li>Drag NotificationNanny.app into Applications and launch it.</li>
-        <li>Click the bell icon in your menu bar and grant Accessibility permission.</li>
-      </ol>
-      <p class="note">
-        macOS ties Accessibility permission to the exact build it was granted to, so you will need to
-        grant it again after every update.
-      </p>
-    </section>
-
-    <section class="wrap section two">
-      <div>
-        <h2>Privacy</h2>
-        <p>
-          No data is collected, transmitted, or stored outside your Mac. Accessibility permission is
-          used only to observe and move notification windows on your own machine. Screen Recording
-          is only asked for if you turn on widgets in the custom Notification Center, and only used
-          to show the real widgets there.
-        </p>
-      </div>
-      <div>
-        <h2>How it works</h2>
-        <p>
-          NotificationNanny watches Notification Center through the Accessibility API and moves or
-          replaces each banner according to your rules. Its own Notification Center reads the real one
-          the same way and hands every click and reply back to it. It relies on private macOS internals, so an OS
-          update can change its behaviour. If something breaks,
-          <a href="https://github.com/chessper53/NotificationNanny/issues">open an issue</a>.
-        </p>
+    <section class="features-section section" id="features" aria-labelledby="features-title">
+      <div class="wrap">
+        <div class="section-heading"><div><p class="eyebrow">A BETTER FIT FOR YOUR DAY</p><h2 id="features-title">Little changes.<br />A much nicer workspace.</h2></div></div>
+        <div class="feature-grid">
+          <article class="feature-card"><div class="feature-art mini-displays" aria-hidden="true"><div class="mini-monitor"><i></i></div><div class="mini-laptop"><i></i></div><span class="display-path">↗</span></div><span class="feature-number">01 / A PLACE FOR EVERYTHING</span><h3>Any corner. Any display.</h3><p>Nine anchor points, fine offsets and independent settings for every screen. Keep banners close, or out of your way.</p></article>
+          <article class="feature-card"><div class="feature-art banner-stack" aria-hidden="true"><div class="tiny-banner tiny-purple"><span>✦</span><i></i><b></b></div><div class="tiny-banner tiny-peach"><span>✦</span><i></i><b></b></div><div class="tiny-banner tiny-sage"><span>✦</span><i></i><b></b></div></div><span class="feature-number">02 / A LITTLE PERSONALITY</span><h3>Less default. More you.</h3><p>Adjust scale from 50% to 250%. Tint the background or text, choose an animation, or use a custom styled banner.</p></article>
+          <article class="feature-card"><div class="feature-art rules-art" aria-hidden="true"><div><span class="rule-icon work">⌘</span><strong>Work apps</strong><span>Top right ↗</span></div><div><span class="rule-icon people">☺</span><strong>Your people</strong><span>Bottom left ↙</span></div><div><span class="rule-icon everything">✦</span><strong>Everything else</strong><span>Your default ↗</span></div></div><span class="feature-number">03 / YOUR APPS, YOUR PRIORITIES</span><h3>Different apps. Different rules.</h3><p>Give apps their own position, display, size and colour. Organise them into named groups that make sense to you.</p></article>
+        </div>
+        <div class="detail-grid"><div><span class="detail-icon" aria-hidden="true">◷</span><h3>On your schedule</h3><p>Auto-dismiss after 1–300 seconds, or hold banners until your display wakes up.</p></div><div><span class="detail-icon" aria-hidden="true">↩</span><h3>Keep the conversation going</h3><p>Custom banners keep the app’s actions, including replies right from the notification.</p></div><div><span class="detail-icon" aria-hidden="true">▤</span><h3>A Center that fits, too</h3><p>Your own Notification Center with colours, sizing, app filters and optional real widgets.</p></div></div>
       </div>
     </section>
+
+    <section class="video-section wrap" aria-label="NotificationNanny in action">
+      <figure class="demo" id="in-action" aria-label="NotificationNanny in action"><video src="assets/demo.mp4" poster="assets/demo-poster.webp" width="1720" height="888" muted loop playsinline preload="none" controls aria-label="NotificationNanny on a real Mac: dragging a banner to change its position and choosing a purple tint"></video><figcaption>Position it in Settings. See it on your desktop.</figcaption></figure>
+    </section>
+
+    <section class="faq-section wrap" aria-labelledby="faq-title"><div><p class="eyebrow">A FEW GOOD QUESTIONS</p><h2 id="faq-title">The small print,<br />kept small.</h2><a class="text-link" href="https://github.com/chessper53/NotificationNanny/issues">Something else on your mind? <span aria-hidden="true">↗</span></a></div><div class="faq-list"><details><summary>Is it really free?<span aria-hidden="true">+</span></summary><p>Yes. NotificationNanny is free and open source under the MIT License. There’s no subscription, paid tier or account to create.</p></details><details><summary>Why does it need Accessibility permission?<span aria-hidden="true">+</span></summary><p>NotificationNanny uses macOS Accessibility to observe and move notification windows, and to pass actions and replies back to the real notification. This happens locally on your Mac.</p></details><details><summary>Does it need Screen Recording?<span aria-hidden="true">+</span></summary><p>Only if you enable widgets in the custom Notification Center. The permission is used to display the real macOS widgets there.</p></details><details><summary>Will it work with future macOS updates?<span aria-hidden="true">+</span></summary><p>The app supports macOS 14 and later. It works with private macOS internals, so an OS update can affect its behaviour. If something breaks, <a href="https://github.com/chessper53/NotificationNanny/issues">report an issue on GitHub</a>.</p></details></div></section>
+
+    <section class="section install-section wrap" id="install" aria-labelledby="install-title">
+      <div class="install-intro"><p class="eyebrow">MAKE YOURSELF AT HOME</p><h2 id="install-title">A better place<br />for your notifications.</h2><p>Get set up, choose your corner,<br />and get back to what you were doing.</p><a class="button" href="https://github.com/chessper53/NotificationNanny/releases/latest"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m-5-5 5 5 5-5M5 16v5h14v-5"/></svg>Download for macOS</a><span class="install-meta">macOS 14 or later · Free, always</span></div>
+      <div class="install-guide"><div class="brew-heading"><h3>Homebrew person?</h3><span>THE TERMINAL ROUTE</span></div><p>Two commands and you’re on your way.</p><div class="code-block"><div><span aria-hidden="true">⌘ &nbsp; Terminal</span><button type="button" data-copy="brew">Copy commands <span aria-hidden="true">⧉</span></button></div><pre><code id="brew">brew tap chessper53/notificationnanny https://github.com/chessper53/NotificationNanny
+brew install --cask notificationnanny</code></pre><span class="copy-status" role="status" aria-live="polite"></span></div><h3>Or keep it classic.</h3><ol class="install-steps"><li><span>01</span><p><a href="https://github.com/chessper53/NotificationNanny/releases/latest">Download the latest zip</a> and open it.</p></li><li><span>02</span><p>Move the app to <strong>Applications</strong> and launch it.</p></li><li><span>03</span><p>Click the menu bar bell and allow <strong>Accessibility</strong>.</p></li></ol><p class="install-note">After an update, macOS may ask you to grant Accessibility permission again.</p></div>
+    </section>
+
 
   </main>
-
-  <footer class="wrap foot">
-    <span>Made by chessper53 · MIT License</span>
-    <span>
-      <a href="https://github.com/chessper53/NotificationNanny/issues">Report an issue</a>
-      <a href="https://github.com/chessper53/NotificationNanny">Source on GitHub</a>
-    </span>
-  </footer>
-
+  <footer class="site-footer wrap"><div><a class="brand" href="./"><img src="assets/icon-512.png" width="28" height="28" alt="" /><span>Notification<span class="brand-light">Nanny</span></span></a><p>A little more you, in every notification.</p></div><div class="footer-links"><a href="https://github.com/chessper53/NotificationNanny">GitHub ↗</a><a href="https://github.com/chessper53/NotificationNanny/blob/main/docs/CHANGELOG.md">Changelog</a><a href="https://github.com/chessper53/NotificationNanny/issues">Report an issue</a></div><div class="footer-bottom"><span>Made by <a href="https://github.com/chessper53">chessper53</a></span><span>Open source. MIT licensed. Made for Mac.</span><a href="#main">Back to top ↑</a></div></footer>
 </body>
 </html>
