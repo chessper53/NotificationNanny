@@ -782,14 +782,25 @@ package final class AppSettings: ObservableObject {
         knownAppNames.sort()
     }
 
-    static let currentExportSchemaVersion = 1
+    /// 2: the global banner colour, text colour and animation, hold while asleep, and the
+    /// target screen's stable key, which version 1 left out.
+    static let currentExportSchemaVersion = 2
 
     struct SettingsExport: Codable {
         var schemaVersion: Int?
         var placements: [String: ScreenPlacement]
         var targetDisplayID: CGDirectDisplayID
+        /// The target screen as the same screen anywhere: its number changes between
+        /// sessions and Macs. Optional: version 1 had only the number.
+        var targetDisplayUUID: String?
         var autoDismissSeconds: Double
         var bannerScale: Double
+        /// Optional from here: version 1 left them out, and its backups import them as
+        /// their defaults (no colour, the default animation, not held).
+        var bannerTint: BannerTint?
+        var bannerTextTint: BannerTint?
+        var bannerAnimation: BannerAnimation?
+        var holdWhileAsleep: Bool?
         var pauseWhileStreaming: Bool
         /// Optional: a backup from the releases that had no such toggle may still carry it,
         /// and one without it imports as on.
@@ -825,8 +836,13 @@ package final class AppSettings: ObservableObject {
             schemaVersion: Self.currentExportSchemaVersion,
             placements: placements,
             targetDisplayID: targetDisplayID,
+            targetDisplayUUID: defaults.string(forKey: Key.targetDisplayUUID),
             autoDismissSeconds: autoDismissSeconds,
             bannerScale: bannerScale,
+            bannerTint: bannerTint,
+            bannerTextTint: bannerTextTint,
+            bannerAnimation: bannerAnimation,
+            holdWhileAsleep: holdWhileAsleep,
             pauseWhileStreaming: pauseWhileStreaming,
             avoidNCPanel: avoidNCPanel,
             customNotificationCenter: customNotificationCenter,
@@ -867,9 +883,19 @@ package final class AppSettings: ObservableObject {
                 level: .warn, tag: "Backup")
         }
         placements          = imported.placements
-        targetDisplayID     = imported.targetDisplayID
+        // The same screen by its stable key when it is connected; when it isn't, the key
+        // is kept for when it is again. The number alone found whichever screen had it now.
+        let screen = Self.resolveScreen(displayID: imported.targetDisplayID, stableKey: imported.targetDisplayUUID)
+        targetDisplayID     = screen?.displayID ?? imported.targetDisplayID
+        if screen == nil, let key = imported.targetDisplayUUID {
+            defaults.set(key, forKey: Key.targetDisplayUUID)
+        }
         autoDismissSeconds  = imported.autoDismissSeconds
         bannerScale         = imported.bannerScale
+        bannerTint          = imported.bannerTint
+        bannerTextTint      = imported.bannerTextTint
+        bannerAnimation     = imported.bannerAnimation ?? .default
+        holdWhileAsleep     = imported.holdWhileAsleep ?? false
         pauseWhileStreaming  = imported.pauseWhileStreaming
         avoidNCPanel        = imported.avoidNCPanel ?? true
         customNotificationCenter = imported.customNotificationCenter ?? false
