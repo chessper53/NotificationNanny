@@ -160,7 +160,10 @@ package final class NotificationRepositioner: ObservableObject {
         guard axController.start(onEvent: { [weak self] element, notification in
             self?.handleAXEvent(element: element, notification: notification)
         }) else {
-            logger.log("NC process not found — will retry when it launches", level: .warn, tag: "AX")
+            // Tried again every second by the watchdog, which only started after a start
+            // that worked: one that failed first was never tried again.
+            logger.log("Observer not started: \(axController.lastStartFailure ?? "unknown"). Trying again every second", level: .warn, tag: "AX")
+            startAttachmentWatchdog()
             return
         }
         isObserving = true
@@ -184,6 +187,7 @@ package final class NotificationRepositioner: ObservableObject {
         guard attachmentWatchdog == nil else { return }
         let timer = Timer(timeInterval: 1, repeats: true) { [weak self] _ in
             Task { @MainActor [weak self] in
+                self?.checkPermissionStillGranted()
                 self?.checkObserverAttachment(reason: "watchdog")
                 self?.checkPauseLifted()
             }
@@ -239,11 +243,35 @@ package final class NotificationRepositioner: ObservableObject {
     }
 
     /// Reattaches if Notification Center is no longer the process the observer is bound to.
+    /// Accessibility turned off while running: the observer went on as if nothing had
+    /// happened, every call into Notification Center failing, and Settings still showed it
+    /// working. Now everything that needs it stops, and starts again by itself once it is
+    /// allowed again, no relaunch needed. Notification Center's windows can't be moved any
+    /// more by then: one parked for a custom banner stays until macOS moves it.
+    private func checkPermissionStillGranted() {
+        guard hasAccessibilityPermission, !AXIsProcessTrusted() else { return }
+        logger.log("Accessibility was turned off: banners are left to macOS until it is allowed again", level: .warn, tag: "AX")
+        customBannerManager.dismissAll()
+        teardownObserver()
+        permissionMonitor.refresh()
+        hasAccessibilityPermission = false
+        permissionMonitor.startPollingIfNeeded { [weak self] in
+            guard let self else { return }
+            self.logger.log("Accessibility allowed again: placing banners again", tag: "AX")
+            self.hasAccessibilityPermission = true
+            self.startObserving()
+        }
+    }
+
     private func checkObserverAttachment(reason: String) {
         guard hasAccessibilityPermission else { return }
         let live = axController.currentProcessPid
         guard live > 0, live != axController.ncPid else { return }
-        logger.log("NC PID changed (\(axController.ncPid) → \(live)), found by \(reason) — reattaching", level: .warn, tag: "AX")
+        if axController.isObserving {
+            logger.log("NC PID changed (\(axController.ncPid) → \(live)), found by \(reason): reattaching", level: .warn, tag: "AX")
+        } else {
+            logger.log("Not observing yet: trying again (\(reason))", tag: "AX")
+        }
         startObserving()
     }
 
