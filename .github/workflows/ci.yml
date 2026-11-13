@@ -21,6 +21,8 @@ jobs:
         run: ./scripts/test-version-consistency.sh
       - name: Release workflow ships a universal, verified binary
         run: ./scripts/test-release-workflow.sh
+      - name: E2E verdict regression checks (no desktop)
+        run: python3 -m unittest discover -s scripts/e2e -p 'test_*.py' -v
 
   test:
     name: Build & Test
