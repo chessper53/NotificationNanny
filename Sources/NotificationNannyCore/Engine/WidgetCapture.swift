@@ -40,7 +40,12 @@ final class WidgetCapture {
                                       space: CGColorSpaceCreateDeviceRGB(),
                                       bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return false }
         context.draw(image, in: CGRect(x: 0, y: 0, width: side, height: side))
-        let values = stride(from: 0, to: pixels.count, by: 4).map { Int(pixels[$0]) + Int(pixels[$0 + 1]) + Int(pixels[$0 + 2]) }
+        let values: [Int] = stride(from: 0, to: pixels.count, by: 4).map { offset in
+            let red = Int(pixels[offset])
+            let green = Int(pixels[offset + 1])
+            let blue = Int(pixels[offset + 2])
+            return red + green + blue
+        }
         return (values.max() ?? 0) - (values.min() ?? 0) < 12
     }
 
