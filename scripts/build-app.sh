@@ -37,7 +37,7 @@ BINARY_PATH="$(swift build "${SWIFT_BUILD_ARGS[@]}" --show-bin-path)/${APP_NAME}
 
 # Shared with dev.sh so a dev bundle and a release bundle differ only in how the
 # binary was compiled — never in what ends up inside the .app.
-echo "==> Assembling + ad-hoc signing .app bundle…"
+echo "==> Assembling + signing .app bundle…"
 scripts/assemble-bundle.sh "${BINARY_PATH}" "${APP_DIR}" "${VERSION}"
 
 echo "==> Built ${APP_DIR}"

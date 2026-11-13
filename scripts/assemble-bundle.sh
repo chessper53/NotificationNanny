@@ -61,19 +61,23 @@ for lproj in "${ROOT}"/Resources/*.lproj; do
     cp -R "${lproj}" "${RESOURCES_DIR}/"
 done
 
-# Ad-hoc codesigning, required for Accessibility TCC to attach to a code identity.
-# DEV_SIGNING=1 (dev.sh, panel-lab) signs with the dev identity instead, the same for every
-# build, so Accessibility and Screen Recording stay allowed from one build to the next;
-# see dev-signing.sh. Release builds stay ad-hoc.
-IDENTITY="-"
+# Signed with one certificate, the same for every build, macOS keeps Accessibility and
+# Screen Recording from one build, or release, to the next; signed ad-hoc, each build is a
+# new app to it, to be allowed again.
+#   SIGN_IDENTITY + SIGN_KEYCHAIN   the certificate's hash and the keychain holding it
+#                                   (release.yml imports it from the repo's secrets)
+#   DEV_SIGNING=1                   the same certificate from build/dev-signing (dev.sh,
+#                                   panel-lab; see dev-signing.sh)
+# Otherwise ad-hoc, as CI's checks build.
+IDENTITY="${SIGN_IDENTITY:--}"
 KEYCHAIN_ARGS=()
 if [[ "${DEV_SIGNING:-}" == 1 ]]; then
     "${ROOT}/scripts/dev-signing.sh"
-    KEYCHAIN="${ROOT}/build/dev-signing/dev.keychain-db"
-    security unlock-keychain -p notificationnanny-dev "${KEYCHAIN}"
+    SIGN_KEYCHAIN="${ROOT}/build/dev-signing/dev.keychain-db"
+    security unlock-keychain -p notificationnanny-dev "${SIGN_KEYCHAIN}"
     IDENTITY="$(cat "${ROOT}/build/dev-signing/identity")"
-    KEYCHAIN_ARGS=(--keychain "${KEYCHAIN}")
 fi
+[[ -n "${SIGN_KEYCHAIN:-}" ]] && KEYCHAIN_ARGS=(--keychain "${SIGN_KEYCHAIN}")
 codesign --force --deep --sign "${IDENTITY}" ${KEYCHAIN_ARGS[@]+"${KEYCHAIN_ARGS[@]}"} \
     --entitlements "${ROOT}/Resources/NotificationNanny.entitlements" \
     "${APP_DIR}"
