@@ -55,6 +55,10 @@ struct BackupCompletenessTests {
         s.newestBannerAtBottom = true
         s.allAppsSound = "Glass"
         s.allAppsSoundVolume = 0.4
+        // An exception group with its apps: matching goes by the group's own app names.
+        let group = s.addGroup(name: "Work")
+        s.addApp("Microsoft Teams", toGroup: group)
+        s.addApp("Microsoft Outlook", toGroup: group)
         s.saveCurrentAsPreset(name: "Desk")
         s.flushPendingSaves()
 
@@ -64,9 +68,20 @@ struct BackupCompletenessTests {
 
         let source = sourceDefaults.persistentDomain(forName: sourceName) ?? [:]
         let result = restoredDefaults.persistentDomain(forName: restoredName) ?? [:]
-        for (key, value) in source where !Self.notInBackups.contains(key) {
-            #expect((result[key] as? NSObject)?.isEqual(value) == true, "\(key) didn't come back from the backup")
+        // Collections and colours are stored as JSON, whose key order varies from one
+        // encoding to the next: compared by what they hold, not byte for byte.
+        func content(_ value: Any?) -> NSObject? {
+            if let data = value as? Data, let json = try? JSONSerialization.jsonObject(with: data) as? NSObject { return json }
+            return value as? NSObject
         }
+        for (key, value) in source where !Self.notInBackups.contains(key) {
+            #expect(content(result[key])?.isEqual(content(value)) == true, "\(key) didn't come back from the backup")
+        }
+        // The restored install has seen no notification yet, and still sends both apps'
+        // banners by the group.
+        #expect(restored.knownAppNames.isEmpty)
+        #expect(restored.group(for: "Microsoft Teams")?.name == "Work")
+        #expect(restored.group(for: "Microsoft Outlook")?.id == group)
         #expect(restored.bannerTint == s.bannerTint)
         #expect(restored.bannerTextTint == s.bannerTextTint)
         #expect(restoredDefaults.string(forKey: "targetDisplayUUID") == "SCREEN-UUID-B")
