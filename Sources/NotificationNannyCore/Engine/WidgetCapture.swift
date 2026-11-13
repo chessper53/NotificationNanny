@@ -36,12 +36,28 @@ final class WidgetCapture {
     nonisolated static func isBlank(_ image: CGImage) -> Bool {
         let side = 8
         var pixels = [UInt8](repeating: 0, count: side * side * 4)
-        guard let context = CGContext(data: &pixels, width: side, height: side, bitsPerComponent: 8, bytesPerRow: side * 4,
-                                      space: CGColorSpaceCreateDeviceRGB(),
-                                      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return false }
-        context.draw(image, in: CGRect(x: 0, y: 0, width: side, height: side))
-        let values = stride(from: 0, to: pixels.count, by: 4).map { Int(pixels[$0]) + Int(pixels[$0 + 1]) + Int(pixels[$0 + 2]) }
-        return (values.max() ?? 0) - (values.min() ?? 0) < 12
+        // Drawn inside the buffer's lifetime: `&pixels` as the context's memory is only
+        // valid for the call that makes the context, not for the drawing after it.
+        let drawn: Bool = pixels.withUnsafeMutableBytes { buffer in
+            guard let context = CGContext(data: buffer.baseAddress, width: side, height: side, bitsPerComponent: 8,
+                                          bytesPerRow: side * 4, space: CGColorSpaceCreateDeviceRGB(),
+                                          bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return false }
+            context.draw(image, in: CGRect(x: 0, y: 0, width: side, height: side))
+            return true
+        }
+        guard drawn else { return false }
+        // Spelled out: the one expression it was took a newer compiler too long to check.
+        var lowest = Int.max
+        var highest = Int.min
+        for i in stride(from: 0, to: pixels.count, by: 4) {
+            let red = Int(pixels[i])
+            let green = Int(pixels[i + 1])
+            let blue = Int(pixels[i + 2])
+            let sum: Int = red + green + blue
+            lowest = min(lowest, sum)
+            highest = max(highest, sum)
+        }
+        return highest - lowest < 12
     }
 
     private func capture(_ window: SCWindow, rects: [String: CGRect]) async -> [String: NSImage] {
