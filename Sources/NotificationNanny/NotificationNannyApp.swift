@@ -36,15 +36,25 @@ final class AppCoordinator: NSObject, ObservableObject, NSApplicationDelegate, N
             let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "unknown"
             NannyLogger.shared.log("NotificationNanny v\(version) started", tag: "App")
         }
-        settings = AppSettings()
+        do {
+            settings = try AppSettings.forAppLaunch()
+        } catch {
+            FileHandle.standardError.write(Data("Invalid E2E settings: \(error)\n".utf8))
+            exit(64)
+        }
+        if ProcessInfo.processInfo.environment["NN_E2E_DIRECTORY"] != nil {
+            NannyLogger.shared.log("E2E settings isolated", tag: "Test")
+        }
         launchAtLogin = LaunchAtLogin()
         #if !DEBUG
-        AppCoordinator.resetTCCIfBinaryChanged()
+        if ProcessInfo.processInfo.environment["NN_E2E_DIRECTORY"] == nil {
+            AppCoordinator.resetTCCIfBinaryChanged()
+        }
         #endif
         repositioner = NotificationRepositioner()
         super.init()
         repositioner.bind(to: settings)
-        if Bundle.main.bundleIdentifier != nil {
+        if Bundle.main.bundleIdentifier != nil, ProcessInfo.processInfo.environment["NN_E2E_DIRECTORY"] == nil {
             UNUserNotificationCenter.current().delegate = NotificationDisplayDelegate.shared
             // Requested once, silently, well before a test notification could ever be
             // needed — lets TestNotification skip the osascript subprocess for users
@@ -342,6 +352,7 @@ final class AppCoordinator: NSObject, ObservableObject, NSApplicationDelegate, N
     }
 
     private func autoEnableLoginItemIfNeeded() {
+        guard ProcessInfo.processInfo.environment["NN_E2E_DIRECTORY"] == nil else { return }
         let key = "didAutoEnableLoginItem"
         let defaults = UserDefaults.standard
         guard !defaults.bool(forKey: key) else { return }
