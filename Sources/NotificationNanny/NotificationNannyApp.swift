@@ -46,6 +46,7 @@ final class AppCoordinator: NSObject, ObservableObject, NSApplicationDelegate, N
         if ProcessInfo.processInfo.environment["NN_E2E_DIRECTORY"] != nil {
             NannyLogger.shared.log("E2E settings isolated", tag: "Test")
         }
+        NannyLogger.shared.logSessionHeader(settings: settings)
         launchAtLogin = LaunchAtLogin()
         #if !DEBUG
         if ProcessInfo.processInfo.environment["NN_E2E_DIRECTORY"] == nil {

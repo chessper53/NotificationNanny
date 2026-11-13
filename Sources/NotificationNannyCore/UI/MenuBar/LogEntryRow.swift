@@ -20,7 +20,9 @@ struct LogEntryRow: View {
                     .font(.system(size: 9, weight: .bold))
                     .foregroundStyle(.white)
                     .padding(.horizontal, 4).padding(.vertical, 2)
-                    .background(entry.level == .warn ? Color.orange : Color(red: 1, green: 0.3, blue: 0.3),
+                    .background(entry.level == .warn ? Color.orange
+                                    : entry.level == .debug ? Color.gray.opacity(0.6)
+                                    : Color(red: 1, green: 0.3, blue: 0.3),
                                 in: Capsule())
             }
             if !entry.tag.isEmpty {
