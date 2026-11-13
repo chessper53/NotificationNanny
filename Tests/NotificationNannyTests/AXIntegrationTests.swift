@@ -1,62 +1,64 @@
 import Foundation
+import AppKit
 import Testing
 @testable import NotificationNannyCore
 import ApplicationServices
 
-/// Exercises `NotificationRepositioner` against the *real* AX observation pipeline —
-/// the one thing ARCHITECTURE.md has always listed as "not covered (integration/manual)".
-///
-/// This can only run where the calling process (here, the test runner) has been
-/// granted Accessibility permission and a real `com.apple.notificationcenterui`
-/// process is reachable — neither is true in CI, so the suite is conditionally
-/// enabled and simply reports nothing (not a failure) when unavailable. Where it
-/// *can* run — a developer's own machine, with permission already granted for
-/// local development — it catches real reposition/observer regressions instead of
-/// relying entirely on the manual "send a test notification and look at it" loop.
-@Suite("AX integration (requires local Accessibility permission)", .enabled(if: AXIsProcessTrusted()))
+/// Explicit opt-in: ordinary unit tests must never move the user's banners.
+/// Missing prerequisites fail an opted-in run. A send log cannot pass this test.
+@Suite("AX integration (opt-in)", .enabled(if: ProcessInfo.processInfo.environment["NN_RUN_AX_TESTS"] == "1"))
 @MainActor
 struct AXIntegrationTests {
 
-    private func makeSettings() -> AppSettings {
-        let name = "NotificationNannyTests_AX_\(UUID().uuidString)"
-        let ud = UserDefaults(suiteName: name)!
-        let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent("\(name).json")
-        return AppSettings(defaults: ud, knownAppsFileURL: tempURL)
-    }
-
-    /// Sends a real test notification through the live AX path and confirms the
-    /// repositioner's observer actually attaches to NC and logs banner activity for
-    /// it — i.e. the whole AXObserver → handleAXEvent → repositionWindow chain is
-    /// intact, not just its individually-unit-tested pieces.
-    @Test func observerAttachesAndHandlesTestBanner() async throws {
-        let settings = makeSettings()
+    @Test func observerMovesUniqueBanner() async throws {
+        try #require(AXIsProcessTrusted(), "The test runner needs Accessibility permission")
+        try #require(NSRunningApplication.runningApplications(withBundleIdentifier: "com.notificationnanny.app").isEmpty,
+                     "Quit NotificationNanny before running the live AX test")
+        let nc = try #require(NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.notificationcenterui").first)
+        try #require(!NSScreen.screens.isEmpty, "A graphical desktop is required")
+        let suite = "NotificationNannyTests_AX_\(UUID().uuidString)"
+        let file = FileManager.default.temporaryDirectory.appendingPathComponent("\(suite).json")
+        defer {
+            UserDefaults.standard.removePersistentDomain(forName: suite)
+            try? FileManager.default.removeItem(at: file)
+        }
+        let settings = AppSettings(defaults: UserDefaults(suiteName: suite)!, knownAppsFileURL: file)
+        for screen in NSScreen.screens {
+            settings.setPlacement(ScreenPlacement(position: .bottomLeft, xOffset: 0, yOffset: 0), for: screen)
+        }
         let repositioner = NotificationRepositioner()
         repositioner.bind(to: settings)
-
-        // Give the observer a moment to attach to the NC process.
-        try await Task.sleep(nanoseconds: 500_000_000)
-        guard repositioner.isObserving else {
-            // NC isn't reachable in this environment (e.g. sandboxed CI runner) —
-            // not a failure of the code under test, just an environment that can't
-            // exercise this path. Nothing more to assert.
-            return
+        defer { repositioner.prepareForQuit() }
+        for _ in 0..<20 where !repositioner.isObserving {
+            try await Task.sleep(nanoseconds: 100_000_000)
         }
+        try #require(repositioner.isObserving, "Observer did not attach")
 
-        let before = NannyLogger.shared.entries.count
-        repositioner.sendTestNotification(groupID: nil)
-
-        // Poll briefly rather than a single fixed sleep — real delivery timing
-        // varies with system load.
-        var sawBannerActivity = false
-        for _ in 0..<20 {
-            try await Task.sleep(nanoseconds: 250_000_000)
-            let newEntries = NannyLogger.shared.entries.dropFirst(before)
-            if newEntries.contains(where: { $0.tag == "Banner" || $0.tag == "Custom" || $0.tag == "Test" }) {
-                sawBannerActivity = true
-                break
+        let title = "NN-AX-\(UUID().uuidString)"
+        TestNotification.sendCustom(title: title, body: "Live Accessibility integration test")
+        let app = AXUIElementCreateApplication(nc.processIdentifier)
+        AXUIElementSetMessagingTimeout(app, 0.5)
+        var found: AXUIElement?
+        defer { found?.performCustomAction(namedAnyOf: NCActionNames.close.union(NCActionNames.clearAll)) }
+        func matchingBanner(_ element: AXUIElement, depth: Int = 0) -> AXUIElement? {
+            guard depth < 16 else { return nil }
+            let subrole = element.stringAttribute(kAXSubroleAttribute as String) ?? ""
+            if subrole.hasPrefix("AXNotificationCenter"), element.staticTextValues().contains(title) { return element }
+            return element.children().lazy.compactMap { matchingBanner($0, depth: depth + 1) }.first
+        }
+        var moved = false
+        for _ in 0..<40 {
+            try await Task.sleep(nanoseconds: 200_000_000)
+            var value: CFTypeRef?
+            AXUIElementCopyAttributeValue(app, kAXWindowsAttribute as CFString, &value)
+            found = (value as? [AXUIElement] ?? []).lazy.compactMap { matchingBanner($0) }.first ?? found
+            guard let banner = found, let position = banner.point(), let size = banner.size() else { continue }
+            moved = NSScreen.screens.contains { screen in
+                let expected = NotificationPosition.bottomLeft.axOrigin(forWindowSize: size, screen: screen, xOffset: 0, yOffset: 0)
+                return abs(position.x - expected.x) <= 12 && abs(position.y - expected.y) <= 12
             }
+            if moved { break }
         }
-
-        #expect(sawBannerActivity, "Expected the AX observer to log banner activity after sendTestNotification")
+        #expect(moved, "Unique banner never reached bottom-left; a send log is insufficient")
     }
 }
