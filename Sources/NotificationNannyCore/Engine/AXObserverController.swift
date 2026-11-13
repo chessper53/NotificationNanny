@@ -89,16 +89,19 @@ final class AXObserverController {
         onEvent?(element, notification)
     }
 
-    /// Finds the notification-center process: exact bundle ID match, then any running app whose
-    /// bundle ID contains "notification", then a `CGWindowList` scan for a window owner whose
-    /// name contains "notification". No subprocess spawned.
+    /// Finds the notification-center process: exact bundle ID match, then any running Apple app
+    /// whose bundle ID contains "notification", then a `CGWindowList` scan for a window owner
+    /// whose name contains "notification". No subprocess spawned. Never this app, whose bundle
+    /// ID and name both contain "notification": attached to itself, it reported observing.
     private static func findNotificationProcessPid() -> pid_t {
+        let ourPid = ProcessInfo.processInfo.processIdentifier
         if let app = NSRunningApplication
             .runningApplications(withBundleIdentifier: "com.apple.notificationcenterui").first {
             return app.processIdentifier
         }
         for app in NSWorkspace.shared.runningApplications {
-            if app.bundleIdentifier?.localizedCaseInsensitiveContains("notification") == true {
+            if app.processIdentifier != ourPid, let id = app.bundleIdentifier, id.hasPrefix("com.apple."),
+               id.localizedCaseInsensitiveContains("notification") {
                 return app.processIdentifier
             }
         }
@@ -106,7 +109,7 @@ final class AXObserverController {
         for info in windows {
             guard let ownerName = info[kCGWindowOwnerName as String] as? String,
                   ownerName.localizedCaseInsensitiveContains("notification"),
-                  let pid = info[kCGWindowOwnerPID as String] as? Int32 else { continue }
+                  let pid = info[kCGWindowOwnerPID as String] as? Int32, pid != ourPid else { continue }
             return pid
         }
         return 0
