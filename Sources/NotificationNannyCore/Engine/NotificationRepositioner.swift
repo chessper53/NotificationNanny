@@ -576,11 +576,84 @@ package final class NotificationRepositioner: ObservableObject {
         }
     }
 
+    /// Notification Center, asked with a short timeout before each sweep. A sweep is many
+    /// calls into it on the main thread, each waiting up to a second for an answer: while
+    /// it was busy (seen after it opened a window of unknown kind), sweeps of 1 to 3.4 s
+    /// came back to back, and the app froze with it for a minute.
+    private var ncProbe: (pid: pid_t, element: AXUIElement)?
+    /// When Notification Center stopped answering, nil while it answers.
+    private var ncUnresponsiveSince: Date?
+    private var unresponsiveRetry: DispatchWorkItem?
+    /// Each probe that goes unanswered waits its timeout on the main thread: the retries
+    /// spread out, 0.25 s doubling up to 2 s, so a long stall costs little.
+    private var unresponsiveRetryDelay: Double = 0.25
+    static let probeTimeout: Float = 0.15
+
+    private func notificationCenterAnswers() -> Bool {
+        guard ncPid > 0 else { return true }
+        if ncProbe?.pid != ncPid {
+            let element = AXUIElementCreateApplication(ncPid)
+            // This element only: actions elsewhere keep the full second, as one that takes
+            // effect after its answer timed out was tried again under another name.
+            AXUIElementSetMessagingTimeout(element, Self.probeTimeout)
+            ncProbe = (ncPid, element)
+        }
+        guard let probe = ncProbe?.element else { return true }
+        var value: CFTypeRef?
+        return AXUIElementCopyAttributeValue(probe, kAXWindowsAttribute as CFString, &value) != .cannotComplete
+    }
+
+    /// Notification Center can also stop answering in the middle of a sweep, after the
+    /// probe: then every call left waited its second, 6 s in all for a 6 s stall. A sweep
+    /// takes under 50 ms; past this one stops at the next window and waits as above.
+    static let sweepBudget: UInt64 = 400_000_000
+    private var sweepStarted: UInt64?
+
+    private var sweepOverran: Bool {
+        guard let started = sweepStarted else { return false }
+        return DispatchTime.now().uptimeNanoseconds - started > Self.sweepBudget
+    }
+
+    /// Skips the sweep while Notification Center doesn't answer, and tries again shortly,
+    /// so the windows are placed once it does. Logged once per stall, not once per sweep.
+    private func sweepIfNotificationCenterAnswers() -> Bool {
+        guard notificationCenterAnswers() else {
+            waitForNotificationCenter()
+            return false
+        }
+        if let since = ncUnresponsiveSince {
+            ncUnresponsiveSince = nil
+            unresponsiveRetryDelay = 0.25
+            logger.log("Notification Center answering again after \(String(format: "%.1f", Date().timeIntervalSince(since)))s", tag: "AX")
+        }
+        return true
+    }
+
+    private func waitForNotificationCenter() {
+        if ncUnresponsiveSince == nil {
+            ncUnresponsiveSince = Date()
+            logger.log("Notification Center isn't answering — waiting before placing banners", level: .warn, tag: "AX")
+        }
+        if unresponsiveRetry == nil {
+            let item = DispatchWorkItem { [weak self] in
+                self?.unresponsiveRetry = nil
+                self?.repositionVisibleWindows()
+            }
+            unresponsiveRetry = item
+            DispatchQueue.main.asyncAfter(deadline: .now() + unresponsiveRetryDelay, execute: item)
+            unresponsiveRetryDelay = min(unresponsiveRetryDelay * 2, 2)
+        }
+    }
+
     /// Returns whether any window had something to place.
     @discardableResult
     private func repositionVisibleWindows() -> Bool {
+        guard sweepIfNotificationCenterAnswers() else { return false }
         let started = DispatchTime.now().uptimeNanoseconds
+        sweepStarted = started
         defer {
+            if sweepOverran { waitForNotificationCenter() }
+            sweepStarted = nil
             let ms = Double(DispatchTime.now().uptimeNanoseconds - started) / 1_000_000
             nnTiming("sweep", ms)
             if ms > 1000 {
@@ -619,11 +692,12 @@ package final class NotificationRepositioner: ObservableObject {
             unreadableBannerSweeps = unreadableBannerSweeps.filter { present.contains($0.key) }
         }
         let baseTargets: [(AXUIElement, RepositionTarget)] = windows.compactMap { w in
-            guard let t = targetOrigin(for: w, stackIndex: 0) else { return nil }
+            guard !sweepOverran, let t = targetOrigin(for: w, stackIndex: 0) else { return nil }
             return (w, t)
         }
         log.debug("repositionVisibleWindows: \(baseTargets.count) repositionable target(s)")
         for (i, (window, base)) in baseTargets.enumerated() {
+            guard !sweepOverran else { break }
             let idx = baseTargets[..<i].filter { sameAnchor($0.1, base) }.count
             log.debug("repositionVisibleWindows: window[\(i)] stackIndex=\(idx) anchor=\(base.placement.position.rawValue, privacy: .public)")
             // `base` was computed above with stackIndex 0, and snapWindow would
