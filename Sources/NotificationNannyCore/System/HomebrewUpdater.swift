@@ -98,8 +98,17 @@ final class HomebrewUpdater: ObservableObject {
         let path = Bundle.main.bundlePath
         let helper = Process()
         helper.executableURL = URL(fileURLWithPath: "/bin/sh")
-        helper.arguments = ["-c", "sleep 1 && open \"\(path)\""]
-        try? helper.run()
+        // The path as an argument, never as part of the script: in it, a path with $ or `
+        // was run as shell code.
+        helper.arguments = ["-c", "sleep 1 && open \"$1\"", "relaunch", path]
+        do {
+            try helper.run()
+        } catch {
+            // Nothing would open it again: better to stay running.
+            NannyLogger.shared.log("Couldn't relaunch after updating (\(error.localizedDescription)) — quit and reopen NotificationNanny",
+                                   level: .error, tag: "Update")
+            return
+        }
         NSApplication.shared.terminate(nil)
     }
 
