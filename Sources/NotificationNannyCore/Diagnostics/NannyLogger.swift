@@ -10,6 +10,8 @@ package struct LogEntry: Identifiable, Sendable {
     package let message: String
 
     package enum Level: String, Sendable {
+        /// Routine detail: in the log view while the app runs, never in the file or a report.
+        case debug = "DEBUG"
         case info  = "INFO"
         case warn  = "WARN"
         case error = "ERROR"
@@ -53,19 +55,49 @@ package final class NannyLogger: ObservableObject {
             .suffix(maxLines).joined(separator: "\n")
     }
 
+    /// The last line kept and how many times it came again since, word for word: lines that
+    /// differ only in a number (a position, an attempt) stay apart, as they tell apart.
+    private var lastKey: String?
+    private var lastAt = Date.distantPast
+    private var repeats = 0
+    private static let repeatWindow: TimeInterval = 60
+
     package func log(_ message: String, level: LogEntry.Level = .info, tag: String = "") {
-        let entry = LogEntry(timestamp: Date(), level: level, tag: tag, message: message)
-        entries.append(entry)
+        // Scripted runs read every line as it comes, repeats and detail included.
         if mirrorToStderr {
             let tagPart = tag.isEmpty ? "" : "[\(tag)] "
             let stamp = String(format: "%.3f", Date().timeIntervalSince1970.truncatingRemainder(dividingBy: 1000))
             FileHandle.standardError.write(Data("\(stamp) [\(level.rawValue)] \(tagPart)\(message)\n".utf8))
         }
-        if entries.count > cap { entries.removeFirst(entries.count - cap) }
-        if let file {
-            file.append(line(for: entry))
-            if file.isFull { file.replace(with: exportText()) }
+        let now = Date()
+        if level != .debug {
+            let key = "\(level.rawValue)|\(tag)|\(message)"
+            if key == lastKey, now.timeIntervalSince(lastAt) < Self.repeatWindow {
+                repeats += 1
+                lastAt = now
+                return
+            }
+            flushRepeats()
+            lastKey = key
+            lastAt = now
         }
+        append(LogEntry(timestamp: now, level: level, tag: tag, message: message))
+    }
+
+    private func flushRepeats() {
+        guard repeats > 0, let last = entries.last(where: { $0.level != .debug }) else { repeats = 0; return }
+        let n = repeats
+        repeats = 0
+        append(LogEntry(timestamp: lastAt, level: last.level, tag: last.tag,
+                        message: "↑ the same \(n) more time\(n == 1 ? "" : "s"), last at \(lineFormatter.string(from: lastAt).suffix(12))"))
+    }
+
+    private func append(_ entry: LogEntry) {
+        entries.append(entry)
+        if entries.count > cap { entries.removeFirst(entries.count - cap) }
+        guard entry.level != .debug, let file else { return }
+        file.append(line(for: entry))
+        if file.isFull { file.replace(with: exportText()) }
     }
 
     package func clear() { entries.removeAll() }
@@ -82,8 +114,12 @@ package final class NannyLogger: ObservableObject {
         }
     }
 
+    /// What goes to the file, a saved log and a bug report: no debug detail, and repeats
+    /// still being counted told as one line.
     package func exportText() -> String {
-        entries.map(line(for:)).joined(separator: "\n")
+        var lines = entries.filter { $0.level != .debug }.map(line(for:))
+        if repeats > 0 { lines.append("… the line above \(repeats) more time\(repeats == 1 ? "" : "s") so far") }
+        return lines.joined(separator: "\n")
     }
 
     private func line(for e: LogEntry) -> String {

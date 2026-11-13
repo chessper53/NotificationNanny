@@ -296,7 +296,7 @@ package final class NotificationRepositioner: ObservableObject {
             let hadOverlay = customBannerManager.isActive(key: key)
             let wasTrackedBanner = lastSelfSetPositions[key] != nil
             if hadOverlay || wasTrackedBanner {
-                logger.log("Window destroyed\(hadOverlay ? " — overlay dismissed" : "")", tag: "AX")
+                logger.log("Window destroyed\(hadOverlay ? " — overlay dismissed" : "")", level: hadOverlay ? .info : .debug, tag: "AX")
             } else {
                 axLog.debug("Window destroyed — untracked (widget/chrome churn)")
             }
@@ -1380,7 +1380,7 @@ package final class NotificationRepositioner: ObservableObject {
 
         if testGroupID == nil, attempt < 3, !isBannerReady(window) {
             let delay: Double = [0.05, 0.15, 0.35][attempt]
-            logger.log("Banner not ready — retry \(attempt + 1)/3 in \(Int(delay * 1000))ms", tag: "Banner")
+            logger.log("Banner not ready — retry \(attempt + 1)/3 in \(Int(delay * 1000))ms", level: .debug, tag: "Banner")
             DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
                 guard let self, self.isCurrentGeneration(gen, for: CFHash(window)) else { return }
                 self.repositionWindow(window, attempt: attempt + 1)
@@ -2342,6 +2342,6 @@ package final class NotificationRepositioner: ObservableObject {
         guard !loggedSkippedKeys.contains(key) else { return }
         loggedSkippedKeys.insert(key)
         let subrole = window.stringAttribute(kAXSubroleAttribute as String) ?? "none"
-        logger.log("\(reason) — \(Int(size.width))×\(Int(size.height)) at (\(Int(pos.x)),\(Int(pos.y))), subrole=\(subrole)", tag: tag)
+        logger.log("\(reason) — \(Int(size.width))×\(Int(size.height)) at (\(Int(pos.x)),\(Int(pos.y))), subrole=\(subrole)", level: .debug, tag: tag)
     }
 }
