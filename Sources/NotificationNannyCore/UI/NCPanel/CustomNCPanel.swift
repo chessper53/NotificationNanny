@@ -873,12 +873,13 @@ private struct WidgetView: View {
     static let cornerRadius: CGFloat = 28
 
     var body: some View {
-        let size = CGSize(width: widget.frameInWindow.width * s, height: widget.frameInWindow.height * s)
+        // As large as its picture: resized, it keeps the last picture at the last size until
+        // one at the new size comes, and then changes once. Stretched to the new size, or a
+        // faint box meanwhile, it looked broken or gone. A box only before any picture.
+        let shown = widget.image?.size ?? widget.frameInWindow.size
+        let size = CGSize(width: shown.width * s, height: shown.height * s)
         Group {
-            // Only a picture of its size: right after a resize the last one was stretched to
-            // the new size until the next capture.
-            if let image = widget.image,
-               abs(image.size.width - widget.frameInWindow.width) < 2, abs(image.size.height - widget.frameInWindow.height) < 2 {
+            if let image = widget.image {
                 Image(nsImage: image).resizable().interpolation(.high)
             } else {
                 RoundedRectangle(cornerRadius: Self.cornerRadius * s, style: .circular).fill(Color.primary.opacity(0.06))

@@ -578,14 +578,41 @@ final class NCPanelTakeover: ObservableObject {
         }
         var found: [(String, AXUIElement)] = []
         Self.collectWidgets(in: window, into: &found)
+        // While a widget changes size Notification Center can list none for a moment: the
+        // panel jumped, its footer up under the menu bar. The last ones stay for up to a
+        // second; a widget removed is gone after that.
+        let now = ProcessInfo.processInfo.systemUptime
+        if found.isEmpty, !widgets.isEmpty {
+            if widgetsMissingSince == nil { widgetsMissingSince = now }
+            if now - (widgetsMissingSince ?? now) < 1 { return }
+        }
+        widgetsMissingSince = nil
         let previous = Dictionary(widgets.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
         var next: [NCWidget] = []
+        var elements: [String: AXUIElement] = [:]
         for (id, el) in found {
             guard let p = el.point(), let size = el.size() else { continue }
             let frame = CGRect(x: p.x - origin.x, y: p.y - origin.y, width: size.width, height: size.height)
+            // While a widget's menu is open, Notification Center lists the widget it lifts
+            // beside the menu too, under the same identifier: ours showed it as a second
+            // widget, under the first. One per identifier, the one where it was.
+            if let i = next.firstIndex(where: { $0.id == id }) {
+                if Self.timing {
+                    FileHandle.standardError.write(Data("[widgets] \(id.prefix(40)) twice, at \(Int(next[i].frameInWindow.minY)) and \(Int(frame.minY))\n".utf8))
+                }
+                if previous[id]?.frameInWindow != frame { continue }
+                next[i].frameInWindow = frame
+                elements[id] = el
+                continue
+            }
             next.append(NCWidget(id: id, frameInWindow: frame, image: previous[id]?.image ?? widgetImages[id]))
+            elements[id] = el
+            // Resized: it redraws for a moment, and a picture taken meanwhile was half black.
+            if let before = previous[id]?.frameInWindow.size, before != frame.size {
+                widgetCaptureHold = max(widgetCaptureHold, now + 0.9)
+            }
         }
-        widgetElements = Dictionary(found, uniquingKeysWith: { a, _ in a })
+        widgetElements = elements
         if next.map(\.id) != widgets.map(\.id) || next.map(\.frameInWindow) != widgets.map(\.frameInWindow) {
             widgets = next
         }
@@ -695,6 +722,9 @@ final class NCPanelTakeover: ObservableObject {
     /// and a picture cut by where a widget was a moment earlier shows the wrong part of it.
     /// Then it tries again shortly.
     private func captureWidgets(retries: Int = 6) {
+        if Self.timing, ProcessInfo.processInfo.systemUptime < widgetCaptureHold { // DEBUG-CLICK
+            FileHandle.standardError.write(Data("[widgets] capture held for \(Int((widgetCaptureHold - ProcessInfo.processInfo.systemUptime) * 1000)) ms more\n".utf8))
+        }
         guard isActive, ProcessInfo.processInfo.systemUptime >= widgetCaptureHold,
               let window, let id = PrivateWindowAPI.windowID(for: window) else { return }
         readWidgets()
@@ -711,6 +741,9 @@ final class NCPanelTakeover: ObservableObject {
             self.readWidgets()
             let settled = self.widgets.allSatisfy { w in
                 rects[w.id].map { abs($0.minX - w.frameInWindow.minX) < 1 && abs($0.minY - w.frameInWindow.minY) < 1 } ?? false
+            }
+            if !settled, Self.timing { // DEBUG-CLICK
+                FileHandle.standardError.write(Data("[widgets] capture dropped: widget moved meanwhile, \(retries) retries left\n".utf8))
             }
             guard settled else {
                 if retries > 0 {
@@ -1001,12 +1034,69 @@ final class NCPanelTakeover: ObservableObject {
             return
         }
         guard let el = widgetElements[widget.id] else { return }
-        readRealMenu(of: el) { [weak self] items in
-            guard let self, self.isActive, let items, !items.isEmpty else { return }
-            self.widgetMenus[widget.id] = items
-            self.menu = NCPanelMenu(target: .widget(widget.id), items: items, anchor: anchor)
+        frozen(for: widget) { [weak self] finished in
+            self?.readRealMenu(of: el) { [weak self] items in
+                finished()
+                guard let self, self.isActive, let items, !items.isEmpty else { return }
+                self.widgetMenus[widget.id] = items
+                self.menu = NCPanelMenu(target: .widget(widget.id), items: items, anchor: anchor)
+            }
         }
     }
+
+    private let screenFreeze = ScreenFreeze()
+
+    /// Runs `body`, which opens Notification Center's menu of `widget`, behind a picture of
+    /// what was on screen where that menu and the widget it lifts show; see ScreenFreeze.
+    /// `body` calls its argument once the real menu is done: the picture goes once that
+    /// has closed and the real panel is back where it waits, half a second on.
+    private func frozen(for widget: NCWidget, _ body: @escaping (@escaping () -> Void) -> Void) {
+        let t0 = ProcessInfo.processInfo.systemUptime
+        func trace(_ what: String) { // DEBUG-CLICK
+            guard Self.timing else { return }
+            FileHandle.standardError.write(Data("[freeze] \(Int((ProcessInfo.processInfo.systemUptime - t0) * 1000)) ms \(what), real window at \(self.window?.point().map { "(\(Int($0.x)),\(Int($0.y)))" } ?? "?")\n".utf8))
+        }
+        guard let rect = menuArea(for: widget) else { trace("no area"); body {}; return }
+        trace("capturing \(Int(rect.rect.minX)),\(Int(rect.rect.minY)) \(Int(rect.rect.width))x\(Int(rect.rect.height))")
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            let image = await self.screenFreeze.take(rect.rect, on: rect.screen)
+            guard self.isActive else { return }
+            let shown = image != nil
+            if let image {
+                // Ours above the picture before it shows: shown first, it hid our panel for
+                // up to a sixth of a second.
+                self.panel.window.level = ScreenFreeze.panelLevel
+                await self.screenFreeze.show(image, over: rect.rect)
+            }
+            trace("picture \(shown ? "up" : "FAILED"), panel level \(self.panel.window.level.rawValue), body")
+            body { [weak self] in
+                trace("real menu done")
+                guard shown else { return }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.55) { [weak self] in
+                    guard let self else { return }
+                    self.screenFreeze.hide()
+                    self.panel.window.level = .statusBar
+                    trace("picture gone")
+                }
+            }
+        }
+    }
+
+    /// Where Notification Center shows a widget's menu and the widget it lifts: the
+    /// widget's column of the screen its panel is over, from the widget's left to the
+    /// screen's right, top to bottom (the menu opened under the widget's middle, at the
+    /// screen's top, measured on 27.0).
+    private func menuArea(for widget: NCWidget) -> (rect: NSRect, screen: NSScreen)? {
+        guard let window, let origin = window.point() else { return nil }
+        let x = origin.x + widget.frameInWindow.midX
+        guard let screen = NSScreen.screens.first(where: { x >= $0.frame.minX && x < $0.frame.maxX }) else { return nil }
+        let minX = max(screen.frame.minX, origin.x + widget.frameInWindow.minX - 60)
+        return (NSRect(x: minX, y: screen.frame.minY, width: screen.frame.maxX - minX, height: screen.frame.height), screen)
+    }
+
+    /// When Notification Center last listed no widget while ours had some (system uptime).
+    private var widgetsMissingSince: Double?
 
     /// Each widget's menu, by widget ID; see showMenu(for:at:).
     private var widgetMenus: [String: [NCMenuItem]] = [:]
@@ -1050,7 +1140,7 @@ final class NCPanelTakeover: ObservableObject {
         if case .widget = open.target {
             widgetCaptureHold = ProcessInfo.processInfo.systemUptime + 0.7
         }
-        readRealMenu(of: element, press: item) { [weak self] items in
+        let pressed: ([NCMenuItem]?) -> Void = { [weak self] items in
             guard let self else { return }
             self.refreshSoon()
             // A widget changes size or goes: its picture follows once it has redrawn, and
@@ -1061,6 +1151,16 @@ final class NCPanelTakeover: ObservableObject {
                     DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in self?.captureWidgets() }
                 }
             }
+        }
+        if case .widget(let id) = open.target, let widget = widgets.first(where: { $0.id == id }) {
+            frozen(for: widget) { [weak self] finished in
+                self?.readRealMenu(of: element, press: item) { items in
+                    finished()
+                    pressed(items)
+                }
+            }
+        } else {
+            readRealMenu(of: element, press: item, pressed)
         }
         logger.log("Menu item \(item.title)", tag: "Panel")
     }
