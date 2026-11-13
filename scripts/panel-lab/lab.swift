@@ -551,6 +551,14 @@ case "widget-menu":
         let found = menus(h) + menus(t)
         if found.count > before, let m = found.last {
             print("   menu: \(children(m).map { "\(str($0, kAXTitleAttribute) ?? "")[\(str($0, kAXIdentifierAttribute) ?? "")] h\(Int(frame($0)?.height ?? 0))" })")
+            // Which windows of Notification Center's are on screen with the menu up, at
+            // which level: the menu, and the widget it lifts beside it.
+            print("   menu frame \(frame(m).map { "(\(Int($0.minX)),\(Int($0.minY)) \(Int($0.width))x\(Int($0.height)))" } ?? "?")")
+            for w in (CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID) as? [[String: Any]] ?? [])
+            where w[kCGWindowOwnerPID as String] as? pid_t == nc.processIdentifier {
+                let b = (w[kCGWindowBounds as String] as? NSDictionary).flatMap { CGRect(dictionaryRepresentation: $0 as CFDictionary) } ?? .zero
+                print("   NC window #\(w[kCGWindowNumber as String] ?? "?") layer \(w[kCGWindowLayer as String] ?? "?") (\(Int(b.minX)),\(Int(b.minY)) \(Int(b.width))x\(Int(b.height)))")
+            }
             for down in [true, false] { CGEvent(keyboardEventSource: nil, virtualKey: 53, keyDown: down)?.post(tap: .cghidEventTap) }
             spin(0.3)
         } else {
