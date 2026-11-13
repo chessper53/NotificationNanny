@@ -69,8 +69,6 @@ No data is collected, transmitted, or stored outside your device. The Accessibil
 
 NotificationNanny uses the macOS Accessibility API to observe the notification center process. When a banner appears it repositions or replaces it according to your rules. For scaled, tinted, or custom banners it intercepts the notification, moves the system banner off screen, and shows its own window matching the macOS banner style. The custom Notification Center works the same way: the real panel stays open off screen, NotificationNanny draws its own list from it, and every click and reply goes back to the real one. This relies on private internals, so Apple can change the behavior in any OS update. The app sandbox is disabled because cross process Accessibility access requires it.
 
-For contributors, [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) covers the internals.
-
 ## License
 
 Released under the [MIT License](LICENSE).
