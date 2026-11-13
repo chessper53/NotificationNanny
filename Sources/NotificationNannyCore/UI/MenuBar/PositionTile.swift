@@ -478,7 +478,7 @@ package enum TestNotification {
     package static let scenarios: [Scenario] = [
         Scenario(label: "Long message", title: "NotificationNanny",
                  body: "This is a deliberately long notification body to exercise text wrapping, the two-line clamp, and width handling in the custom overlay renderer so overflow is easy to see."),
-        Scenario(label: "Comma in sender", title: "Stählin, Caspar",
+        Scenario(label: "Comma in sender", title: "Doe, Jane",
                  body: "Tests the comma-containing title split that broke Teams-style senders."),
         Scenario(label: "Title only (no body)", title: "Reminder: stand up and stretch", body: ""),
         Scenario(label: "Emoji & unicode", title: "Café ☕️ 你好 🎉",
