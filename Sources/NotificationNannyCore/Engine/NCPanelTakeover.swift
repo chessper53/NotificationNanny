@@ -251,6 +251,9 @@ final class NCPanelTakeover: ObservableObject {
             return
         }
         panel.show(on: screen)
+        if Self.timing { // DEBUG-CLICK
+            FileHandle.standardError.write(Data("[timing] panel shown \(Int((ProcessInfo.processInfo.systemUptime - openedAt) * 1000)) ms after Notification Center opened, \(snapshot.rowCount) rows\n".utf8))
+        }
         logger.log("Notification Center opened — showing NotificationNanny's list (\(snapshot.rowCount) notification(s))",
                    tag: "Panel")
         startWidgets()
@@ -303,6 +306,19 @@ final class NCPanelTakeover: ObservableObject {
             self.widgets = []
         }
         logger.log("Custom Notification Center closed (\(reason))", tag: "Panel")
+    }
+
+    /// Quitting with the panel open: the real panel's window goes home at once, and the real
+    /// panel shows, as when the feature is turned off with it open. Left where it waited, the
+    /// panel stayed open and unseen, and banners after it arrived off screen.
+    func releaseForQuit() {
+        guard isActive, let window, let home else { return finishClosing() }
+        router.stop()
+        _ = setPosition(window, home)
+        isActive = false
+        self.window = nil
+        self.home = nil
+        desiredOrigin = nil
     }
 
     /// Sends the window home now rather than after the panel's way out, when the app quits.

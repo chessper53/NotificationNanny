@@ -1020,7 +1020,7 @@ package final class NotificationRepositioner: ObservableObject {
     /// banner after it arrived in it, off screen (seen on 27.0: a banner up at quit, one
     /// more posted after, and it never showed).
     package func prepareForQuit() {
-        panelTakeover.finishClosing()
+        panelTakeover.releaseForQuit()
         guard let ncApp else { return }
         var value: CFTypeRef?
         guard AXUIElementCopyAttributeValue(ncApp, kAXWindowsAttribute as CFString, &value) == .success,
@@ -1041,9 +1041,11 @@ package final class NotificationRepositioner: ObservableObject {
     /// AX coordinates.
     static func homeOrigin(forParked p: CGPoint, size: CGSize, screens: [CGRect]) -> CGPoint? {
         let frame = CGRect(origin: p, size: CGSize(width: max(size.width, 1), height: max(size.height, 1)))
+        // A sliver counts as off screen: the panel waits with one row on screen to have its
+        // widgets drawn (NCPanelTakeover.drawnOffScreen).
         let onScreen = screens.contains { s in
             let i = s.intersection(frame)
-            return !i.isNull && i.width > 0 && i.height > 0
+            return !i.isNull && i.width >= 8 && i.height >= 8
         }
         guard !onScreen, let main = screens.first else { return nil }
         let across = screens.first { p.x >= $0.minX && p.x < $0.maxX }

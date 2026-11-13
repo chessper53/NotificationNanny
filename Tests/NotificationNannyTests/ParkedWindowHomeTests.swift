@@ -39,6 +39,13 @@ struct ParkedWindowHomeTests {
         #expect(home(CGPoint(x: 100, y: -1200), small, [builtIn, above]) == nil)
     }
 
+    /// Waiting for its widgets to be drawn, one row of it on screen: parked all the same.
+    @Test func sliverOnScreen_isParked() {
+        let wide = CGSize(width: 5120, height: 1440)
+        let odyssey = CGRect(x: 0, y: 0, width: 5120, height: 1440)
+        #expect(home(CGPoint(x: 0, y: -1439), wide, [odyssey]) == .zero)
+    }
+
     /// Where a screen was unplugged, nothing is left to be on: back to the main one.
     @Test func disconnectedScreen_backToMain() {
         #expect(home(CGPoint(x: -1800, y: 50), small, [builtIn]) == .zero)
