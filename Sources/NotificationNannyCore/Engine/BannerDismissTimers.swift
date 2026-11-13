@@ -1,12 +1,6 @@
 import Foundation
 
-/// Auto-dismiss timers, one per banner.
-///
-/// Since macOS 26 every banner lives in one long-lived host window, so a timer
-/// keyed by window outlives the banner it was started for and fires on whichever
-/// banner happens to be up by then. Keying by the banner's own identifier gives
-/// each banner its full delay, and a banner that leaves early takes its timer
-/// with it.
+/// Key dismissal timers by banner identifier because the shared host outlives individual banners.
 @MainActor
 final class BannerDismissTimers {
     /// Runs `fire` after `delay` seconds; returns a closure that cancels it.
@@ -21,8 +15,7 @@ final class BannerDismissTimers {
 
     var armedIDs: Set<String> { Set(cancels.keys) }
 
-    /// Starts a timer for each banner that doesn't have one yet. Banners that
-    /// already have one keep it, so calling this on every sweep is safe.
+    /// Arms only new identifiers; existing banners keep their original deadlines.
     func arm(_ ids: [String], delay: Double, onFire: @escaping @MainActor (String) -> Void) {
         guard delay > 0 else { return }
         for id in ids where cancels[id] == nil {
@@ -33,7 +26,6 @@ final class BannerDismissTimers {
         }
     }
 
-    /// Cancels the timers of banners that are no longer up.
     func prune(keeping present: Set<String>) {
         for id in cancels.keys where !present.contains(id) {
             cancels.removeValue(forKey: id)?()

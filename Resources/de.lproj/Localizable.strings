@@ -61,9 +61,8 @@
 "Test" = "Testen";
 "px" = "px";
 
-/* Custom banner overlay chrome */
 
-/* Exceptions tab */
+/* Exception groups */
 "Create groups of apps and give each group its own rules: position, screen, banner type, and scale. Apps not in any group use the defaults." = "Erstelle App-Gruppen und gib jeder ihre eigenen Regeln: Position, Bildschirm, Bannertyp und Skalierung. Apps ohne Gruppe nutzen die Standardeinstellungen.";
 "No exceptions yet." = "Noch keine Ausnahmen.";
 "Name" = "Name";
@@ -85,7 +84,7 @@
 "App-wide settings for startup, timing, and notification behaviour. These apply globally and are not affected by presets or per-app rules." = "App-weite Einstellungen für Start, Timing und Benachrichtigungsverhalten. Sie gelten global und werden von Voreinstellungen oder App-Regeln nicht beeinflusst.";
 "Language" = "Sprache";
 
-/* Appearance (General tab, also the group appearance row in Exceptions) */
+/* Appearance */
 "Appearance" = "Erscheinungsbild";
 "Settings window" = "Einstellungsfenster";
 "System" = "System";
@@ -117,7 +116,7 @@
 "Reset all settings?" = "Alle Einstellungen zurücksetzen?";
 "This will clear all positions, exceptions, presets and restore defaults. This cannot be undone." = "Dadurch werden alle Positionen, Ausnahmen und Voreinstellungen gelöscht und die Standardwerte wiederhergestellt. Dies kann nicht rückgängig gemacht werden.";
 
-/* Backup tab */
+/* Backup controls */
 "Export your settings to a file or import a previously saved backup. Everything is included: positions, scale, per-app rules, presets, and general toggles." = "Exportiere deine Einstellungen in eine Datei oder importiere eine zuvor gespeicherte Sicherung. Alles ist enthalten: Positionen, Skalierung, App-Regeln, Voreinstellungen und allgemeine Optionen.";
 "Export Settings…" = "Einstellungen exportieren…";
 "Save a backup to a JSON file" = "Sicherung als JSON-Datei speichern";
@@ -166,7 +165,7 @@
 "Edge-case notifications" = "Grenzfall-Benachrichtigungen";
 "Send a tricky notification through the real path to test extraction, wrapping, and unicode. Renders custom only when custom mode is active for the sender." = "Sendet eine kniffelige Benachrichtigung über den echten Pfad, um Extraktion, Zeilenumbruch und Unicode zu testen. Benutzerdefinierte Darstellung nur, wenn der benutzerdefinierte Modus für den Absender aktiv ist.";
 
-/* Menu bar right-click quick actions (AppKit, NSLocalizedString) */
+/* Menu bar quick actions */
 "Resume (paused until %@)" = "Fortsetzen (pausiert bis %@)";
 "15 minutes" = "15 Minuten";
 "30 minutes" = "30 Minuten";

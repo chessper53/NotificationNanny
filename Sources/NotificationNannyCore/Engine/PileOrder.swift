@@ -1,17 +1,7 @@
-/// Order of a custom pile while overlays leave it.
-///
-/// An overlay whose banner has gone plays its exit animation where it stands.
-/// If the pile closed the gap at once, the overlay below would move into that
-/// slot and the two would overlap until the animation ends. So a leaving
-/// overlay keeps its slot until then, between the same neighbours it had.
+/// Leaving overlays keep their slots until their exit animations finish to avoid overlaps.
 enum PileOrder {
-    /// Live banners in pile order by when each first appeared: newest first, or
-    /// with `newestAtBottom` oldest first. macOS's own order breaks ties (several
-    /// first seen in one sweep, e.g. a pile that was already up) and is otherwise
-    /// not used: it puts a Temporary banner below Persistent ones even when it
-    /// is newer.
-    ///
-    /// - Parameter ids: banners in macOS's order, newest first.
+    /// Order by first appearance; `ids` supplies native order to break ties.
+    /// Temporary banners can appear below older Persistent banners in native order.
     static func arrange(_ ids: [String], firstSeen: [String: Double], newestAtBottom: Bool) -> [String] {
         let ranked = ids.enumerated().map { (index: $0.offset, id: $0.element, seen: firstSeen[$0.element] ?? 0) }
         let newestFirst = ranked.sorted { a, b in
@@ -20,9 +10,8 @@ enum PileOrder {
         return newestAtBottom ? newestFirst.reversed() : newestFirst
     }
 
-    /// `current` in the order macOS gives now, with each id of `leaving` put
-    /// back right after the overlay that was above it in `previous`, or at the
-    /// top when nothing above it is still there.
+    /// Restore each leaving overlay after its previous neighbour, or at the top if no neighbour
+    /// remains.
     static func merge(current: [String], previous: [String], leaving: Set<String>) -> [String] {
         var result = current
         for (index, id) in previous.enumerated() where leaving.contains(id) && !result.contains(id) {
@@ -33,10 +22,8 @@ enum PileOrder {
         return result
     }
 
-    /// One pile per anchor, each ordered as `merge` orders a whole pile. Banners
-    /// from apps placed in different spots then each pile up where their app
-    /// goes, and a leaving overlay holds its slot in its own pile. Piles come in
-    /// the order their anchors first appear in `current`, then in `previous`.
+    /// Merge within each anchor, preserving leaving slots. Order anchors by `current`, then
+    /// `previous`.
     static func split<Anchor: Equatable>(current: [String], previous: [String], leaving: Set<String>,
                                          anchor: (String) -> Anchor) -> [(anchor: Anchor, ids: [String])] {
         var anchors: [Anchor] = []

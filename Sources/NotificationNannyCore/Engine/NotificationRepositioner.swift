@@ -6,10 +6,7 @@ import os
 private let log    = Logger(subsystem: "com.notificationnanny", category: "repositioner")
 private let axLog  = Logger(subsystem: "com.notificationnanny", category: "ax")
 
-/// NN_TIMING=1 writes how long each sweep and snap took to stderr, for
-/// scripts/notify-lab's performance runs. A sweep is a row of calls into
-/// Notification Center, so its cost is what dragging the position tile pays
-/// per frame. Off, this is one Bool check.
+/// NN_TIMING=1 writes AX sweep and snap durations to stderr for performance runs.
 private let nnTimingOn = ProcessInfo.processInfo.environment["NN_TIMING"] == "1"
 private func nnTiming(_ what: String, _ ms: Double) {
     guard nnTimingOn else { return }
@@ -66,8 +63,8 @@ package final class NotificationRepositioner: ObservableObject {
         }
         // Banners that came in while the panel was open go where they belong.
         takeover.onEnd = { [weak self] in self?.trackLayoutChange() }
-        // Alerts still up move into the panel, as they do in Notification Center's own,
-        // so their custom overlays go while it is open; the sweep after it brings them back.
+        // Hide custom overlays while active alerts appear in the panel; restore them on the next
+        // sweep.
         takeover.onBegin = { [weak self] in
             self?.customBannerManager.dismissAll()
             self?.overlayContent.removeAll()
@@ -97,8 +94,7 @@ package final class NotificationRepositioner: ObservableObject {
             self?.startObserving()
         }
         registerSleepWakeObservers()
-        // NN_LAB=1 (scripts/notify-lab) lets a scripted run fake a system wake, which a
-        // script can't otherwise cause without putting the Mac to sleep.
+        // Allow lab runs to simulate wake without putting the Mac to sleep.
         if ProcessInfo.processInfo.environment["NN_LAB"] == "1" {
             DistributedNotificationCenter.default().addObserver(
                 forName: Notification.Name("com.notificationnanny.lab.wake"), object: nil, queue: .main
@@ -160,8 +156,6 @@ package final class NotificationRepositioner: ObservableObject {
         guard axController.start(onEvent: { [weak self] element, notification in
             self?.handleAXEvent(element: element, notification: notification)
         }) else {
-            // Tried again every second by the watchdog, which only started after a start
-            // that worked: one that failed first was never tried again.
             logger.log("Observer not started: \(axController.lastStartFailure ?? "unknown"). Trying again every second", level: .warn, tag: "AX")
             startAttachmentWatchdog()
             return
@@ -178,11 +172,8 @@ package final class NotificationRepositioner: ObservableObject {
 
     private var attachmentWatchdog: Timer?
 
-    /// NSWorkspace's launch notification is not dependable for Notification Center, an agent
-    /// app. After a long sleep NC can come back under a new PID while the observer still
-    /// listens to the old one, and banners stay native until something else restarts it.
-    /// A PID lookup every second is cheap and catches that. The same tick notices a pause
-    /// lifting; see `checkPauseLifted`.
+    /// Poll the PID because NSWorkspace can miss agent restarts after sleep; also detect pauses
+    /// ending.
     private func startAttachmentWatchdog() {
         guard attachmentWatchdog == nil else { return }
         let timer = Timer(timeInterval: 1, repeats: true) { [weak self] _ in
@@ -197,8 +188,7 @@ package final class NotificationRepositioner: ObservableObject {
         attachmentWatchdog = timer
     }
 
-    /// Whether a Focus or a screen share currently keeps us from touching banners. Read by
-    /// `targetOrigin` on every placement and by the watchdog once a second.
+    /// Environment pause state, checked for placement and by the watchdog.
     private func isPausedByEnvironment() -> Bool {
         guard let settings else { return false }
         if settings.pauseDuringFocus, FocusModeMonitor.shared.isActive { return true }
@@ -208,10 +198,7 @@ package final class NotificationRepositioner: ObservableObject {
 
     private var wasPausedByEnvironment = false
 
-    /// While paused, every sweep skips every banner, so whatever arrives stays native. Ending
-    /// a Focus or a screen share raises no AX event, so those banners stayed native until an
-    /// unrelated one (the next notification, an observer restart) swept again. The overnight
-    /// case: a Sleep Focus still asserted when the Mac wakes, then lifting a moment later.
+    /// Resweep when Focus or screen sharing ends because neither raises an AX event.
     private func checkPauseLifted() {
         logFocusStoreAccess()
         let paused = isPausedByEnvironment()
@@ -227,8 +214,7 @@ package final class NotificationRepositioner: ObservableObject {
 
     private var loggedFocusStoreReadable: Bool?
 
-    /// "Pause during Focus" can only work if the Focus store is readable; say so in the
-    /// session log, where a bug report will carry it.
+    /// Report Focus store access so bug reports explain whether pausing can work.
     private func logFocusStoreAccess() {
         guard let readable = FocusModeMonitor.shared.storeReadable,
               readable != loggedFocusStoreReadable else { return }
@@ -242,12 +228,8 @@ package final class NotificationRepositioner: ObservableObject {
         }
     }
 
-    /// Reattaches if Notification Center is no longer the process the observer is bound to.
-    /// Accessibility turned off while running: the observer went on as if nothing had
-    /// happened, every call into Notification Center failing, and Settings still showed it
-    /// working. Now everything that needs it stops, and starts again by itself once it is
-    /// allowed again, no relaunch needed. Notification Center's windows can't be moved any
-    /// more by then: one parked for a custom banner stays until macOS moves it.
+    /// Stop AX work when permission is revoked and resume when granted again.
+    /// Already parked windows cannot be restored while access is denied.
     private func checkPermissionStillGranted() {
         guard hasAccessibilityPermission, !AXIsProcessTrusted() else { return }
         logger.log("Accessibility was turned off: banners are left to macOS until it is allowed again", level: .warn, tag: "AX")
@@ -346,14 +328,8 @@ package final class NotificationRepositioner: ObservableObject {
         }
 
         if notification == kAXLayoutChangedNotification as String {
-            // Measured on 26.5.2 and again on 27.0: one banner produces three of these. They
-            // can also arrive for the application element rather than a window, so don't trust
-            // `element` — sweep whatever windows are currently up, coalesced.
-            //
-            // The app name cache is keyed by window, and since macOS 26 every banner lives
-            // in the same persistent host window. Without this, the first banner's app name
-            // stuck to every later one until the host happened to be torn down, so a custom
-            // banner showed another app's icon, or the bell if that first name had none.
+            // Sweep current windows because layout events can target the app element.
+            // Invalidate window name caches because successive banners reuse one host.
             resolver.invalidateAll()
             axLog.debug("handleAXEvent: layoutChanged — scheduling sweep")
             trackLayoutChange()
@@ -403,14 +379,8 @@ package final class NotificationRepositioner: ObservableObject {
     private let destroySweepDebouncer = Debouncer()
     private var layoutTrackItems: [DispatchWorkItem] = []
 
-    /// Sweeps while macOS animates a layout change. A banner joining a pile slides
-    /// in at the top and pushes the others down over about half a second, but
-    /// only the start of that raises an event, so one sweep sees the pile half
-    /// moved and nothing corrects it afterwards. A bottom-anchored pile was left
-    /// hanging off the screen that way. Following the slide keeps the lowest
-    /// banner in place; a new event restarts the sequence. Most layout changes
-    /// with nothing up are desktop widgets updating, so when the first sweep
-    /// finds no banner the rest are skipped.
+    /// Follow native layout animations after their initial event, skipping followup sweeps if no
+    /// banners exist.
     private func trackLayoutChange() {
         layoutTrackItems.forEach { $0.cancel() }
         layoutTrackItems.removeAll(keepingCapacity: true)
@@ -431,15 +401,13 @@ package final class NotificationRepositioner: ObservableObject {
         layoutTrackItems.append(item)
         DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: item)
     }
-    /// Full sweeps: one at the start of the slide and one once it has settled.
-    /// Between them `followPiles` keeps native piles in place frame by frame.
+    /// Sweep at the start and end; followPiles handles intermediate frames.
     private static let layoutTrackDelays: [Double] = [0.05, 0.8]
     private static let followDuration: Double = 0.8
-    /// Gliding speed in points per frame: at 60 Hz 480 pt/s, a full banner slot
-    /// (64 pt) in about 0.13 s.
+    /// Points per frame: 8 at 60 Hz gives 480 pt/s.
     private static let maxFollowStep: CGFloat = 8
 
-    // MARK: - Following macOS's slide
+    // MARK: Following macOS's slide
 
     /// A native pile as the last sweep placed it, for following between sweeps.
     private struct NativePile {
@@ -447,8 +415,7 @@ package final class NotificationRepositioner: ObservableObject {
         let placement: ScreenPlacement
         let screen: NSScreen
         var banners: [AXUIElement]
-        /// The lowest banner last frame, and whether the pile is gliding to a new
-        /// resting place because that changed; see followPile.
+        /// Last lowest banner; a change triggers a glide to the new resting place.
         var lowest: AXUIElement? = nil
         var gliding = false
     }
@@ -458,12 +425,8 @@ package final class NotificationRepositioner: ObservableObject {
     private var followTimer: DispatchSourceTimer?
     private var followUntil: Double = 0
 
-    /// macOS animates a pile inside its own window: a banner joining slides the
-    /// others down, one leaving lets the rest close up, over about half a second.
-    /// Sweeps can only correct the window afterwards, so a bottom-anchored pile
-    /// dipped and snapped back, or dropped in one step when a gap closed. Every
-    /// frame for the length of the slide, this moves the window by however much
-    /// macOS has just moved the pile, so its bottom stays put and the rest glide.
+    /// Follow native pile motion each frame to keep the anchored bottom steady throughout the
+    /// slide.
     private func followPiles(for duration: Double) {
         followUntil = max(followUntil, ProcessInfo.processInfo.systemUptime + duration)
         guard followTimer == nil else { return }
@@ -479,7 +442,7 @@ package final class NotificationRepositioner: ObservableObject {
     private func followTick() {
         let started = DispatchTime.now().uptimeNanoseconds
         defer { nnTiming("follow", Double(DispatchTime.now().uptimeNanoseconds - started) / 1_000_000) }
-        // A glide still under way finishes even past the window.
+        // Finish any active glide even after the follow interval ends.
         guard ProcessInfo.processInfo.systemUptime < followUntil || followMoved, !nativePiles.isEmpty else {
             followTimer?.cancel()
             followTimer = nil
@@ -494,10 +457,8 @@ package final class NotificationRepositioner: ObservableObject {
         for key in Array(nativePiles.keys) { followPile(key) }
     }
 
-    /// Keeps one pile's anchored edge where its placement puts it. At bottom and
-    /// middle positions that is the bottom of the lowest banner, which doesn't
-    /// depend on the banner still sliding in at the top. Top positions grow
-    /// downward from a fixed top already, which macOS's own slide does right.
+    /// Anchor bottom and middle positions to the lowest banner, independent of new banners sliding
+    /// in above it.
     private func followPile(_ key: CFHashCode) {
         guard var pile = nativePiles[key] else { return }
         switch pile.placement.position {
@@ -523,10 +484,8 @@ package final class NotificationRepositioner: ObservableObject {
               let lowestIndex = rects.indices.max(by: { rects[$0].maxY < rects[$1].maxY }),
               let host = pile.window.point() else { return }
         let lowest = rects[lowestIndex].maxY
-        // Same lowest banner as last frame: macOS is sliding the pile, and the
-        // window follows exactly, so the bottom doesn't move at all. A different
-        // one (a banner arrived below, or the lowest left): the pile has a new
-        // resting place and glides there.
+        // Track motion exactly while the lowest banner is unchanged; glide when a new lowest
+        // changes the anchor.
         let lowestBanner = pile.banners[lowestIndex]
         if let previous = pile.lowest, !CFEqual(previous, lowestBanner) { pile.gliding = true }
         pile.lowest = lowestBanner
@@ -551,17 +510,8 @@ package final class NotificationRepositioner: ObservableObject {
         destroySweepDebouncer.schedule(delay: 0.12) { [weak self] in self?.repositionVisibleWindows() }
     }
 
-    /// Settings edits: move what's on screen now, once.
-    ///
-    /// Deliberately *not* a burst. This fires at up to 60 Hz while the position
-    /// tile or a slider is being dragged, and each pass is synchronous
-    /// cross-process AX IPC. Bursting per frame queued ~9 sweeps × 60 fps with a
-    /// 2.5 s tail, which pinned the main thread and made dragging crawl — worse
-    /// with a banner on screen, since every visible window multiplies the work.
-    ///
-    /// The single debounced settle pass catches changes that land mid-drag while
-    /// macOS happens to be re-laying out; one drag produces one tail pass, not
-    /// hundreds.
+    /// Place once per settings edit, with one debounced settle pass.
+    /// Per frame bursts multiply synchronous AX traffic and stall dragging.
     private func applySettingsChange() {
         panelTakeover.settingsChanged(enabled: customNotificationCenterEnabled)
         if let settings, !settings.isActive {
@@ -577,18 +527,12 @@ package final class NotificationRepositioner: ObservableObject {
         }
     }
 
-    /// Set while a settings change places banners: a drag of the position tile
-    /// must follow the pointer at once, not glide after it.
+    /// Settings drags place immediately rather than gliding.
     private var placingFromSettings = false
 
     private static let burstDelays: [Double] = [0.03, 0.06, 0.1, 0.2, 0.4, 0.8, 1.5, 2.5]
 
-    /// Re-asserts position on a decaying schedule, for events where macOS does its
-    /// own asynchronous re-layout after the fact — a banner appearing, a display
-    /// reconfiguration, waking from sleep. One pass loses that race.
-    ///
-    /// Overlapping bursts cancel their predecessor: without that, back-to-back
-    /// notifications stack their tails on top of each other.
+    /// Retry placement while macOS lays out asynchronously; each burst cancels the previous one.
     private func burstReposition() {
         if let settings, !settings.isActive {
             customBannerManager.dismissAll()
@@ -605,16 +549,12 @@ package final class NotificationRepositioner: ObservableObject {
         }
     }
 
-    /// Notification Center, asked with a short timeout before each sweep. A sweep is many
-    /// calls into it on the main thread, each waiting up to a second for an answer: while
-    /// it was busy (seen after it opened a window of unknown kind), sweeps of 1 to 3.4 s
-    /// came back to back, and the app froze with it for a minute.
+    /// Probe responsiveness before a sweep to avoid repeated main thread AX timeouts.
     private var ncProbe: (pid: pid_t, element: AXUIElement)?
     /// When Notification Center stopped answering, nil while it answers.
     private var ncUnresponsiveSince: Date?
     private var unresponsiveRetry: DispatchWorkItem?
-    /// Each probe that goes unanswered waits its timeout on the main thread: the retries
-    /// spread out, 0.25 s doubling up to 2 s, so a long stall costs little.
+    /// Back off failed probes from 0.25 to 2 seconds to bound main thread stalls.
     private var unresponsiveRetryDelay: Double = 0.25
     static let probeTimeout: Float = 0.15
 
@@ -622,8 +562,7 @@ package final class NotificationRepositioner: ObservableObject {
         guard ncPid > 0 else { return true }
         if ncProbe?.pid != ncPid {
             let element = AXUIElementCreateApplication(ncPid)
-            // This element only: actions elsewhere keep the full second, as one that takes
-            // effect after its answer timed out was tried again under another name.
+            // Shorten only the probe; action timeouts can cause successful actions to be retried.
             AXUIElementSetMessagingTimeout(element, Self.probeTimeout)
             ncProbe = (ncPid, element)
         }
@@ -632,9 +571,7 @@ package final class NotificationRepositioner: ObservableObject {
         return AXUIElementCopyAttributeValue(probe, kAXWindowsAttribute as CFString, &value) != .cannotComplete
     }
 
-    /// Notification Center can also stop answering in the middle of a sweep, after the
-    /// probe: then every call left waited its second, 6 s in all for a 6 s stall. A sweep
-    /// takes under 50 ms; past this one stops at the next window and waits as above.
+    /// Bound a sweep if Notification Center stops answering after the initial probe.
     static let sweepBudget: UInt64 = 400_000_000
     private var sweepStarted: UInt64?
 
@@ -643,8 +580,7 @@ package final class NotificationRepositioner: ObservableObject {
         return DispatchTime.now().uptimeNanoseconds - started > Self.sweepBudget
     }
 
-    /// Skips the sweep while Notification Center doesn't answer, and tries again shortly,
-    /// so the windows are placed once it does. Logged once per stall, not once per sweep.
+    /// Skip unresponsive sweeps and retry later; log once per stall.
     private func sweepIfNotificationCenterAnswers() -> Bool {
         guard notificationCenterAnswers() else {
             waitForNotificationCenter()
@@ -711,9 +647,7 @@ package final class NotificationRepositioner: ObservableObject {
             dismissTimers.prune(keeping: present)
             closedBannerIDs.formIntersection(present)
             expiredBannerIDs.formIntersection(present)
-            // A collapsed stack hides the cards behind its top one. They're still
-            // up, and forgetting when they came would reorder the pile once the
-            // stack is open.
+            // Keep hidden stack members' first seen times so expansion cannot reorder the pile.
             if !refs.contains(where: \.isCollapsedStack) {
                 bannerFirstSeen = bannerFirstSeen.filter { present.contains($0.key) }
                 bannerAppNames = bannerAppNames.filter { present.contains($0.key) }
@@ -735,18 +669,14 @@ package final class NotificationRepositioner: ObservableObject {
             }
             let idx = baseTargets[..<i].filter { sameAnchor($0.1, base) }.count
             log.debug("repositionVisibleWindows: window[\(i)] stackIndex=\(idx) anchor=\(base.placement.position.rawValue, privacy: .public)")
-            // `base` was computed above with stackIndex 0, and snapWindow would
-            // otherwise recompute the identical thing — doubling the AX traffic
-            // of every sweep. It only carries over when this window is first at
-            // its anchor, since the stack offset is baked into the target.
+            // Reuse `base` only for the first window at its anchor; other targets need their stack
+            // offset applied.
             snapWindow(window, stackIndex: idx, precomputed: idx == 0 ? base : nil)
         }
         return !baseTargets.isEmpty
     }
 
-    /// Plays sound groups' sounds for banners that just arrived. Not for the open panel's
-    /// rows, which look just like banners, and not while paused or disabled: then the
-    /// notifications are left to macOS entirely, and what came in meanwhile stays unheard.
+    /// Sound new banners only; ignore panel history and arrivals while paused or disabled.
     private func playSounds(in windows: [AXUIElement]) {
         guard let settings, settings.isActive, settings.playsAnySound else {
             sounds.reset()
@@ -762,7 +692,6 @@ package final class NotificationRepositioner: ObservableObject {
         sounds.sweep(up, soundFor: settings.notificationSound(for:))
     }
 
-    /// A banner and its identifier, read once.
     private struct BannerRef {
         let element: AXUIElement
         let id: String?
@@ -770,10 +699,7 @@ package final class NotificationRepositioner: ObservableObject {
         let isCollapsedStack: Bool
     }
 
-    /// Banners per window for the sweep in progress. Measuring the pile, choosing
-    /// custom or native, the custom pile, auto-dismiss and pruning all need a
-    /// window's banners, and each walk of the tree is a row of calls into
-    /// Notification Center; within one sweep they share a single walk.
+    /// Share one AX banner traversal per window within a sweep to avoid repeated IPC.
     private var sweepBanners: [CFHashCode: [BannerRef]]?
 
     private func banners(in window: AXUIElement) -> [BannerRef] {
@@ -835,10 +761,7 @@ package final class NotificationRepositioner: ObservableObject {
         return CFAttributedStringGetString((val as! CFAttributedString)) as String
     }
 
-    /// Screen-sharing state doesn't change at 60 Hz, but `isCapturing()` walks the
-    /// whole system window list — and it was running once per window per frame
-    /// while the position tile was being dragged. Half a second of staleness is
-    /// imperceptible for "pause while streaming".
+    /// Cache screen sharing checks for half a second; each check walks the full system window list.
     private var capturingCache: (checkedAt: Date, value: Bool)?
 
     private func isCapturingThrottled() -> Bool {
@@ -865,38 +788,32 @@ package final class NotificationRepositioner: ObservableObject {
     private var lastSelfSetPositions: [CFHashCode: CGPoint] = [:]
     private var lastRepositionAt: [CFHashCode: Date] = [:]
     private var overlayContent: [CFHashCode: BannerContent] = [:]
-    /// Windows parked for good. Only the fallback for banners without an identifier
-    /// (one window per banner, before macOS 26); see `closeBanner(id:reason:)`.
+    /// Permanently parked hosts for legacy banners without identifiers; see closeBanner.
     private var dismissedKeys: Set<CFHashCode> = []
     private let dismissTimers = BannerDismissTimers()
-    /// One slot of a custom pile: a live overlay, or one playing its exit
-    /// animation that keeps its place until `leavingUntil` (system uptime).
+    /// A live overlay or one holding its slot until `leavingUntil`, in system uptime.
     private struct PileSlot {
         let id: String
         var size: CGSize
         /// Seconds the overlay takes to leave: its outro plus the fade after it.
         var exit: Double
         var leavingUntil: Double?
-        /// Where its pile goes, so a leaving overlay stays in its own pile.
+        /// Keep a leaving overlay in its original pile.
         var anchor: PileAnchor
     }
-    /// Where one custom pile goes; see `syncCustomPile`.
     private struct PileAnchor: Equatable {
         let screen: NSScreen
         let placement: ScreenPlacement
     }
     /// Custom overlays per NC window, top to bottom; see `syncCustomPile`.
     private var customPiles: [CFHashCode: [PileSlot]] = [:]
-    /// Banners closed through their Close action. macOS takes a moment to remove
-    /// them, and a sweep in that moment must not give them a fresh overlay.
+    /// Do not recreate overlays for closed banners while macOS finishes removing their AX elements.
     private var closedBannerIDs: Set<String> = []
-    /// Banners whose auto-dismiss time is up: no overlay and no place on screen any more,
-    /// and never closed, so the notification stays in Notification Center.
+    /// Expired banners stay in Notification Center but have no visible overlay.
     private var expiredBannerIDs: Set<String> = []
     /// When each banner was first seen (system uptime), for ordering a custom pile.
     private var bannerFirstSeen: [String: Double] = [:]
-    /// Sweeps a banner's content could not be read in, so it gets a plain overlay
-    /// rather than none.
+    /// Failed content reads before falling back to a plain overlay.
     private var unreadableBannerSweeps: [String: Int] = [:]
     private var loggedSkippedKeys: Set<CFHashCode> = []
     /// targetOrigin runs many times per sweep; log the host's stack only when it changes.
@@ -987,8 +904,7 @@ package final class NotificationRepositioner: ObservableObject {
         logger.log("Display sleep — parked \(parkedBanners) banner(s), left \(skippedWidgets) desktop widget(s) in place", tag: "Widget")
     }
 
-    /// System wake, as opposed to the display waking. Banners that arrived while asleep were
-    /// never announced to us, so reattach if NC moved and sweep whatever is already up.
+    /// After system wake, reattach if the PID changed and sweep arrivals missed during sleep.
     private func handleSystemWake() {
         lastWakeAt = Date()
         logger.log("System woke — checking NC attachment", tag: "System")
@@ -1000,11 +916,8 @@ package final class NotificationRepositioner: ObservableObject {
     private var wakeRestartItem: DispatchWorkItem?
     private var axEventsSinceWake = 0
 
-    /// After an overnight sleep banners have been seen staying native, with NC on the same
-    /// PID, until the observer was restarted. Whether the observer had gone deaf is unproven, so
-    /// restart it once after every wake and log what it found. Banners arriving after the
-    /// wake without a single AX event points at a deaf observer; no events with nothing new
-    /// is normal. Remove if a deaf observer never shows in a report.
+    /// Restart once after wake to recover suspected lost AX delivery; logs distinguish silence from
+    /// new arrivals.
     private func scheduleWakeRestart() {
         wakeRestartItem?.cancel()
         axEventsSinceWake = 0
@@ -1052,11 +965,8 @@ package final class NotificationRepositioner: ObservableObject {
     private var activeBannerElement: AXUIElement? = nil
     private var targetBannerSize: CGSize = .zero
 
-    /// Puts back what can't wait for later: Notification Center's window, if the custom
-    /// panel just closed and is still waiting for the real one to finish leaving, and any
-    /// of its windows still hidden for a custom banner. Left there once we are gone, every
-    /// banner after it arrived in it, off screen (seen on 27.0: a banner up at quit, one
-    /// more posted after, and it never showed).
+    /// Restore pending panel and banner hosts before quitting so later notifications remain
+    /// visible.
     package func prepareForQuit() {
         panelTakeover.releaseForQuit()
         guard let ncApp else { return }
@@ -1072,15 +982,12 @@ package final class NotificationRepositioner: ObservableObject {
         }
     }
 
-    /// Where a window parked off screen belongs: the top left of the screen across from it
-    /// (hidden for a banner, it keeps its x), or of the main screen when its x is parked
-    /// too (display sleep). Nil for a window on any screen, wherever that is: a screen left
-    /// of or above the main one has negative coordinates, and its windows aren't parked.
-    /// AX coordinates.
+    /// Restore a parked host to the screen at its x position, or the main screen if x is parked
+    /// too.
+    /// AX coordinates may be negative for visible screens; reject only hosts outside every screen.
     static func homeOrigin(forParked p: CGPoint, size: CGSize, screens: [CGRect]) -> CGPoint? {
         let frame = CGRect(origin: p, size: CGSize(width: max(size.width, 1), height: max(size.height, 1)))
-        // A sliver counts as off screen: the panel waits with one row on screen to have its
-        // widgets drawn (NCPanelTakeover.drawnOffScreen).
+        // A single visible pixel row still counts as parked for widget capture.
         let onScreen = screens.contains { s in
             let i = s.intersection(frame)
             return !i.isNull && i.width >= 8 && i.height >= 8
@@ -1170,8 +1077,7 @@ package final class NotificationRepositioner: ObservableObject {
         let bannerSize: CGSize
     }
 
-    /// The screen a banner goes to: its group's forced display, else the active
-    /// screen when following it, else the global forced display, else `fallback`.
+    /// Screen priority: group override, followed active screen, global override, then fallback.
     private func bannerScreen(forced: NSScreen?, settings: any NotificationSettingsProviding,
                               fallback: @autoclosure () -> NSScreen?) -> NSScreen? {
         if let forced { return forced }
@@ -1226,7 +1132,6 @@ package final class NotificationRepositioner: ObservableObject {
         let isOverlay = size.width > 700 || size.height > 400
         let bannerOffset: CGPoint
         let bannerSz: CGSize
-        // Height of the pile the first banner heads; see below.
         var stackHeight: CGFloat = 0
 
         if isOverlay {
@@ -1244,8 +1149,7 @@ package final class NotificationRepositioner: ObservableObject {
                 panelAnswer = answer
                 return answer
             }
-            // The open panel is never moved: it opens inside this window, and a panel
-            // dragged to a banner position is cut off and won't scroll.
+            // Do not position a panel as a banner; both share the same host.
             if isPanel() {
                 placePanel(window, size: size, from: oldPos, bannerScreen: screen)
                 return nil
@@ -1262,12 +1166,8 @@ package final class NotificationRepositioner: ObservableObject {
             bannerOffset = CGPoint(x: offsetX, y: offsetY)
             bannerSz = bSz
 
-            // Banners that are up together share this host, newest on top, and
-            // macOS lays the rest out downward from it. Placing just the first one
-            // pushes the others off a bottom edge, so the pile is placed as a whole,
-            // from the top of the first banner to the bottom of the lowest. The open
-            // Notification Center panel lists past notifications with the same
-            // subroles, which are not a pile to place.
+            // Place the whole pile so lower banners stay within the screen.
+            // Panel history uses the same subroles but must not count toward the pile.
             stackHeight = bSz.height
             if !isPanel(), let top = pileTopY {
                 let banners = banners(in: window)
@@ -1296,7 +1196,6 @@ package final class NotificationRepositioner: ObservableObject {
 
         let stackDirection: CGFloat = placement.position.stacksUpward ? -1 : 1
         let stackYOffset = stackDirection * CGFloat(stackIndex) * (bannerSz.height + Self.stackGap)
-        // The first banner tops the pile, so the pile's origin is its origin.
         let bannerTarget = placement.position.axStackOrigin(
             stackSize: CGSize(width: bannerSz.width, height: stackHeight), screen: screen,
             xOffset: CGFloat(placement.xOffset), yOffset: CGFloat(placement.yOffset) + stackYOffset)
@@ -1335,8 +1234,8 @@ package final class NotificationRepositioner: ObservableObject {
             scale = settings?.effectiveBannerScale(for: appName(for: window)) ?? 1.0
         }
 
-        // Banners with identifiers (macOS 26 on) get one overlay each, laid out as
-        // a pile. The window-keyed overlay below is for banners without one.
+        // Use one overlay per identified banner; legacy banners fall back to a window keyed
+        // overlay.
         if hasIdentifiedBanners(window) {
             if shouldKeepCustom, !isNCPanelOpen(window) {
                 nativePiles.removeValue(forKey: CFHash(window))
@@ -1519,15 +1418,11 @@ package final class NotificationRepositioner: ObservableObject {
             }
 
             let bannerEl = findBannerElement(in: window) ?? window
-            // A test reads the real banner like any other notification, so the
-            // overlay shows the same title and body the system banner would. The
-            // fixed text is only a fallback for when extraction fails.
+            // Extract real test content first; fixed text is only a fallback.
             var content = extractBannerContent(from: bannerEl, knownAppName: appName(for: window))
             if testGroupID != nil {
-                // A test is NotificationNanny's own notification, so it carries
-                // NotificationNanny's icon. Without notification permission it is
-                // posted through osascript, which macOS attributes to Script Editor,
-                // and reading the banner would otherwise pick up that icon.
+                // Use our icon for tests even when the osascript fallback attributes the native
+                // banner to Script Editor.
                 content = content.map {
                     BannerContent(appName: $0.appName, title: $0.title, subtitle: $0.subtitle,
                                   body: $0.body, appIcon: NSApp.applicationIconImage)
@@ -1647,9 +1542,8 @@ package final class NotificationRepositioner: ObservableObject {
         }
         var appName = knownAppName ?? parsedAppName
 
-        // Labelled lines are exact, including the subtitle, which the description
-        // string runs together with the body. Older layouts have no identifiers,
-        // so they still go through the split heuristics.
+        // Prefer labelled lines for an exact subtitle boundary; older layouts use description
+        // heuristics.
         let lines = element.identifiedTextValues()
         var content: BannerContent
         if let title = lines["title"] {
@@ -1662,7 +1556,6 @@ package final class NotificationRepositioner: ObservableObject {
             let (title, body) = splitTitleBody(content: textPart, element: element, appName: appName)
             content = BannerContent(appName: appName, title: title, body: body, appIcon: lookupIcon(for: appName))
         }
-        // The app's buttons, and what the real banner shows of them right now.
         content.actions = NotificationActions.appActions(of: element)
         if !content.actions.isEmpty {
             content.expanded = NotificationActions.isExpanded(element)
@@ -1720,10 +1613,8 @@ package final class NotificationRepositioner: ObservableObject {
         }
     }
 
-    /// Starts auto-dismiss for every banner in the window that doesn't have it yet.
-    /// Returns false when the banners carry no identifier, so the caller can fall
-    /// back to dismissing the whole window, which is right only when each banner
-    /// has a window of its own.
+    /// Arms dismissal by banner ID; returns false for legacy banners that require a timer per
+    /// window.
     @discardableResult
     private func armAutoDismiss(in window: AXUIElement) -> Bool {
         guard let delay = settings?.autoDismissSeconds, delay > 0 else { return true }
@@ -1735,7 +1626,7 @@ package final class NotificationRepositioner: ObservableObject {
         return true
     }
 
-    /// A banner's auto-dismiss time is up: off the screen, left in Notification Center.
+    /// Hide an expired banner without removing its notification from Notification Center.
     private func expireBanner(id: String) {
         guard !expiredBannerIDs.contains(id) else { return }
         expiredBannerIDs.insert(id)
@@ -1743,18 +1634,15 @@ package final class NotificationRepositioner: ObservableObject {
         repositionVisibleWindows()
     }
 
-    /// Every banner in the window has had its time: the window goes off screen, the
-    /// notifications stay in Notification Center.
+    /// Only park the shared host once all its banners have expired.
     private func allExpired(_ window: AXUIElement) -> Bool {
         let ids = banners(in: window).compactMap(\.id)
         return !ids.isEmpty && ids.allSatisfy { expiredBannerIDs.contains($0) || closedBannerIDs.contains($0) }
     }
 
-    /// Closes one banner through its own Close action, the same as clicking its ✕
-    /// (Clear All for several notifications of one app merged into a stack).
-    /// The host window stays put, so the banners around it are unaffected.
-    /// Returns false only when the banner is still up and offers no Close action;
-    /// a banner that is already gone counts as closed.
+    /// Close a banner or clear its collapsed stack without moving the shared host.
+    /// Returns false only if a live banner offers no close action; an absent banner counts as
+    /// closed.
     @discardableResult
     private func closeBanner(id: String, reason: String) -> Bool {
         guard let ncApp else { return false }
@@ -1763,9 +1651,8 @@ package final class NotificationRepositioner: ObservableObject {
               let windows = value as? [AXUIElement] else { return false }
         for window in windows {
             for banner in resolver.findBannerElements(in: window) where banner.identifier == id {
-                // Several notifications from one app merge into a stack, which
-                // offers Clear All instead of Close. Both names are in the system's
-                // language, so every translation of them is accepted.
+                // Collapsed stacks offer Clear All instead of Close; accept every system
+                // translation.
                 let closed = banner.performCustomAction(namedAnyOf: NCActionNames.close)
                     || banner.performCustomAction(namedAnyOf: NCActionNames.clearAll)
                 if closed { closedBannerIDs.insert(id) }
@@ -1777,15 +1664,13 @@ package final class NotificationRepositioner: ObservableObject {
         return true
     }
 
-    // MARK: - Custom pile
+    // MARK: Custom pile
 
     /// Gap between overlays in a custom pile, before scale.
     private static let pileGap: CGFloat = 8
 
-    /// Puts a native window where `t` says. A pile already up that only has to
-    /// move up or down is left to followPile, which follows macOS's slide
-    /// exactly or glides to a new resting place; anything new, and a settings
-    /// drag, moves at once.
+    /// Move new windows and settings edits immediately; followPile handles vertical motion of
+    /// existing piles.
     private func placeNative(_ window: AXUIElement, at t: RepositionTarget) {
         if !placingFromSettings, nativePiles[CFHash(window)] != nil,
            let current = window.point(), abs(current.x - t.windowOrigin.x) < 1,
@@ -1798,9 +1683,7 @@ package final class NotificationRepositioner: ObservableObject {
         rememberNativePile(window, target: t)
     }
 
-    /// Only the shared host (macOS 26 on) holds a pile; a small window is one banner.
-    /// What the follow has learnt about the pile (its lowest banner, a glide under
-    /// way) carries over, or a sweep in the middle of a change would hide it.
+    /// Remember shared hosts only; preserve the lowest banner and active glide across sweeps.
     private func rememberNativePile(_ window: AXUIElement, target t: RepositionTarget) {
         let key = CFHash(window)
         guard t.windowSize.width > 700 || t.windowSize.height > 400, !isNCPanelOpen(window) else {
@@ -1829,12 +1712,9 @@ package final class NotificationRepositioner: ObservableObject {
         }
     }
 
-    /// Width every custom overlay takes: what macOS gave the last banner that had
-    /// settled. A banner reads wider while it comes in (440, 470, past 480) and
-    /// narrower on its way out, so copying each reading made a pile of mixed widths.
+    /// Use the last settled native width; entrance and exit animations report transient widths.
     private var settledBannerWidth = NotificationRepositioner.bannerSize.width
-    /// Banners whose width has been read once settled; each is read only once,
-    /// before it can start to leave.
+    /// Read each banner width once after settling and before it can leave.
     private var bannerWidthsRead: Set<String> = []
     private static let bannerSettleTime: Double = 0.5
 
@@ -1850,9 +1730,7 @@ package final class NotificationRepositioner: ObservableObject {
         return settledBannerWidth
     }
 
-    /// App names by banner. The name needs the banner's title (see
-    /// `AppNameResolver.appName(fromDescription:title:)`), one more walk of its
-    /// lines, and it doesn't change, so it is read once rather than every sweep.
+    /// Cache app names by banner after reading its labelled title to avoid repeated AX traversals.
     private var bannerAppNames: [String: String] = [:]
 
     private func appName(ofBanner id: String, _ el: AXUIElement) -> String? {
@@ -1866,19 +1744,13 @@ package final class NotificationRepositioner: ObservableObject {
         return name
     }
 
-    /// Persistent banners from one app that macOS has folded into one. Over
-    /// Accessibility such a stack is only its top card, so the custom pile would
-    /// show one banner for several.
+    /// AX exposes only the top card of a collapsed Persistent stack.
     private static let collapsedStackSubrole = "AXNotificationCenterAlertStack"
     /// Times each collapsed stack was pressed, by its identifier.
     private var stackPresses: [String: Int] = [:]
 
-    /// Presses each collapsed stack in the window open, as a click on it would;
-    /// its cards are then banners of their own. Its host is off screen while the
-    /// pile is custom, so nobody sees it open. True when one was pressed: the
-    /// cards take a moment to come apart, and syncing in between would take the
-    /// hidden ones for gone. A stack that stays shut after two presses is left
-    /// as one banner.
+    /// Expand hidden native stacks and defer synchronization while their cards separate.
+    /// Return true if pressed; leave stacks collapsed after two failed attempts.
     private func openCollapsedStacks(in window: AXUIElement) -> Bool {
         var pressed = false
         for ref in banners(in: window) where ref.isCollapsedStack {
@@ -1895,13 +1767,9 @@ package final class NotificationRepositioner: ObservableObject {
         return pressed
     }
 
-    /// One custom overlay per banner in the window, laid out the way the native
-    /// banners are: placed as one pile (growing upward at bottom positions) and
-    /// kept on screen as a whole. The host itself is parked off screen. Each
-    /// overlay takes its own app's look, and its own app's placement when every
-    /// banner up is custom; otherwise the pile takes the placement of the newest
-    /// banner, as the native pile does. An overlay goes when its banner
-    /// leaves, and dismissing an overlay closes its banner.
+    /// Render one overlay per banner while parking the shared host.
+    /// Use each app's placement when all banners are custom; mixed piles share the newest banner's
+    /// placement.
     private func syncCustomPile(_ window: AXUIElement, target t: RepositionTarget) {
         guard let settings else { return }
         let windowKey = CFHash(window)
@@ -1937,8 +1805,7 @@ package final class NotificationRepositioner: ObservableObject {
             return animation.spec.outroDuration + Self.overlayFadeOut
         }
 
-        // Overlays whose banner went start their exit where they stand and keep
-        // their slot until it is over (see PileOrder); a sweep then closes the gap.
+        // Keep leaving overlays' slots until their exit animation ends; see PileOrder.
         let previous = customPiles[windowKey] ?? []
         let liveIDs = Set(items.map(\.id))
         var slots = Dictionary(previous.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
@@ -1950,19 +1817,15 @@ package final class NotificationRepositioner: ObservableObject {
                 self?.repositionVisibleWindows()
             }
         }
-        // A banner arriving as another leaves is macOS swapping one for the other.
-        // Then the leaving overlay fades where it is without holding its slot, so
-        // the newcomer lands in place instead of beside it and then sliding over.
+        // A simultaneous arrival replaces the leaving banner, so release that slot immediately.
         let arriving = items.contains { !customBannerManager.isActive(key: overlayKey($0.id)) }
         let leaving = arriving ? [] : Set(slots.values.filter { ($0.leavingUntil ?? 0) > now }.map(\.id))
         for item in items where bannerFirstSeen[item.id] == nil { bannerFirstSeen[item.id] = now }
         let arranged = PileOrder.arrange(items.map(\.id), firstSeen: bannerFirstSeen,
                                          newestAtBottom: settings.newestBannerAtBottom)
 
-        // When every banner up is custom, each app's banners pile up where that
-        // app goes, so two exception groups can show in two places at once. A
-        // native one among them can't leave the shared host window, so then
-        // they all share the newest banner's placement, as before.
+        // Separate app placements only when all banners are custom; native banners cannot leave the
+        // shared host.
         let shared = PileAnchor(screen: t.screen, placement: t.placement)
         let allCustom = items.allSatisfy { item in
             item.testGroup.map { settings.shouldUseCustomBanner(forGroupID: $0) }
@@ -1992,7 +1855,7 @@ package final class NotificationRepositioner: ObservableObject {
             return slots[id]?.size ?? .zero
         }
         let gap = Self.pileGap
-        // Where each overlay stood before this sweep moved it; see the arrivals below.
+        // Save positions for arrival collision checks before moving overlays.
         let framesBefore = Dictionary(items.compactMap { item in
             customBannerManager.frame(key: overlayKey(item.id)).map { (item.id, $0) }
         }, uniquingKeysWith: { a, _ in a })
@@ -2039,10 +1902,7 @@ package final class NotificationRepositioner: ObservableObject {
         }
         customPiles[windowKey] = next
 
-        // Make room first: a new overlay whose spot another one is still gliding
-        // out of would land on top of it, so that one waits for the glide and a
-        // sweep then brings it in. Everything else comes in at once; waiting for
-        // any glide in the pile held every new banner back by about 0.3 s.
+        // Delay only arrivals whose slots are still occupied by gliding overlays.
         var waitUntil: Double = 0
         let ready = arrivals.filter { arrival in
             let lands = CustomBannerManager.panelFrame(axOrigin: arrival.topLeft, size: arrival.size,
@@ -2073,8 +1933,7 @@ package final class NotificationRepositioner: ObservableObject {
                                  settings: any NotificationSettingsProviding) {
         var content = extractBannerContent(from: element, knownAppName: appName)
         if content == nil {
-            // Not readable yet; the next sweep usually is. Past a few, show what
-            // is known rather than leave a hole in the pile.
+            // Retry unreadable content before falling back to a partial overlay.
             let tries = (unreadableBannerSweeps[id] ?? 0) + 1
             unreadableBannerSweeps[id] = tries
             guard tries > 3 else { return }
@@ -2116,8 +1975,7 @@ package final class NotificationRepositioner: ObservableObject {
         )
     }
 
-    /// The real banner's own menu for its custom one's ⋯ and right click; see NCMenus. The
-    /// banner stays up while it is in use.
+    /// Mirrors the native banner menu through NCMenus and keeps the banner visible while in use.
     private func bannerMenu(id: String) -> BannerMenuSource {
         BannerMenuSource(
             items: { [weak self] withAppActions, done in
@@ -2136,7 +1994,7 @@ package final class NotificationRepositioner: ObservableObject {
             },
             choose: { [weak self] item in
                 guard let self, let el = self.bannerElement(id: id) else { return }
-                // The app's own buttons go the way their buttons do, so a reply opens.
+                // Route app actions through their reply handling.
                 if item.kind == .action, NotificationActions.appActions(of: el).contains(item.title) {
                     self.performBannerAction(item.title, id: id)
                     return
@@ -2156,11 +2014,10 @@ package final class NotificationRepositioner: ObservableObject {
         return (value as! AXUIElement)
     }
 
-    // MARK: - The app's buttons on custom banners
+    // MARK: Custom banner actions
 
     private let bannerActions = NotificationActions()
-    /// Banners whose buttons or reply are in use: their overlay follows the real banner's
-    /// content on every sweep, and doesn't auto-dismiss.
+    /// Interacting overlays refresh each sweep and suspend automatic dismissal.
     private var interactingBanners: Set<String> = []
     /// Mirrors an open reply; typing goes to the real banner's field.
     private var bannerReplyTimer: Timer?
@@ -2233,9 +2090,7 @@ package final class NotificationRepositioner: ObservableObject {
         }
     }
 
-    /// Hides the window behind a dismissed overlay for good. Only for banners
-    /// without an identifier, which have a window each; identified banners are
-    /// closed one by one instead (`closeBanner`).
+    /// Park legacy hosts permanently after dismissal; identified banners are closed individually.
     private func retireUnderlyingWindow(_ window: AXUIElement) {
         let key = CFHash(window)
         let gen = nextGeneration(for: key)
@@ -2287,25 +2142,10 @@ package final class NotificationRepositioner: ObservableObject {
         settings?.protectDesktopWidgets == true && findBannerElement(in: window) == nil
     }
 
-    /// Whether the Notification Center panel is open in `window`.
-    ///
-    /// Since macOS 15 the panel opens inside the same fullscreen window that hosts the
-    /// banners, not a window of its own. This used to ask whether `window` was NC's focused
-    /// window, but opening the panel with a banner up focuses the banner host and closing it
-    /// leaves that focus behind (measured on 27.0). Every later banner then counted as the
-    /// panel: with "Don't move Notification Center" on none of them moved, with it off the
-    /// panel itself was dragged to the banner position.
-    ///
-    /// Two signals, either one enough. NC's application element reports `AXExpanded`, but
-    /// it turns true a moment after the panel's list is already in the window, and a sweep
-    /// in that moment placed the list as a pile of banners. The Edit Widgets button is only
-    /// ever in the open panel, which also covers a release without `AXExpanded`. Not the
-    /// panel's `AXNotificationListItems` list: two or more banners on their own sit in one
-    /// too (measured on 27.0).
-    ///
-    /// Only where NC has no `AXExpanded` at all (not confirmed on any release yet, but older
-    /// ones are untested) does the old focused-window guess come back as a last resort, so
-    /// such a release is never worse off than before.
+    /// Use AXExpanded or Edit Widgets to detect the panel; the latter appears earlier during
+    /// opening.
+    /// A notification list also hosts banner piles, and focus persists after closing.
+    /// Fall back to focus only on releases without AXExpanded.
     private func isNCPanelOpen(_ window: AXUIElement) -> Bool {
         switch ncExpandedState() {
         case .open: return true
@@ -2324,7 +2164,7 @@ package final class NotificationRepositioner: ObservableObject {
         return value ? .open : .closed
     }
 
-    /// NC's own word on the panel: one call, cheap enough for every follow frame.
+    /// Cheap native expansion check for each follow frame.
     private func isNCExpanded() -> Bool { ncExpandedState() == .open }
 
     private func isNCFocusedWindow(_ window: AXUIElement) -> Bool {
@@ -2335,19 +2175,9 @@ package final class NotificationRepositioner: ObservableObject {
         return CFEqual(focused, window)
     }
 
-    /// Where the open panel goes. macOS opens it on the screen whose menu bar clock was
-    /// clicked, sized for that screen, and nothing needs undoing: the pile following that
-    /// once dragged it off screen stops while the panel is open.
-    ///
-    /// So with "Don't move Notification Center" on, the panel is left exactly where macOS
-    /// put it. This used to move it back to "its own screen", picked by the window's size;
-    /// caught mid-opening, while the window still had the main display's size, that sent a
-    /// panel opened from a second screen's clock over to the main display.
-    ///
-    /// Off, it goes to the screen the banners go to, under that screen's menu bar, unless
-    /// it is already there. macOS puts the window's top left at its screen's, which tells
-    /// which screen it is on; a window caught mid-opening is put right by the next sweep.
-    /// Moved to a smaller screen than its own, its bottom is cut off: its size can't be set.
+    /// Preserve native placement when panel movement is disabled; otherwise align with the banner
+    /// screen.
+    /// The native size cannot be changed, so moving to a smaller screen can clip the bottom.
     private func placePanel(_ window: AXUIElement, size: CGSize, from current: CGPoint, bannerScreen: NSScreen) {
         guard settings?.avoidNCPanel == false, let primary = NSScreen.screens.first else { return }
         nativePiles.removeValue(forKey: CFHash(window))
@@ -2355,7 +2185,6 @@ package final class NotificationRepositioner: ObservableObject {
             CGPoint(x: screen.frame.minX, y: primary.frame.maxY - screen.frame.maxY)
         }
         let target = axTopLeft(bannerScreen)
-        // Already on the banners' screen: opened from its clock, or moved there before.
         let onTarget = hypot(current.x - target.x, current.y - target.y) <= 1
             || hypot(current.x + size.width - bannerScreen.frame.maxX, current.y - target.y) <= 1
         guard !onTarget else { return }
@@ -2366,11 +2195,7 @@ package final class NotificationRepositioner: ObservableObject {
         logger.log("Notification Center panel opened — moved to the banners' screen", tag: "Banner")
     }
 
-    /// Where a pile starts. Two or more banners sit in one list, and a stack that was
-    /// expanded in the panel stays expanded there, with a header row (app name, Show Less,
-    /// Clear) above its banners. Measuring from the first banner put that row, and anything
-    /// above it, past the top of the placement: under the menu bar of a second screen.
-    /// So take the highest row of the list, whatever it is.
+    /// Measure from the highest list row, including expanded stack headers above the first banner.
     private static func pileTop(above banner: AXUIElement) -> CGFloat? {
         let own = banner.point()?.y
         var parentRef: CFTypeRef?
@@ -2384,8 +2209,7 @@ package final class NotificationRepositioner: ObservableObject {
 
     private static let panelOnlyIdentifiers: Set<String> = ["widget-editor-button"]
 
-    /// Stops at banners: what marks the panel sits above them, and walking every banner's
-    /// text on each sweep is the cost the sweep work cut out.
+    /// Stop traversal at banners because panel markers sit above them.
     private static func containsPanelContent(_ el: AXUIElement, depth: Int = 0) -> Bool {
         guard depth < 7 else { return false }
         if let id = el.stringAttribute(kAXIdentifierAttribute as String), panelOnlyIdentifiers.contains(id) {

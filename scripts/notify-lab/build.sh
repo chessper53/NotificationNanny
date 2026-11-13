@@ -1,12 +1,6 @@
 #!/usr/bin/env bash
-# Builds the notify-lab sender apps into build/notify-lab.
-#
-# One binary, wrapped as three bundles with their own names and bundle IDs, so
-# macOS treats them as three apps. That is the only way to get several banners
-# on screen at once: one app's notifications replace each other.
-#
-# The first notification from each app asks for permission. Allow all three
-# once (System Settings > Notifications lists them as Lab Alpha/Bravo/Charlie).
+# Build three distinct Lab app bundles so simultaneous notifications can come from separate apps.
+# Allow their notifications once; setup and commands are in docs/LABS.md.
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 
@@ -14,8 +8,7 @@ LAB=scripts/notify-lab
 OUT=build/notify-lab
 mkdir -p "$OUT"
 
-# The 27.0 SDK in the Command Line Tools needs a SwiftUI macro plugin they don't
-# ship; nothing here uses SwiftUI, but pin the SDK that is known to work.
+# Use the older SDK to avoid the current Command Line Tools' missing SwiftUI macro plugin.
 SDK=/Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk
 [[ -d "$SDK" ]] && export SDKROOT="$SDK"
 

@@ -2,9 +2,6 @@ import Foundation
 import Testing
 @testable import NotificationNannyCore
 
-/// `cleanAXString` strips default-ignorable scalars (notably the U+200E mark that
-/// apps like WhatsApp inject into accessibility strings) and trims whitespace.
-/// Banner app-name / title extraction depends on this being correct.
 @Suite("cleanAXString")
 struct AXStringTests {
 
@@ -17,7 +14,6 @@ struct AXStringTests {
     }
 
     @Test func stripsLeftToRightMark() {
-        // U+200E is default-ignorable; it must be removed.
         #expect(cleanAXString("WhatsApp\u{200E}") == "WhatsApp")
         #expect(cleanAXString("\u{200E}John Doe") == "John Doe")
     }
@@ -35,7 +31,6 @@ struct AXStringTests {
     }
 
     @Test func keepsInternalPunctuationAndCommas() {
-        // Sender names with commas must survive (the title/body split handles them).
         #expect(cleanAXString("Lastname, First") == "Lastname, First")
     }
 }

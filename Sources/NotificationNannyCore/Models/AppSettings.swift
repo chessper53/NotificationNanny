@@ -108,31 +108,26 @@ package final class AppSettings: ObservableObject {
         didSet { defaults.set(pauseWhileStreaming, forKey: Key.pauseWhileStreaming) }
     }
 
-    /// "Don't move Notification Center". On, the open panel stays under the menu bar of its
-    /// own screen. Off, it opens on the screen the banners go to.
+    /// Keep the native panel on its chosen screen when true; otherwise follow the banner screen.
     @Published package var avoidNCPanel: Bool {
         didSet { defaults.set(avoidNCPanel, forKey: Key.avoidNCPanel) }
     }
 
-    /// Experimental: the open Notification Center panel is kept off screen and
-    /// NotificationNanny shows its own list of the same notifications instead.
+    /// Replace the parked native panel with a mirrored custom list.
     @Published package var customNotificationCenter: Bool {
         didSet { defaults.set(customNotificationCenter, forKey: Key.customNotificationCenter) }
     }
 
-    /// Pictures of the real widgets in the custom Notification Center. Needs Screen
-    /// Recording, so it is off unless asked for; off, widgets are left out.
+    /// Include native widget captures; disabled by default because Screen Recording is required.
     @Published package var customNotificationCenterWidgets: Bool {
         didSet { defaults.set(customNotificationCenterWidgets, forKey: Key.customNotificationCenterWidgets) }
     }
 
-    /// The row of app chips that filters the custom Notification Center's list.
     @Published package var customNotificationCenterAppFilter: Bool {
         didSet { defaults.set(customNotificationCenterAppFilter, forKey: Key.customNotificationCenterAppFilter) }
     }
 
-    /// How the custom Notification Center opens and closes, from the banners' choices.
-    /// Default is the system's: in from the right edge of the screen.
+    /// Panel transition; the default slides in from the right like the native panel.
     @Published package var customNotificationCenterAnimation: BannerAnimation {
         didSet { defaults.set(customNotificationCenterAnimation.rawValue, forKey: Key.customNotificationCenterAnimation) }
     }
@@ -142,7 +137,6 @@ package final class AppSettings: ObservableObject {
         didSet { defaults.set(customNotificationCenterScale, forKey: Key.customNotificationCenterScale) }
     }
 
-    /// Which side of the screen the custom Notification Center opens on.
     @Published package var customNotificationCenterSide: NCPanelSide {
         didSet { defaults.set(customNotificationCenterSide.rawValue, forKey: Key.customNotificationCenterSide) }
     }
@@ -157,15 +151,13 @@ package final class AppSettings: ObservableObject {
         didSet { defaults.set(customNotificationCenterTopOffset, forKey: Key.customNotificationCenterTopOffset) }
     }
 
-    /// How far across from its side's place it opens, in points, right being positive.
-    /// Added after side and top offset, so a setup saved before it reads 0 and opens
-    /// where it always did.
+    /// Horizontal offset in points, positive to the right; missing saved values default to zero.
     @Published package var customNotificationCenterXOffset: Double {
         didSet { defaults.set(customNotificationCenterXOffset, forKey: Key.customNotificationCenterXOffset) }
     }
 
-    /// Off: rows take the banners' background colour. On: `customNotificationCenterTint`,
-    /// none being the system's look.
+    /// Use the panel's tint when true, otherwise inherit banner backgrounds. Nil tint uses the
+    /// system look.
     @Published package var customNotificationCenterOwnBackground: Bool {
         didSet { defaults.set(customNotificationCenterOwnBackground, forKey: Key.customNotificationCenterOwnBackground) }
     }
@@ -173,8 +165,7 @@ package final class AppSettings: ObservableObject {
         didSet { Self.store(customNotificationCenterTint, Key.customNotificationCenterTint, in: defaults) }
     }
 
-    /// Off: rows take the banners' text colour. On: `customNotificationCenterTextTint`,
-    /// none being the system's.
+    /// Use the panel's text tint when true, otherwise inherit banner text colors.
     @Published package var customNotificationCenterOwnText: Bool {
         didSet { defaults.set(customNotificationCenterOwnText, forKey: Key.customNotificationCenterOwnText) }
     }
@@ -208,16 +199,13 @@ package final class AppSettings: ObservableObject {
         didSet { defaults.set(holdWhileAsleep, forKey: Key.holdWhileAsleep) }
     }
 
-    /// Blurs the title/body text on the custom banner overlay instead of hiding the
-    /// notification outright — for shoulder-surfing privacy without losing the "something
-    /// arrived" signal. Forces the custom-banner path (native banners can't be redacted).
-    /// Order of a custom banner pile: the newest at the bottom and the oldest on
-    /// top, instead of the other way round. The system banner can't follow it:
-    /// macOS lays out its own pile, newest on top.
+    /// Reverse custom pile order to put the newest banner at the bottom; native order cannot
+    /// change.
     @Published package var newestBannerAtBottom: Bool {
         didSet { defaults.set(newestBannerAtBottom, forKey: Key.newestBannerAtBottom) }
     }
 
+    /// Blur title and body while retaining a visible arrival signal; requires custom rendering.
     @Published package var redactBannerContent: Bool {
         didSet { defaults.set(redactBannerContent, forKey: Key.redactBannerContent) }
     }
@@ -248,8 +236,7 @@ package final class AppSettings: ObservableObject {
         didSet { defaults.set(hideMenuBarIcon, forKey: Key.hideMenuBarIcon) }
     }
 
-    /// A preference about this app's own window, like `hideMenuBarIcon`: in backups, not in
-    /// presets.
+    /// Window appearance belongs in backups but not notification presets.
     @Published package var settingsAppearance: SettingsAppearance {
         didSet { defaults.set(settingsAppearance.rawValue, forKey: Key.settingsAppearance) }
     }
@@ -367,12 +354,8 @@ package final class AppSettings: ObservableObject {
         appGroups[i] = group
     }
 
-    // placements and appGroups are both edited at high frequency: dragging the
-    // position tile or a per-group scale slider fires on every frame. SwiftUI's
-    // diffing of the @Published value is cheap; re-encoding the whole collection
-    // to JSON and writing UserDefaults 60 times a second is not. Debounce the
-    // disk write — `flushPendingSaves()` guarantees nothing is lost if the app
-    // quits mid-debounce.
+    // Debounce collection writes during dragging; flushPendingSaves commits pending edits before
+    // exit.
     @Published private var placements: [String: ScreenPlacement] {
         didSet { placementsSaver.schedule { [weak self] in self?.savePlacements() } }
     }
@@ -385,13 +368,11 @@ package final class AppSettings: ObservableObject {
         didSet { appGroupsSaver.schedule { [weak self] in self?.saveAppGroups() } }
     }
 
-    /// Edited at slider speed too: a group's volume.
     @Published package var soundGroups: [SoundGroup] {
         didSet { soundGroupsSaver.schedule { [weak self] in self?.saveSoundGroups() } }
     }
 
-    /// The sound every app outside a sound group plays, by name or path; nil for each
-    /// app's own, as macOS plays it.
+    /// Fallback sound for apps following All apps; nil leaves sound playback to macOS.
     @Published package var allAppsSound: String? {
         didSet {
             if let allAppsSound { defaults.set(allAppsSound, forKey: Key.allAppsSound) }
@@ -424,9 +405,7 @@ package final class AppSettings: ObservableObject {
             DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: item)
         }
 
-        /// Runs the pending save now. Note this can't just `perform()` the work
-        /// item — a cancelled DispatchWorkItem silently does nothing — so the
-        /// closure is held separately.
+        /// Keep the closure separately: performing a cancelled DispatchWorkItem does nothing.
         func flush() {
             workItem?.cancel()
             fire()
@@ -440,10 +419,7 @@ package final class AppSettings: ObservableObject {
         }
     }
 
-    /// Forces debounced writes to disk immediately. Call before the app could
-    /// quit — e.g. `applicationWillTerminate` — or after a deliberate one-shot
-    /// mutation (preset apply, import, reset) rather than waiting on the debounce
-    /// for changes that aren't part of a rapid-fire edit.
+    /// Flush before exit and after applying a preset, import, or reset.
     package func flushPendingSaves() {
         placementsSaver.flush()
         appGroupsSaver.flush()
@@ -466,7 +442,6 @@ package final class AppSettings: ObservableObject {
         self.pauseWhileStreaming    = (defaults.object(forKey: Key.pauseWhileStreaming) as? Bool) ?? false
         self.avoidNCPanel           = (defaults.object(forKey: Key.avoidNCPanel) as? Bool) ?? true
         self.customNotificationCenter = (defaults.object(forKey: Key.customNotificationCenter) as? Bool) ?? false
-        // macOS shows no times, so neither does ours unless asked to.
         self.customNotificationCenterWidgets = (defaults.object(forKey: Key.customNotificationCenterWidgets) as? Bool) ?? false
         self.customNotificationCenterAppFilter = (defaults.object(forKey: Key.customNotificationCenterAppFilter) as? Bool) ?? false
         self.customNotificationCenterAnimation = defaults.string(forKey: Key.customNotificationCenterAnimation)
@@ -563,9 +538,7 @@ package final class AppSettings: ObservableObject {
         var updated = placements
         updated[screen.stableDisplayKey] = placement
         updated.removeValue(forKey: String(screen.displayID))
-        // A drag re-sends the same placement whenever the pointer moves within a
-        // pixel; publishing it anyway would invalidate the view and re-run the
-        // repositioner for no change.
+        // Avoid publishing and repositioning when pointer motion leaves placement unchanged.
         guard updated != placements else { return }
         placements = updated
     }
@@ -631,12 +604,8 @@ package final class AppSettings: ObservableObject {
         appGroups[i].name = name
     }
 
-    /// Assigning moves the app: a notification only ever matches the first group
-    /// containing it, so membership is exclusive.
-    ///
-    /// Built as one value and assigned once. Mutating `appGroups` in place published
-    /// an objectWillChange per step, so observers briefly saw the app belonging to no
-    /// group at all — a torn intermediate state the picker could render.
+    /// Move membership atomically: assign one updated array so observers never see an intermediate
+    /// group state.
     func addApp(_ appName: String, toGroup groupID: UUID) {
         guard appGroups.contains(where: { $0.id == groupID }) else { return }
         var updated = appGroups
@@ -656,14 +625,13 @@ package final class AppSettings: ObservableObject {
         appGroups = updated
     }
 
-    // MARK: - Sound groups
+    // MARK: Sound groups
 
     package func soundGroup(for appName: String) -> SoundGroup? {
         soundGroups.first { $0.appNames.contains(appName) }
     }
 
-    /// What a notification from the app plays, if anything besides macOS's own: its
-    /// group's sound, or All apps' for an app outside a group or a group following it.
+    /// Resolve the app's group sound and volume, falling back to All apps when inherited.
     package func notificationSound(for appName: String) -> (sound: String, volume: Double)? {
         guard let group = soundGroup(for: appName) else {
             return allAppsSound.map { ($0, allAppsSoundVolume) }
@@ -675,7 +643,7 @@ package final class AppSettings: ObservableObject {
         }
     }
 
-    /// Whether any app plays a sound of NotificationNanny's, so a sweep can skip looking.
+    /// Skip sound discovery when no custom sound can play.
     package var playsAnySound: Bool {
         allAppsSound != nil || soundGroups.contains { $0.sound?.soundName != nil }
     }
@@ -782,31 +750,26 @@ package final class AppSettings: ObservableObject {
         knownAppNames.sort()
     }
 
-    /// 2: the global banner colour, text colour and animation, hold while asleep, and the
-    /// target screen's stable key, which version 1 left out.
-    /// 3: everything else that is a setting: whether it is on, the menu bar icon, the
-    /// Settings window's appearance, and the apps it has seen. Only a snooze running
-    /// (a countdown, stale by any restore) and the app's own bookkeeping stay out.
+    /// Version 2 added appearance and stable screen keys; version 3 includes all settings and known
+    /// apps.
+    /// Exclude transient snooze state and internal bookkeeping.
     static let currentExportSchemaVersion = 3
 
     struct SettingsExport: Codable {
         var schemaVersion: Int?
         var placements: [String: ScreenPlacement]
         var targetDisplayID: CGDirectDisplayID
-        /// The target screen as the same screen anywhere: its number changes between
-        /// sessions and Macs. Optional: version 1 had only the number.
+        /// Prefer a stable screen key; version 1 stored only a numeric ID.
         var targetDisplayUUID: String?
         var autoDismissSeconds: Double
         var bannerScale: Double
-        /// Optional from here: version 1 left them out, and its backups import them as
-        /// their defaults (no colour, the default animation, not held).
+        /// Version 1 omits these fields; import their defaults when absent.
         var bannerTint: BannerTint?
         var bannerTextTint: BannerTint?
         var bannerAnimation: BannerAnimation?
         var holdWhileAsleep: Bool?
         var pauseWhileStreaming: Bool
-        /// Optional: a backup from the releases that had no such toggle may still carry it,
-        /// and one without it imports as on.
+        /// Optional for older backups; missing values import as true.
         var avoidNCPanel: Bool?
         var customNotificationCenter: Bool?
         var customNotificationCenterWidgets: Bool?
@@ -832,7 +795,7 @@ package final class AppSettings: ObservableObject {
         var allAppsSound: String?
         var allAppsSoundVolume: Double?
         var presets: [Preset]
-        /// Optional from here: before version 3, kept as they are on import.
+        /// Before schema version 3, absent values leave current settings unchanged.
         var isEnabled: Bool?
         var hideMenuBarIcon: Bool?
         var settingsAppearance: SettingsAppearance?
@@ -887,16 +850,14 @@ package final class AppSettings: ObservableObject {
         return try encoder.encode(export)
     }
 
-    /// Why a backup can't be imported. Nothing is changed when one is refused.
+    /// Import failures leave settings unchanged.
     package enum BackupError: Error, Equatable {
-        /// Not JSON, or not a NotificationNanny backup.
         case notABackup
-        /// Made by a newer NotificationNanny, with settings this one doesn't know.
         case newerVersion
-        /// A value outside what Settings allows; which one, for the log.
+        /// Invalid setting name for diagnostics.
         case invalid(String)
 
-        /// What Settings says, a key of Localizable.strings.
+        /// Localization key for the import error.
         package var messageKey: String {
             switch self {
             case .notABackup: return "This file isn't a NotificationNanny backup."
@@ -906,8 +867,7 @@ package final class AppSettings: ObservableObject {
         }
     }
 
-    /// The backup in `data`, checked whole before any of it is applied: a backup edited by
-    /// hand could set a banner to zero size, or one from a newer version half apply.
+    /// Validate the entire backup before applying any settings.
     func validatedBackup(_ data: Data) throws -> SettingsExport {
         let imported: SettingsExport
         do { imported = try JSONDecoder().decode(SettingsExport.self, from: data) } catch { throw BackupError.notABackup }
@@ -962,8 +922,7 @@ package final class AppSettings: ObservableObject {
     func importData(_ data: Data) throws {
         let imported = try validatedBackup(data)
         placements          = imported.placements
-        // The same screen by its stable key when it is connected; when it isn't, the key
-        // is kept for when it is again. The number alone found whichever screen had it now.
+        // Retain disconnected screens' stable keys so their placement resolves when they return.
         let screen = Self.resolveScreen(displayID: imported.targetDisplayID, stableKey: imported.targetDisplayUUID)
         targetDisplayID     = screen?.displayID ?? imported.targetDisplayID
         if screen == nil, let key = imported.targetDisplayUUID {
@@ -1042,11 +1001,8 @@ package final class AppSettings: ObservableObject {
         presets.removeAll { $0.id == preset.id }
     }
 
-    /// Every setting as a fresh install has it, taken from one through the backup, which
-    /// carries every setting (BackupCompletenessTests): a list of its own here had fallen
-    /// behind, and reset left the custom Notification Center, the pauses, widget protection,
-    /// following the screen and the Settings appearance as they were. A snooze running ends.
-    /// Kept: the apps seen, learned rather than set (an import adds them, never removes).
+    /// Restore defaults through the complete backup schema and end any snooze.
+    /// Keep learned app names, which are not user settings.
     package func resetAllSettings() {
         let name = "NotificationNanny-reset-\(UUID().uuidString)"
         guard let freshDefaults = UserDefaults(suiteName: name) else { return }

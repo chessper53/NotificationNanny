@@ -39,8 +39,8 @@
 ```sh
 git clone https://github.com/chessper53/NotificationNanny
 cd NotificationNanny
-make build        # or: swift build
-./scripts/dev.sh          # kill, build, reset permission, launch
+make build
+./scripts/dev.sh          # Build and launch a signed development bundle.
 ```
 
 **Command Line Tools alone are no longer sufficient.** The CLT 27.0 update
@@ -788,6 +788,46 @@ sequenceDiagram
   and private SPI are verified manually — they need a live system.
 - Before committing: `make test` passes, `./scripts/dev.sh` behaves as intended against
   real notifications, and [CHANGELOG.md](CHANGELOG.md) reflects the change.
+
+#### Comments
+
+Keep a comment only when it supplies information a maintainer cannot readily get
+from the names, types, or nearby code. Explain a constraint, intent, units, failure
+contract, platform behavior, or reason an apparently simpler implementation would
+be wrong. Verify the claim against the implementation when editing it.
+
+Use plain English and prefer one short sentence. Wrap at 100 columns. A second
+sentence is justified when it preserves a necessary constraint. Remove narration,
+repeated declarations or assertions, obsolete instructions, debugging labels,
+commented code, and stories of earlier bugs. Put measurements, investigations, and
+long command references in documentation and retain only the rule the code relies
+on beside the implementation. Test comments should explain unusual fixtures or
+constraints rather than repeat a descriptive test name.
+
+Use `///` for useful Swift declaration contracts and `//` for implementation
+reasoning. Use `// MARK: Topic` sparingly between substantial sections, without a
+separator dash. Other languages use their ordinary comment syntax; localization
+files may retain short block labels. Python docstrings follow the same rules,
+including those displayed as command help. Attach documentation to the declaration
+it describes. Do not require a comment on every declaration or a file banner.
+
+Comment text must contain no ASCII hyphens, Unicode dashes, or emojis. This includes
+hyphenated words, quoted text, code references, command options, URLs, and decorative
+symbols. Rephrase the explanation or move the exact reference into ordinary
+documentation. Comment delimiters are syntax, so the hyphens in HTML delimiters do
+not count as text. The required first line of the root `Package.swift`,
+`// swift-tools-version: 5.9`, is a technical directive and is the sole dash exception.
+Preserve executable directives such as shebangs and linter controls.
+
+Run `python3 scripts/check-comments.py` to check tracked files, or pass file paths
+to check new files before adding them. CI also runs the checker and its fixtures.
+The check covers Swift, TypeScript, JavaScript, CSS, Python comments and docstrings,
+shell, Ruby, YAML, Makefiles, ignore files, localization files, HTML and XML, and
+comments in supported Markdown code fences. It ignores ordinary prose and string
+literals. Emoji detection conservatively excludes pictographs, dingbats, and emoji
+presentation sequences from comments. Necessity, accuracy, and brevity still need
+human review. Generated JavaScript inherits comments from TypeScript; rebuild it
+with `npm --prefix site run build` rather than editing the output independently.
 
 ---
 

@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# Every test suite in Tests/ is in one of ci.yml's test groups: a suite in none would
-# silently stop running in CI. Suites are the top-level types named ...Tests.
+# Require every top level test suite to appear in a CI test group.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 missing=0

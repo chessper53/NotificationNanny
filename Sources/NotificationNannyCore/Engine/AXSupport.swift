@@ -1,9 +1,7 @@
 @preconcurrency import ApplicationServices
 import CoreGraphics
 
-/// Thin, side-effect-free conveniences over the C Accessibility API. Keeping these in one place
-/// (rather than re-spelling `AXUIElementCopyAttributeValue` everywhere) keeps the repositioner and
-/// resolver focused on logic instead of CoreFoundation bridging.
+/// Shared Accessibility reads and CoreFoundation bridging.
 extension AXUIElement {
 
     /// The element's `kAXSizeAttribute`, or `nil` if unavailable.
@@ -16,7 +14,7 @@ extension AXUIElement {
         return size
     }
 
-    /// A point-valued attribute (defaults to `kAXPositionAttribute`), or `nil` if unavailable.
+    /// A point attribute, defaulting to position, or nil if unavailable.
     func point(_ attribute: CFString = kAXPositionAttribute as CFString) -> CGPoint? {
         var ref: CFTypeRef?
         guard AXUIElementCopyAttributeValue(self, attribute, &ref) == .success,
@@ -26,7 +24,7 @@ extension AXUIElement {
         return point
     }
 
-    /// A string-valued attribute, handling both plain `String` and `CFAttributedString` results.
+    /// Reads a string attribute, accepting plain and attributed strings.
     func stringAttribute(_ attribute: String) -> String? {
         var ref: CFTypeRef?
         guard AXUIElementCopyAttributeValue(self, attribute as CFString, &ref) == .success,
@@ -38,14 +36,11 @@ extension AXUIElement {
         return nil
     }
 
-    /// The element's `AXIdentifier`. Since macOS 26 every banner carries a UUID here
-    /// that stays the same for as long as that banner is up.
+    /// A banner UUID stable for its lifetime from macOS 26 onward.
     var identifier: String? { stringAttribute(kAXIdentifierAttribute as String) }
 
-    /// Performs a custom action by its display name, which may be any of `names` (one per
-    /// language, see NCActionNames). Custom actions are reported as
-    /// "Name:Close\nTarget:0x0\nSelector:(null)", so match on the name line.
-    /// Returns false when the element offers no such action.
+    /// Performs an action matching a localized name on its Name line; returns false if none
+    /// matches.
     @discardableResult
     func performCustomAction(namedAnyOf names: Set<String>) -> Bool {
         var ref: CFArray?
@@ -64,7 +59,7 @@ extension AXUIElement {
         return children
     }
 
-    /// Cleaned values of all `AXStaticText` descendants, in tree order, depth-limited.
+    /// Cleaned static text descendants in tree order, with bounded depth.
     func staticTextValues(depth: Int = 0) -> [String] {
         guard depth < 8 else { return [] }
         var result: [String] = []
@@ -77,9 +72,7 @@ extension AXUIElement {
         return result
     }
 
-    /// Cleaned values of the direct `AXStaticText` children, keyed by `AXIdentifier`.
-    /// Since macOS 26 a banner labels its lines "title", "subtitle" and "body", which
-    /// is the only reliable way to tell a subtitle from the first line of the body.
+    /// Reads labelled title, subtitle, and body children; descriptions merge subtitle and body.
     func identifiedTextValues() -> [String: String] {
         var result: [String: String] = [:]
         for child in children()
@@ -93,7 +86,7 @@ extension AXUIElement {
     }
 }
 
-/// Strips default-ignorable scalars (e.g. WhatsApp's U+200E) and trims surrounding spaces.
+/// Strips invisible formatting scalars such as U+200E, then trims whitespace.
 func cleanAXString(_ s: String) -> String {
     s.unicodeScalars
         .filter { !$0.properties.isDefaultIgnorableCodePoint }
@@ -101,8 +94,7 @@ func cleanAXString(_ s: String) -> String {
         .trimmingCharacters(in: .whitespaces)
 }
 
-/// The display name of an AX action: the "Name:" line of a custom action, or the action
-/// itself for a standard one.
+/// Extracts the Name line of a custom action, or returns a standard action unchanged.
 func customActionName(_ action: String) -> String {
     guard action.hasPrefix("Name:") else { return action }
     return String(action.dropFirst(5).prefix { $0 != "\n" })

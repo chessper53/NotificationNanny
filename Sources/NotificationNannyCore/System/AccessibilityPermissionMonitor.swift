@@ -21,9 +21,8 @@ package final class AccessibilityPermissionMonitor {
         refresh()
     }
 
-    // Starts a 1.5-second poll loop. The closure is called once, on the main actor,
-    // the first time permission is granted. Safe to call multiple times — no-ops if
-    // a poll is already running or permission is already granted.
+    // Poll every 1.5 seconds until granted, then call once on the main actor. Repeated starts are
+    // harmless.
     func startPollingIfNeeded(onGranted: @escaping @MainActor () -> Void) {
         guard pollTimer == nil, !hasPermission else { return }
         pollTimer = Timer.scheduledTimer(withTimeInterval: 1.5, repeats: true) { [weak self] timer in

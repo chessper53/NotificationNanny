@@ -3,31 +3,19 @@ import SwiftUI
 import Testing
 @testable import NotificationNannyCore
 
-// Renders every Settings tab to PNG, in dark and light, for the landing page
-// (scripts/capture-screenshots.sh turns them into site/assets/screenshots/*.webp).
-// Skipped unless NN_SNAPSHOT_DIR names an output directory, so a normal test run
-// never draws anything.
-//
-// Deliberately renders each tab's content view, not SettingsView: SettingsView's
-// onAppear starts the AX observer whenever the process is trusted, and a test run
-// from a trusted terminal would then move real notification banners alongside the
-// installed app. The site crops the sidebar off anyway and draws its own.
-//
-// The settings are demo data, registered in memory only (register(defaults:)
-// never persists), so the user's own groups, presets and log never appear and
-// nothing is written to their preferences.
+// Render demo data only when NN_SNAPSHOT_DIR is set.
+// Render tab content rather than SettingsView to avoid starting AX observation on the user's
+// desktop.
+// Registered defaults remain in memory and personal settings never appear in captures.
 @Suite("Settings snapshots") @MainActor
 struct SettingsSnapshotTests {
 
     nonisolated static let outputDirectory = ProcessInfo.processInfo.environment["NN_SNAPSHOT_DIR"]
 
-    // The content pane of the 660 x 640 pt window the site's screenshots have always
-    // shown: the window less the 150 pt sidebar and its 1 pt divider.
+    // Website capture size excludes the sidebar from the original 660 by 640 point window.
     static let paneSize = NSSize(width: 509, height: 640)
 
-    // Where the Diagnostics tab's collapsed "Developer" row sits, then the "Activity
-    // log" row inside it once that opens, in pane points from the top left. Clicked
-    // open in turn so the screenshot shows the log.
+    // Click Developer, then Activity log, using panel coordinates from the top left.
     static let diagnosticsClicks = [NSPoint(x: 72, y: 151), NSPoint(x: 87, y: 423)]
 
     @Test(.enabled(if: outputDirectory != nil))
@@ -46,7 +34,7 @@ struct SettingsSnapshotTests {
         let tabs: [(name: String, view: AnyView, clicks: [NSPoint])] = [
             ("position", AnyView(PositionTabView()), []),
             ("banner", AnyView(BannerTabView()), []),
-            // Groups, once their own Exceptions tab, are the Banner tab with one picked.
+            // Keep the website's exceptions capture name for a selected Banner group.
             ("exceptions", AnyView(BannerTabView(initialScope: settings.appGroups.first?.id)), []),
             ("notification-center", AnyView(NotificationCenterTabView()), []),
             ("sounds", AnyView(SoundsTabView()), []),
@@ -59,10 +47,9 @@ struct SettingsSnapshotTests {
         for appearance in [NSAppearance.Name.darkAqua, .aqua] {
             let suffix = appearance == .aqua ? "-light" : ""
             for tab in tabs {
-                // The same wrapper SettingsView puts around the active tab.
                 let pane = ScrollView { tab.view.padding(16) }
-                    // Overlay-style: no legacy scroller gutter narrowing the content
-                    // when the machine has a mouse attached.
+                    // Avoid a legacy scroll gutter that changes the capture width when a mouse is
+                    // attached.
                     .scrollIndicators(.never)
                     .frame(width: Self.paneSize.width, height: Self.paneSize.height)
                     .background(Color.nannyWindow)
@@ -82,13 +69,13 @@ struct SettingsSnapshotTests {
         }
     }
 
-    // MARK: - Rendering
+    // MARK: Rendering
 
     private func render(_ view: some View, appearance: NSAppearance.Name, clicks: [NSPoint]) throws -> Data {
         let host = NSHostingView(rootView: view)
         host.frame = NSRect(origin: .zero, size: Self.paneSize)
 
-        // Borderless and far off every display, so nothing ever shows on screen.
+        // Keep the window off every display so snapshots remain invisible.
         let window = KeyLookingWindow(contentRect: NSRect(origin: NSPoint(x: -20_000, y: -20_000), size: Self.paneSize),
                               styleMask: [.borderless], backing: .buffered, defer: false)
         window.appearance = NSAppearance(named: appearance)
@@ -96,11 +83,10 @@ struct SettingsSnapshotTests {
         window.orderFrontRegardless()
         defer { window.orderOut(nil) }
 
-        // Let SwiftUI lay out, load app icons, and finish the Banner tab's preview
-        // animation, which plays once on appear.
+        // Allow layout, icon loading, and the initial preview animation to settle.
         RunLoop.main.run(until: Date().addingTimeInterval(1.2))
         for click in clicks {
-            // Window coordinates run bottom-up.
+            // Window y increases upward.
             let location = NSPoint(x: click.x, y: Self.paneSize.height - click.y)
             for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
                 let event = try #require(NSEvent.mouseEvent(
@@ -114,8 +100,7 @@ struct SettingsSnapshotTests {
         }
         host.layoutSubtreeIfNeeded()
 
-        // Always 2x, whatever display the machine has, to match the Retina captures
-        // the site was built around.
+        // Always render at Retina resolution, independent of the attached display.
         let scale: CGFloat = 2
         let rep = try #require(NSBitmapImageRep(
             bitmapDataPlanes: nil,
@@ -129,7 +114,7 @@ struct SettingsSnapshotTests {
         return try #require(rep.representation(using: .png, properties: [:]))
     }
 
-    // MARK: - Demo data
+    // MARK: Demo data
 
     private func makeDemoSettings(knownAppsFile: URL) -> AppSettings {
         // Apps that ship with macOS, so their icons resolve on any Mac.
@@ -150,8 +135,8 @@ struct SettingsSnapshotTests {
         ]
         let encoder = JSONEncoder()
 
-        // A fresh suite name each run: nothing on disk to read back, and the
-        // registration domain below is never written out.
+        // A fresh suite and registration defaults keep snapshots independent of persisted user
+        // data.
         let defaults = UserDefaults(suiteName: "NotificationNannySnapshots.\(UUID().uuidString)")!
         defaults.register(defaults: [
             "appGroups": (try? encoder.encode(groups)) ?? Data(),
@@ -177,8 +162,7 @@ struct SettingsSnapshotTests {
             ("Display woke — repositioning 2 held banner(s)", "System"),
             ("Window created — Mail", "AX"),
         ]
-        // Entries are stamped when logged; a pause between them keeps the log from
-        // showing one identical timestamp on every line.
+        // Separate sample timestamps so the demo log does not repeat the same time.
         for (index, line) in lines.enumerated() {
             logger.log(line.0, tag: line.1)
             RunLoop.main.run(until: Date().addingTimeInterval(0.15 + Double(index % 3) * 0.2))
@@ -186,14 +170,12 @@ struct SettingsSnapshotTests {
     }
 }
 
-/// Reports itself as key so AppKit-backed controls draw in their active state,
-/// without the test process ever taking focus from whatever the user is doing.
+/// Draw active AppKit controls without taking focus from the user's app.
 private final class KeyLookingWindow: NSWindow {
     override var isKeyWindow: Bool { true }
     override var isMainWindow: Bool { true }
 
-    // The window sits off every display, so AppKit would take its scale from the
-    // main one, which may be a 1x monitor; the 2x bitmap then holds a blurry
-    // upscale. Pinning it to 2 makes every layer draw at Retina resolution.
+    // Pin the backing scale so an offscreen window cannot upscale a 1x render into the Retina
+    // bitmap.
     override var backingScaleFactor: CGFloat { 2 }
 }

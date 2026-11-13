@@ -1,11 +1,5 @@
-"""How long the native panel was visible in a screen recording of where it opens.
-
-    python3 flash.py recording.mov
-
-Compares every frame with the first one (taken before the clock press) and counts
-the frames that differ, i.e. the panel showing. Prints numbers only; no frame is
-kept, since the panel lists the user's own notifications.
-"""
+"""Measure native panel visibility by comparing recording frames with the initial baseline.
+Print numbers only and retain no frames containing personal notifications."""
 import json, subprocess, sys, tempfile, os
 import numpy as np
 from PIL import Image
@@ -25,8 +19,7 @@ with tempfile.TemporaryDirectory() as d:
     frames = [np.asarray(Image.open(os.path.join(d, n)), dtype=np.float32) for n in names]
 
 base = frames[0]
-# Share of pixels that changed strongly: glass over a dark page barely moves the
-# mean, but rows of text flip many pixels by a lot.
+# Count strongly changed pixels because text changes are clearer than the glass's mean brightness.
 changed = [float((np.abs(f - base) > 30).mean() * 100) for f in frames]
 step = max(1, round(fps / 10))
 timeline = " ".join(f"{max(changed[i:i + step]):.0f}" for i in range(0, len(changed), step))

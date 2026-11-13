@@ -1,23 +1,5 @@
-// Panel lab: one experiment per question the custom Notification Center panel
-// depends on. Run through run.sh, which builds it, posts Lab rows, films the
-// flash runs and cleans up. Only Lab rows are ever acted on.
-//
-//   lab uuid             do a row's AXIdentifier, and a banner's, survive the panel
-//                        closing and opening again?
-//   lab flash native     open and close the panel without touching it (baseline)
-//   lab flash react      park NC's window the moment the panel is seen open
-//   lab flash prepark    park it before the clock press (needs a banner up, or
-//                        there is no window to park)
-//   lab tap              park the open panel, show a panel of ours, and catch
-//                        clicks on it with an event tap before NC sees them;
-//                        re-post them to us only. Does NC's panel stay open, and
-//                        does our panel still get the click?
-//   lab skin             a click-through panel of ours over the real one: do a
-//                        click and a scroll still reach the real rows?
-//   lab actions          what Show Details and Show do to a Lab stack
-//   lab host             whether NC has a window right now (prints yes/no)
-//
-// Needs Accessibility for the app running it.
+// Probe native panel behavior using Lab notifications and restore native state afterward.
+// Requires Accessibility; experiment commands are in docs/LABS.md.
 
 import AppKit
 import ApplicationServices
@@ -88,9 +70,7 @@ let ncApp = AXUIElementCreateApplication(nc.processIdentifier)
 AXUIElementSetMessagingTimeout(ncApp, 2)
 
 func windows() -> [AXUIElement] { attr(ncApp, kAXWindowsAttribute) as? [AXUIElement] ?? [] }
-/// The fullscreen window the banners and the panel live in. Never just the widest window:
-/// each desktop widget is a Notification Center window too, and with the panel closed it
-/// can be the only one, which once got a widget moved to the panel's place.
+/// Find the fullscreen host explicitly; desktop widget windows must never be moved as panel hosts.
 func host() -> AXUIElement? {
     windows().filter { str($0, kAXSubroleAttribute) == "AXSystemDialog" }
         .max { (frame($0)?.width ?? 0) < (frame($1)?.width ?? 0) }
@@ -138,8 +118,8 @@ func restore() {
 }
 signal(SIGINT) { _ in restore(); exit(130) }
 
-/// A real click at `point` (AX/CG coordinates, top-left origin), only if the frontmost
-/// window there belongs to `owner`; anything else is the user's and is never clicked.
+/// Click in AX coordinates only when the frontmost window belongs to `owner`; other windows belong
+/// to the user.
 func click(at point: CGPoint, ifFrontIs owner: pid_t, skippingOurs: Bool = false) -> Bool {
     let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID) as? [[String: Any]] ?? []
     let front = list.first { info in
@@ -148,7 +128,7 @@ func click(at point: CGPoint, ifFrontIs owner: pid_t, skippingOurs: Bool = false
               let rect = CGRect(dictionaryRepresentation: b as CFDictionary) else { return false }
         return rect.contains(point) && (info[kCGWindowAlpha as String] as? Double ?? 0) > 0
     }
-    // NN_LAB_RECORDING=1: a screen recording puts a window of its own over the area.
+    // Recording mode permits the capture window covering the target.
     guard front?[kCGWindowOwnerPID as String] as? pid_t == owner || ProcessInfo.processInfo.environment["NN_LAB_RECORDING"] == "1" else {
         print("  (not clicking: front window at the point is pid \(front?[kCGWindowOwnerPID as String] ?? "none"))")
         return false
@@ -183,7 +163,7 @@ func makePanel(_ rect: NSRect, clickThrough: Bool) -> (NSPanel, CountingView) {
     panel.orderFrontRegardless()
     return (panel, view)
 }
-/// AX rect (top-left origin) to AppKit rect on the main display.
+/// Convert AX rectangles to AppKit coordinates on the main display.
 func appKitRect(_ r: CGRect) -> NSRect {
     NSRect(x: r.minX, y: NSScreen.screens[0].frame.maxY - r.maxY, width: r.width, height: r.height)
 }
@@ -259,8 +239,7 @@ case "tap":
     let (panel, view) = makePanel(rect, clickThrough: false)
     let cgRect = CGRect(x: rect.minX, y: screen.maxY - rect.maxY, width: rect.width, height: rect.height)
 
-    // The tap swallows clicks inside our panel and re-posts them to this process only,
-    // so no other app's monitor sees a click outside NC's panel.
+    // Swallow and forward our panel's clicks so Notification Center never sees an outside click.
     struct Tap {
         static var rect = CGRect.zero; static var swallowed = 0; static var tap: CFMachPort?
         static var panel: NSPanel?
@@ -276,8 +255,7 @@ case "tap":
         }
         guard Tap.rect.contains(event.location) else { return Unmanaged.passUnretained(event) }
         Tap.swallowed += 1
-        // Hand it to our panel ourselves, in its own coordinates; it never reaches the
-        // window server's other listeners.
+        // Deliver directly in panel coordinates, bypassing other window server listeners.
         if let panel = Tap.panel {
             let screenTop = NSScreen.screens[0].frame.maxY
             let p = NSPoint(x: event.location.x - panel.frame.minX,
@@ -363,8 +341,8 @@ case "actions":
     restore()
 
 case "list":
-    // The list's direct children, in order, after expanding one Lab stack while parked.
-    // Only Lab rows and buttons/headings keep their text.
+    // Dump list order after expanding a parked Lab stack; preserve text only for Lab rows and
+    // native controls.
     guard openPanel(), let h = host(), let home = frame(h)?.origin else { print("panel did not open"); restore(); exit(1) }
     hostHome = home
     _ = setPoint(h, CGPoint(x: home.x, y: -9999))
@@ -400,9 +378,8 @@ case "list":
     restore()
 
 case "ids":
-    // Notes each Lab banner's identifier the first time it is up, for <seconds>, then
-    // opens the panel parked, expands every Lab stack and says which rows were seen as
-    // banners. Decides whether a time noted at the banner can be shown on its row.
+    // Track first seen banner IDs, then compare with parked panel rows to test notification
+    // identity continuity.
     let seconds = Double(args.dropFirst().first ?? "8") ?? 8
     var seen: [String: (String, Double)] = [:]
     let start = now()
@@ -435,8 +412,7 @@ case "ids":
     restore()
 
 case "widgets":
-    // Where widgets live: every NC window with the panel closed, then the open panel
-    // (parked) outside its notification list. Text shows as its length only.
+    // Inspect widgets outside the notification list, exposing personal text only as lengths.
     func dumpTree(_ e: AXUIElement, depth: Int, maxDepth: Int, skipList: Bool, inWidget: Bool = false) {
         guard depth <= maxDepth else { return }
         let id = str(e, kAXIdentifierAttribute)
@@ -446,7 +422,7 @@ case "widgets":
         }
         let role = str(e, kAXRoleAttribute) ?? "?"
         let sub = str(e, kAXSubroleAttribute).map { "/\($0)" } ?? ""
-        // --text shows widget text in full (widgets only; notifications are skipped anyway).
+        // Expose full widget text only when explicitly requested; skip notification text.
         let full = args.contains("--text") && (inWidget || (id ?? "").hasPrefix("widget-local:"))
         let texts = Array(Set([kAXTitleAttribute, kAXDescriptionAttribute, kAXValueAttribute, "AXAttributedDescription"]
             .compactMap { str(e, $0) }.filter { !$0.isEmpty })).map { full ? "\"\($0)\"" : "<\($0.count)>" }
@@ -477,8 +453,7 @@ case "widgets":
     restore()
 
 case "widget-shot":
-    // Can the parked panel's window be captured? Saves only the widgets' part of it to
-    // <out>.png, cropped by their frames, so notifications never end up in the file.
+    // Capture parked widgets only, cropping out notifications before saving.
     let out = args.dropFirst().first ?? "build/panel-lab/widget"
     guard pressClock(), waitFor(3, { isOpen() }) != nil, let h = host(), let home = frame(h)?.origin else {
         print("panel did not open"); restore(); exit(1)
@@ -521,9 +496,8 @@ case "widget-shot":
     restore()
 
 case "widget-menu":
-    // A widget's own menu (a right click on it in the real panel): its actions, and what
-    // AXShowMenu opens, on the widget and on its children, parked as the app parks it.
-    // The menu is closed with Escape, nothing in it pressed.
+    // Inspect native widget menus and AXShowMenu targets while parked; dismiss without choosing an
+    // action.
     guard pressClock(), waitFor(3, { isOpen() }) != nil, let h = host(), let hf = frame(h) else {
         print("panel did not open"); restore(); exit(1)
     }
@@ -551,8 +525,7 @@ case "widget-menu":
         let found = menus(h) + menus(t)
         if found.count > before, let m = found.last {
             print("   menu: \(children(m).map { "\(str($0, kAXTitleAttribute) ?? "")[\(str($0, kAXIdentifierAttribute) ?? "")] h\(Int(frame($0)?.height ?? 0))" })")
-            // Which windows of Notification Center's are on screen with the menu up, at
-            // which level: the menu, and the widget it lifts beside it.
+            // Report the menu and lifted widget's window levels and frames.
             print("   menu frame \(frame(m).map { "(\(Int($0.minX)),\(Int($0.minY)) \(Int($0.width))x\(Int($0.height)))" } ?? "?")")
             for w in (CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID) as? [[String: Any]] ?? [])
             where w[kCGWindowOwnerPID as String] as? pid_t == nc.processIdentifier {
@@ -570,12 +543,8 @@ case "widget-menu":
     restore()
 
 case "widget-park":
-    // Where can the open panel's window be, unseen, and still have its widgets drawn for a
-    // capture? `widget-park <out> <x|top|off|home>`: parked as the app parks it, then moved
-    // so that only the window's left column is on screen at the right edge (x), only its
-    // bottom row at the top (top), nowhere (off), or back home. Writes the window number
-    // to <out>.wid for scripts/panel-lab/shot.sh to capture into <out>-full.png, waits for
-    // it, keeps only the widgets' crops (<out>-0.png…) and deletes the full capture.
+    // Compare rendering at the screen edge, top row, fully parked, and home positions.
+    // Retain widget crops only and delete the full capture; see docs/LABS.md for commands.
     let out = args.dropFirst().first ?? "build/panel-lab/park"
     let mode = args.dropFirst(2).first ?? "x"
     guard let screen = NSScreen.screens.first else { exit(1) }
@@ -593,7 +562,7 @@ case "widget-park":
     default: target = CGPoint(x: hf.minX, y: -9999)
     }
     _ = setPoint(h, target)
-    // Notification Center may put it back; held where it was put.
+    // Reapply the test position if Notification Center restores its host.
     for _ in 0..<8 { spin(0.1); if let p = frame(h)?.origin, hypot(p.x - target.x, p.y - target.y) > 1 { _ = setPoint(h, target) } }
     let widgets = { () -> [CGRect] in
         var found: [AXUIElement] = []
@@ -650,8 +619,7 @@ case "widget-park":
     restore()
 
 case "widget-cover":
-    // The real panel left on screen under an opaque window of ours: can its widgets be
-    // captured then, and does it stay hidden? Saves only the widgets' crop.
+    // Test widget capture under an opaque cover, saving widget crops only.
     let out = args.dropFirst().first ?? "build/panel-lab/widget-covered"
     guard let screen = NSScreen.screens.first else { exit(1) }
     // Below the menu bar: over it, the cover would hide the clock from the hit test.
@@ -702,9 +670,7 @@ case "widget-cover":
     restore()
 
 case "widget-hold":
-    // The real panel open under a grey cover for 6 s, captured every 2 s by <mode>:
-    // none, shot (screencapture -l) or sck (ScreenCaptureKit, as the app does). When,
-    // if at all, does Notification Center close it? Nothing captured is kept.
+    // Measure whether repeated native captures close the panel; retain no captured images.
     let mode = args.dropFirst().first ?? "none"
     guard let screen = NSScreen.screens.first else { exit(1) }
     let coverRect = NSRect(x: screen.frame.maxX - 800, y: screen.visibleFrame.minY, width: 800, height: screen.visibleFrame.height)
@@ -718,8 +684,7 @@ case "widget-hold":
         print("panel did not open"); cover.orderOut(nil); restore(); exit(1)
     }
     hostHome = hf.origin
-    // move:dx,dy parks the window first, then brings it back on screen offset by that
-    // much from where Notification Center had it, the way the app lines it up under ours.
+    // Offset the restored host to test the alignment used for forwarding widget clicks.
     if mode.hasPrefix("move:") {
         let parts = mode.dropFirst(5).split(separator: ",").compactMap { Double($0) }
         _ = setPoint(h, CGPoint(x: hf.minX, y: -9999))
@@ -776,10 +741,8 @@ case "widget-hold":
     restore()
 
 case "tree":
-    // The whole open panel as Notification Center has it, every element with its role,
-    // identifier, frame, actions and every attribute it has, left where it is. Text keeps
-    // only in Lab rows and in the panel's own chrome (headings, buttons); the rest is its
-    // length. `tree keep` leaves the panel open afterwards.
+    // Dump the native tree, keeping text only for Lab rows and native controls; redact other text
+    // to lengths.
     guard openPanel() else { print("panel did not open"); exit(1) }
     spin(0.6)
     func describe(_ e: AXUIElement, depth: Int, inLab: Bool, inRow: Bool) {
@@ -821,11 +784,8 @@ case "tree":
     if args.dropFirst().first != "keep" { closePanel() }
 
 case "real-hover":
-    // The real panel, left on screen: rests the pointer on the Lab row whose title starts
-    // with the argument, captures just that row before and while hovered, and prints its
-    // subtree each time. `real-hover Title menu` then shows the row's menu (AXShowMenu on
-    // its title, what a right click or the ⋯ does), prints the menu and captures it, and
-    // cancels it. Only Lab rows are hovered, captured or acted on; the pointer goes back.
+    // Capture and inspect a Lab row before hover, during hover, and with its menu open; restore the
+    // pointer.
     let title = args.count > 1 ? args[1] : "Lab"
     guard openPanel() else { print("panel did not open"); exit(1) }
     spin(0.6)
@@ -881,8 +841,7 @@ case "real-hover":
     restore()
 
 case "parked-menu":
-    // With the panel parked, does a Lab row's menu open, where, and does an item in it
-    // reach the app? Picks the argument (default Snooze), which the Lab app logs.
+    // Select a Lab menu action while parked and confirm delivery through the sender's response log.
     let item = args.count > 1 ? args[1] : "Snooze"
     guard openPanel(), let h = host(), let home = frame(h)?.origin else { print("panel did not open"); restore(); exit(1) }
     hostHome = home
@@ -898,7 +857,7 @@ case "parked-menu":
     else { print("no Lab row offering \(item)"); restore(); exit(1) }
     print("pointer at \(CGEvent(source: nil)!.location)")
     let t0 = now()
-    // The call waits for the menu to close; a short timeout lets it return at once.
+    // Use a short AX timeout because opening a menu waits for its closure.
     AXUIElementSetMessagingTimeout(text, 0.05)
     _ = AXUIElementPerformAction(text, kAXShowMenuAction as CFString)
     print("call returned after \(ms(now() - t0))")
@@ -936,8 +895,7 @@ case "parked-menu":
     restore()
 
 case "real-times":
-    // The time Notification Center draws on each row: the row's one text without an
-    // identifier. Prints the times only, never what a notification says.
+    // Print native time labels only; they are the row texts without identifiers.
     guard openPanel(), let h = host(), let home = frame(h)?.origin else { print("panel did not open"); restore(); exit(1) }
     hostHome = home
     _ = setPoint(h, CGPoint(x: home.x, y: -9999))
@@ -1092,9 +1050,8 @@ case "reply-send":
     spin(1.5)
 
 case "type":
-    // Focuses Notification Center's reply field for a Lab notification and types into it
-    // with real keystrokes, but only once the system says that field has the keyboard
-    // focus: otherwise the keys would land in whatever app is in front.
+    // Type real keys only after confirming the Lab reply field owns focus, protecting the frontmost
+    // app.
     let text = args.dropFirst().joined(separator: " ")
     var field: AXUIElement?
     for w in windows() {
@@ -1126,8 +1083,7 @@ case "type":
     print("field now \"\(str(field, kAXValueAttribute) ?? "")\"")
 
 case "panel-reply":
-    // The whole reply, in the open panel parked off screen: Reply on a Lab row, focus its
-    // field, type with real keystrokes (only if the field has the focus), press Send.
+    // Exercise the parked reply path: open, focus, type, and send only on a Lab notification.
     let text = args.dropFirst().joined(separator: " ")
     guard pressClock(), waitFor(3, { isOpen() }) != nil, let h = host(), let home = frame(h)?.origin else {
         print("panel did not open"); restore(); exit(1)
@@ -1169,9 +1125,7 @@ case "panel-reply":
     restore()
 
 case "unpark":
-    // Puts Notification Center's window back on the main screen if something left it
-    // parked: a NotificationNanny stopped by a script doesn't get to, and with nothing
-    // running, banners would then arrive off screen.
+    // Restore a parked host after forced shutdown so future banners remain visible.
     guard let h = host(), let p = frame(h)?.origin else { print("no window to unpark"); exit(0) }
     if p.y < -1000 || p.x < -1000 {
         let err = setPoint(h, .zero)
@@ -1181,8 +1135,7 @@ case "unpark":
     }
 
 case "hover-test":
-    // Does hover reach a window of an app that isn't active, with a synthetic pointer
-    // move? An AppKit tracking area (always active) against SwiftUI's onHover.
+    // Compare AppKit and SwiftUI hover delivery in an inactive app using synthetic pointer moves.
     final class Tracker: NSView {
         var entered = 0
         override func updateTrackingAreas() {
@@ -1226,8 +1179,7 @@ case "hover-test":
     panel.orderOut(nil)
 
 case "panel-shots":
-    // The real panel as it looks, for the replica: crops of the Lab rows only (and the
-    // heading lines), with every frame written down. Nothing else of the panel is saved.
+    // Save Lab row and heading crops only, with measured frames.
     let dir = args.dropFirst().first ?? "build/panel-lab/real"
     try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
     var notes: [String] = []
@@ -1281,20 +1233,18 @@ case "panel-shots":
     print(notes.joined(separator: "\n"))
 
 case "backdrop":
-    // A plain gray window over everything but our panel, for <seconds>, so an on-screen
-    // capture of the panel shows nothing of what is behind it on the user's screen.
+    // Cover personal desktop content with gray during transparent panel captures.
     let parts = (args.dropFirst().first ?? "").split(separator: ",").compactMap { Double($0) }
     let seconds = Double(args.dropFirst(2).first ?? "3") ?? 3
     // Optional window level: just under ours by default; under Notification Center's (21)
     // to put it behind the real panel.
     let level = Int(args.dropFirst(3).first ?? "") ?? (NSWindow.Level.statusBar.rawValue - 1)
     guard parts.count == 4, let primary = NSScreen.screens.first else { print("usage: lab backdrop x,y,w,h seconds"); exit(64) }
-    // Wide: glass blurs more than what is right under it, and a narrow backdrop let what
-    // was on the screen around it shift the measurements from run to run.
+    // Pad the backdrop because glass also samples neighboring pixels outside the panel.
     let pad = 150.0
     let rect = NSRect(x: parts[0] - pad, y: primary.frame.maxY - parts[1] - parts[3] - pad,
                       width: parts[2] + pad * 2, height: parts[3] + pad * 2)
-    // A non-activating panel: a plain window showing up closes Notification Center's panel.
+    // Use a nonactivating panel; taking focus would close Notification Center.
     let w = NSPanel(contentRect: rect, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
     w.level = NSWindow.Level(rawValue: level)
     w.backgroundColor = NSColor(calibratedWhite: 0.42, alpha: 1)
@@ -1304,8 +1254,7 @@ case "backdrop":
     spin(seconds)
 
 case "app-actions":
-    // Which buttons the notifications in Notification Center offer, per app: app names
-    // and action names only, never what a notification says. The panel opens parked.
+    // Inspect app and action names only in the parked panel; never print notification content.
     guard pressClock(), waitFor(3, { isOpen() }) != nil, let h = host(), let home = frame(h)?.origin else {
         print("panel did not open"); restore(); exit(1)
     }
@@ -1322,9 +1271,7 @@ case "app-actions":
     restore()
 
 case "lab-rect":
-    // The area of the open panel holding the Lab rows, from its top to below the last,
-    // as screencapture -R wants it; the width of ours (its window). Nothing below the
-    // Lab rows, where the user's own notifications are, is in it.
+    // Return the capture bounds for Lab rows only, excluding personal history below them.
     guard let primary = NSScreen.screens.first else { exit(1) }
     let frames = labRows().compactMap(frame)
     guard let bottom = frames.map(\.maxY).max() else { print("no Lab rows"); exit(1) }
@@ -1334,8 +1281,7 @@ case "lab-rect":
     print("\(Int(x)),\(Int(top)),\(Int(width)),\(Int(bottom + 16 + 8 - top))")
 
 case "scrim-test":
-    // Does Notification Center darken the screen while its panel is open, and where?
-    // Gray patches just under its window, measured with the panel closed and open.
+    // Measure native dimming against gray patches with the panel closed and open.
     guard let primary = NSScreen.screens.first else { exit(1) }
     let f = primary.frame
     let spots: [(String, CGRect)] = [
@@ -1384,12 +1330,9 @@ case "scrim-test":
 case "clock":
     exit(pressClock() ? 0 : 1)
 
-// The ui-* commands drive NotificationNanny's own panel (pid as the second argument)
-// through its accessibility tree, with real clicks.
+// Drive our panel through AX and real clicks using its PID; see docs/LABS.md for commands.
 case "ui-settings", "ui-sdrag":
-    // ui-settings: opens NotificationNanny's Settings with its menu bar icon and picks the
-    // Notification Center tab. ui-sdrag dx,dy: drags the panel's place on that tab's
-    // preview by dx,dy points, with real pointer events, only where Settings is in front.
+    // Open Settings or drag its panel preview with real events only where Settings is frontmost.
     guard args.count >= 2, let pid = pid_t(args[1]) else { print("usage: lab \(args[0]) <pid> [dx,dy]"); exit(64) }
     let nnApp = AXUIElementCreateApplication(pid)
     AXUIElementSetMessagingTimeout(nnApp, 2)
@@ -1420,7 +1363,7 @@ case "ui-settings", "ui-sdrag":
     } else {
         guard let w = settingsWindow() else { print("   Settings isn't open"); exit(1) }
         let all = texts(in: w)
-        // The card's title, not the sidebar's tab of the same name: the one right above the note.
+        // Find the card title above its note, not the sidebar item with the same name.
         guard let note = all.first(where: { $0.0.hasSuffix("Drag it anywhere on the preview.") }),
               let header = all.filter({ $0.0 == "Position" && $0.1.maxY < note.1.minY && $0.1.minX > note.1.minX - 260 })
                 .max(by: { $0.1.minY < $1.1.minY }) else { print("   no position card"); exit(1) }
@@ -1452,9 +1395,8 @@ case "ui-settings", "ui-sdrag":
     }
 
 case "ui-clicktop":
-    // Clicks the first row of our panel the moment its window is on screen, placed from
-    // the window server's frame (the tree's frames lag right after it shows): 100 in from
-    // its left, 28 down from its top, where the first row's title is with nothing above.
+    // Click the first row as soon as it appears, using current window server bounds because AX
+    // frames lag.
     guard args.count >= 2, let pid = pid_t(args[1]) else { print("usage: lab ui-clicktop <pid>"); exit(64) }
     let t0 = now()
     var spot: CGPoint?
@@ -1472,8 +1414,7 @@ case "ui-clicktop":
     exit(click(at: spot, ifFrontIs: pid) ? 0 : 1)
 
 case "ui-menu":
-    // A menu NotificationNanny has open (an NSMenu, not in any window): prints its items,
-    // and presses the one named, if any.
+    // Read the app's open NSMenu and optionally select the named item.
     guard args.count >= 2, let pid = pid_t(args[1]) else { print("usage: lab ui-menu <pid> [item]"); exit(64) }
     let nnApp = AXUIElementCreateApplication(pid)
     AXUIElementSetMessagingTimeout(nnApp, 2)
@@ -1492,9 +1433,7 @@ case "ui-state", "ui-click", "ui-close", "ui-button", "ui-winid", "ui-scroll", "
     guard args.count >= 2, let pid = pid_t(args[1]) else { print("usage: lab \(args[0]) <pid> [text]"); exit(64) }
     let nn = AXUIElementCreateApplication(pid)
     AXUIElementSetMessagingTimeout(nn, 2)
-    // Only the panel: custom banner overlays are windows of the app too, and can show
-    // the same text. The panel is the largest. NN_LAB_TARGET=banners looks at the
-    // banner overlays instead.
+    // Choose the largest window for panel commands; NN_LAB_TARGET=banners selects overlays instead.
     let allNN = attr(nn, kAXWindowsAttribute) as? [AXUIElement] ?? []
     let nnWindows = ProcessInfo.processInfo.environment["NN_LAB_TARGET"] == "banners" ? allNN
         : allNN.max { (frame($0).map { $0.width * $0.height } ?? 0) < (frame($1).map { $0.width * $0.height } ?? 0) }
@@ -1519,7 +1458,7 @@ case "ui-state", "ui-click", "ui-close", "ui-button", "ui-winid", "ui-scroll", "
                 .map { $0.width * $0.height } ?? 0
         }
         guard let top = mine.max(by: { area($0) < area($1) }), let id = top[kCGWindowNumber as String] as? Int else { print("none"); exit(1) }
-        // `ui-winid <pid> frame`: where it is, rather than its number.
+        // The frame argument requests bounds rather than the window number.
         if args.dropFirst(2).first == "frame", let b = top[kCGWindowBounds as String] as? NSDictionary,
            let r = CGRect(dictionaryRepresentation: b as CFDictionary) {
             print("   panel window: \(Int(r.minX)),\(Int(r.minY)) \(Int(r.width))x\(Int(r.height))")
@@ -1527,12 +1466,12 @@ case "ui-state", "ui-click", "ui-close", "ui-button", "ui-winid", "ui-scroll", "
             print(id)
         }
     case "ui-rect":
-        // Our panel's frame as screencapture -R wants it.
+        // Return the panel capture rectangle.
         guard let f = nnWindows.compactMap(frame).first else { print("none"); exit(1) }
         print("\(Int(f.minX)),\(Int(f.minY)),\(Int(f.width)),\(Int(f.height))")
     case "ui-frames":
-        // Where every text is, ours and Notification Center's own rows', from the top left
-        // of each row's window, to see overlaps and line counts without a screenshot.
+        // Compare native and custom text frames relative to their windows to detect wrapping and
+        // overlap.
         func line(_ e: AXUIElement, origin: CGPoint) -> String {
             guard let f = frame(e) else { return "?" }
             let t = text(e).prefix(28)
@@ -1560,7 +1499,6 @@ case "ui-state", "ui-click", "ui-close", "ui-button", "ui-winid", "ui-scroll", "
         print("NC panel open: \(isOpen()), NC window y: \(host().flatMap(frame).map { "\(Int($0.minY))" } ?? "none")")
         print("NC Lab rows: \(labRows().map { "\(str($0, kAXSubroleAttribute)?.replacingOccurrences(of: "AXNotificationCenter", with: "") ?? "?"):\(label($0).split(separator: ",").dropFirst().first.map { $0.trimmingCharacters(in: .whitespaces) } ?? "?")" }.joined(separator: " | "))")
     case "ui-hover":
-        // Rests the pointer on the text in our panel, and leaves it there.
         let want = args.dropFirst(2).joined(separator: " ")
         guard let t = texts.first(where: { text($0) == want }), let f = frame(t) else { print("no text \(want)"); exit(1) }
         CGEvent(mouseEventSource: nil, mouseType: .mouseMoved, mouseCursorPosition: CGPoint(x: f.midX, y: f.midY), mouseButton: .left)!
@@ -1568,14 +1506,12 @@ case "ui-state", "ui-click", "ui-close", "ui-button", "ui-winid", "ui-scroll", "
         // An event posted right before the process exits can be dropped.
         usleep(150_000)
     case "ui-widget":
-        // Clicks the middle of the first widget picture in our panel.
         guard let img = elements.filter({ role($0) == "AXImage" }).compactMap({ e in frame(e).map { (e, $0) } })
                 .max(by: { $0.1.width * $0.1.height < $1.1.width * $1.1.height }), img.1.width > 100 else {
             print("no widget picture"); exit(1)
         }
         print("widget picture \(Int(img.1.width))x\(Int(img.1.height))")
         let point = CGPoint(x: img.1.midX, y: img.1.midY)
-        // `ui-widget <pid> right`: a right click there instead, for the widget's menu.
         if args.dropFirst(2).first == "right" {
             let back = CGEvent(source: nil)!.location
             for type in [CGEventType.mouseMoved, .rightMouseDown, .rightMouseUp] {
@@ -1595,11 +1531,10 @@ case "ui-state", "ui-click", "ui-close", "ui-button", "ui-winid", "ui-scroll", "
         // A scroll wheel over our panel: it must not close Notification Center's.
         guard let f = nnWindows.compactMap(frame).max(by: { $0.height < $1.height }) else { print("no panel"); exit(1) }
         var point = CGPoint(x: f.midX, y: f.midY)
-        // `ui-scroll <pid> gap`: over the clear gap between two rows instead, where the
-        // window server sees no pixel of ours. A row's text ends 13 above its bottom, the
-        // next starts 12 under its top, and rows stand 6 apart.
+        // Probe the transparent row gap: 13 points after text, 6 between rows, and 12 before the
+        // next text.
         let texts = elements.filter { role($0) == "AXStaticText" }.compactMap(frame).sorted { $0.minY < $1.minY }
-        // Where each text is: a text seen before and after shows how far the list moved.
+        // Track text positions to measure actual scroll distance.
         let textYs = { () -> [String: CGFloat] in
             var ys: [String: CGFloat] = [:]
             for e in (attr(nn, kAXWindowsAttribute) as? [AXUIElement] ?? []).flatMap({ all($0) }) where role(e) == "AXStaticText" {
@@ -1624,7 +1559,7 @@ case "ui-state", "ui-click", "ui-close", "ui-button", "ui-winid", "ui-scroll", "
         CGEvent(mouseEventSource: nil, mouseType: .mouseMoved, mouseCursorPosition: point, mouseButton: .left)!.post(tap: .cghidEventTap)
         usleep(80_000)
         for _ in 0..<6 {
-            // NN_LAB_WHEEL sets the step; the default -60 is up the list under natural scrolling.
+            // NN_LAB_WHEEL overrides the default upward step under natural scrolling.
             let step = Int32(ProcessInfo.processInfo.environment["NN_LAB_WHEEL"] ?? "") ?? -60
             let wheel = CGEvent(scrollWheelEvent2Source: nil, units: .pixel, wheelCount: 1, wheel1: step, wheel2: 0, wheel3: 0)!
             wheel.location = point
@@ -1637,17 +1572,14 @@ case "ui-state", "ui-click", "ui-close", "ui-button", "ui-winid", "ui-scroll", "
         let moved = before.compactMap { key, y in after[key].map { y - $0 } }.max(by: { abs($0) < abs($1) }) ?? 0
         print("scrolled at y \(Int(point.y)); our list moved \(Int(moved)) points; NC panel \(isOpen() ? "open" : "CLOSED")")
     case "ui-click":
-        // Clicks as soon as the text shows, for a click right after the panel opens.
         let want = args.dropFirst(2).joined(separator: " ")
-        // The tree's frames lag when the window comes back at another size, so the text's
-        // place is taken relative to its window there, and the window's from the window
-        // server, which is always current.
+        // Combine AX text offsets with current window server bounds because AX window frames lag
+        // after resizing.
         func findNow() -> CGRect? {
             let wins = (attr(nn, kAXWindowsAttribute) as? [AXUIElement] ?? [])
             let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID) as? [[String: Any]] ?? []
             for w in wins {
-                // Only the panel: a custom banner of the same notification shows the same
-                // text until the panel opens. The panel is the one with Edit Widgets.
+                // Identify the panel by Edit Widgets so a matching banner cannot become the target.
                 let inside = all(w)
                 guard inside.contains(where: { text($0) == "Edit Widgets" }) else { continue }
                 guard let t = inside.first(where: { role($0) == "AXStaticText" && text($0) == want }), let f = frame(t),
@@ -1659,8 +1591,8 @@ case "ui-state", "ui-click", "ui-close", "ui-button", "ui-winid", "ui-scroll", "
                 }
                 guard let b = real?[kCGWindowBounds as String] as? NSDictionary,
                       let r = CGRect(dictionaryRepresentation: b as CFDictionary) else { return f }
-                // Top left of the window to the text: what moves with a stale frame is the
-                // window's bottom, and SwiftUI lays out from the top.
+                // Use the window's top left because SwiftUI lays out from the top while stale
+                // bounds move the bottom.
                 return f.offsetBy(dx: r.minX - wf.minX, dy: r.minY - wf.minY)
             }
             return nil
@@ -1691,7 +1623,6 @@ case "ui-state", "ui-click", "ui-close", "ui-button", "ui-winid", "ui-scroll", "
         }
         exit(click(at: CGPoint(x: f.midX, y: f.midY), ifFrontIs: pid) ? 0 : 1)
     case "ui-rclick":
-        // A right click on the text in our panel, only if our panel is in front there.
         let want = args.dropFirst(2).joined(separator: " ")
         guard let t = texts.first(where: { text($0) == want }), let f = frame(t) else { print("no text \(want)"); exit(1) }
         let point = CGPoint(x: f.midX, y: f.midY)
@@ -1709,9 +1640,7 @@ case "ui-state", "ui-click", "ui-close", "ui-button", "ui-winid", "ui-scroll", "
             usleep(60_000)
         }
     case "ui-close":
-        // The ✕ of the row whose title is the text: over the row's top left corner, where
-        // it shows on hover (hover the row first). For a heading, the ✕ at its right, level
-        // with it.
+        // Hover before clicking a row's corner close button; header close buttons sit at the right.
         let want = args.dropFirst(2).joined(separator: " ")
         guard let t = texts.first(where: { text($0) == want }), let f = frame(t) else { print("no text \(want)"); exit(1) }
         let buttons = elements.filter { role($0) == "AXButton" }.compactMap { b in frame(b).map { (b, $0) } }
@@ -1720,7 +1649,7 @@ case "ui-state", "ui-click", "ui-close", "ui-button", "ui-winid", "ui-scroll", "
         guard let b = corner.min(by: { $0.1.minX > $1.1.minX }) ?? level.max(by: { $0.1.minX < $1.1.minX })
         else { print("no close button by \(want)"); exit(1) }
         exit(click(at: CGPoint(x: b.1.midX, y: b.1.midY), ifFrontIs: pid) ? 0 : 1)
-    default: // ui-button
+    default:
         let want = args.dropFirst(2).joined(separator: " ")
         let match = elements.first { role($0) == "AXButton" && text($0) == want }
             ?? texts.first { text($0) == want }

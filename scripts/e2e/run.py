@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Opt-in live macOS smoke tests. See docs/E2E.md for preparation and limits."""
+"""Explicitly enabled live macOS smoke tests. See docs/E2E.md for preparation and limits."""
 import argparse
 import fcntl
 import json
@@ -49,7 +49,7 @@ def custom_stacked(sample, titles, scale=1.25):
     overlays = sample["overlays"]
     if len(overlays) != len(titles) or not all(any(t in b["texts"] for b in overlays) for t in titles):
         return False
-    # The AX window includes the transparent close-button margin.
+    # The AX window includes the transparent close button margin.
     margin = 8 * scale
     frames = [{"x": b["frame"]["x"] + margin, "y": b["frame"]["y"] + margin,
                "width": b["frame"]["width"] - 2 * margin, "height": b["frame"]["height"] - 2 * margin} for b in overlays]
@@ -206,8 +206,7 @@ class Smoke:
         if self.process is None:
             return
         errors = []
-        # Clear while the observer is still alive, then quit through AppKit so
-        # applicationWillTerminate restores any parked Notification Center host.
+        # Clear while the observer is active, then quit normally to restore parked hosts.
         for app in ["Alpha", "Bravo", "Charlie"]:
             try:
                 command([ROOT / "build/notify-lab" / f"Lab {app}.app/Contents/MacOS/notifier", "--clear"], timeout=5)
@@ -261,8 +260,7 @@ def main():
     if b"NN_E2E_DIRECTORY" not in (smoke.app / "Contents/MacOS/NotificationNanny").read_bytes():
         raise Unavailable("this app predates isolated E2E settings; rebuild from the testing branch")
     run.mkdir(parents=True)
-    # All worktrees share the desktop; a process-wide lock prevents two suites
-    # from posting/clearing each other's Lab notifications.
+    # Worktrees share the desktop; lock across processes to isolate Lab notifications.
     with open("/tmp/notificationnanny-e2e.lock", "w") as lock:
         try:
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)

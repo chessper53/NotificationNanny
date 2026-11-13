@@ -39,9 +39,7 @@ final class AppNameResolver {
         return nil
     }
 
-    /// Every banner in the window, not just the first. Since macOS 26 they all
-    /// share one host window, so banners that are up together are siblings in
-    /// the same tree, newest first.
+    /// Finds all banners in a shared host, newest first from macOS 26 onward.
     func findBannerElements(in el: AXUIElement, depth: Int = 0) -> [AXUIElement] {
         guard depth < 7 else { return [] }
         if let sr = el.stringAttribute(kAXSubroleAttribute as String), Self.bannerSubroles.contains(sr) {
@@ -50,30 +48,24 @@ final class AppNameResolver {
         return el.children().flatMap { findBannerElements(in: $0, depth: depth + 1) }
     }
 
-    /// The app a single banner belongs to, from its description ("App, Title,
-    /// Body"). `appName(for:)` answers for a window, which since macOS 26 holds
-    /// every banner that is up.
+    /// Extracts the app name from a single banner description, not the shared window.
     nonisolated static func appName(fromDescription description: String) -> String? {
         guard let first = description.components(separatedBy: ", ").first else { return nil }
         let cleaned = cleanAXString(first)
         return cleaned.isEmpty ? nil : cleaned
     }
 
-    /// The app, given the banner's title too. A Persistent banner on macOS 27
-    /// describes itself as "App Title, Body", with no comma after the app, so the
-    /// first part alone runs the app into the title. The title is a labelled line of
-    /// its own, so what comes before it is the app.
+    /// Use the labelled title to separate the app in macOS 27 Persistent descriptions: "App Title,
+    /// Body".
     nonisolated static func appName(fromDescription description: String, title: String?) -> String? {
         let cleaned = cleanAXString(description)
         if let title, !title.isEmpty {
-            // The title ends at a comma or at the end, so "Microsoft Teams Teams, Hi"
-            // is Microsoft Teams and not Microsoft.
+            // Require the full title so "Microsoft Teams Teams, Hi" resolves to Microsoft Teams.
             let padded = cleaned + ", "
             for marker in [", \(title), ", " \(title), "] {
                 guard let range = padded.range(of: marker) else { continue }
                 let app = cleanAXString(String(padded[..<range.lowerBound]))
-                // Only when the title follows the app straight away; a comma before
-                // it means the title turned up later, in the body.
+                // A comma before the title means the match was in the body.
                 if !app.isEmpty, !app.contains(", ") { return app }
             }
         }

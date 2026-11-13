@@ -1,8 +1,6 @@
 import AppKit
 
-/// The first lines of each session's log: what it ran on and how it was set up. A bug
-/// report carried the log, and what the app ran on had to be asked for separately. Counts
-/// only for groups and presets: their names are the user's own.
+/// Session context for bug reports. Record group and preset counts to keep user names private.
 enum SessionHeader {
     @MainActor
     static func lines(settings: AppSettings) -> [String] {
@@ -52,7 +50,6 @@ enum SessionHeader {
 }
 
 extension NannyLogger {
-    /// Starts the session's log with SessionHeader's lines.
     package func logSessionHeader(settings: AppSettings) {
         for line in SessionHeader.lines(settings: settings) { log(line, tag: "App") }
     }

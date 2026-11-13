@@ -1,11 +1,7 @@
 import Foundation
 
-/// Identifies how the running app was installed on this machine.
-///
-/// Homebrew cask installs leave a Caskroom directory even though the `.app`
-/// itself is moved to `/Applications`. Checking for that directory is more
-/// reliable than inspecting `Bundle.main.bundlePath`, which is the same path
-/// (`/Applications/NotificationNanny.app`) for both install methods.
+/// Detect Homebrew by its Caskroom directory; both installation methods use the same app bundle
+/// path.
 enum InstallSource {
     case homebrew
     case direct

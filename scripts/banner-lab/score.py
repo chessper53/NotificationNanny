@@ -1,21 +1,8 @@
 #!/usr/bin/env python3
-"""Scores banner replicas against the real banner captured by lab.swift.
-
-    score.py [--appearance dark|light] [-v] [--sheet] NAME...
-
-Prints the mean absolute pixel error (0 to 255, lower is better) per region,
-averaged over every backdrop both captures share:
-
-    full   the whole banner plus a few points of surroundings
-    bg     plain glass, away from the text and icon
-    text   title and body
-    icon   the app icon
-
---sheet also writes <out>/sheet-APPEARANCE-NAME.png: real, replica and the difference
-(tripled) side by side for each backdrop.
-
-Needs Pillow and NumPy.
-"""
+"""Score mean absolute pixel error against native banners by region, averaged across shared
+backdrops.
+Lower scores are closer; optional comparison sheets amplify differences threefold.
+Requires Pillow and NumPy. See docs/LABS.md for commands."""
 import argparse, os, sys
 import numpy as np
 from PIL import Image

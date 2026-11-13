@@ -40,9 +40,7 @@ package enum BannerAnimation: String, Codable, CaseIterable {
         var rotation: Double = 0
     }
 
-    /// Everything one animation case needs to drive its intro/outro — bundled so
-    /// adding a new `BannerAnimation` case means writing one `Spec`, not editing
-    /// four separate switches that have to be kept in sync by hand.
+    /// One animation specification supplies every intro and outro transform.
     struct Spec {
         let hidden: Transform
         let intro: Animation
@@ -124,9 +122,7 @@ struct BannerContent: Equatable {
     }
 }
 
-/// How the replica differs between appearances, measured against the system banner with
-/// scripts/banner-lab. A lab build (compiled with PROD) takes candidates from the
-/// environment, NN_LOOK_<NAME>, to try them without editing this.
+/// Measured banner appearance; PROD lab builds override values with NN_LOOK_<NAME>.
 enum BannerLook {
     private static func value(_ name: String, _ measured: Double) -> Double {
         #if PROD
@@ -134,19 +130,13 @@ enum BannerLook {
         #endif
         return measured
     }
-    /// The white wash over the glass in Light Mode; Dark Mode's is Metrics.wash. None:
-    /// it dims what shows through, and Light Mode needs the opposite.
+    /// No light wash: ordinary white opacity would dim the backdrop instead of brightening it.
     static var lightWash: Double { value("LIGHT_WASH", 0) }
-    /// The glass is a little too dense in Light Mode: the system banner lets more of what
-    /// is behind it through (0.475 of it against our 0.43, measured on white, black and
-    /// gray), and brightens by a constant on top, see lightAdd.
+    /// Reduce light glass opacity to match native backdrop transmission; see lightAdd.
     static var lightGlassOpacity: Double { value("LIGHT_GLASS", 0.92) }
-    /// White added on top in Light Mode (plus-lighter), brightening without dimming.
-    /// Inside the banner within 1.5 levels of the system's on every backdrop measured,
-    /// against 12 before (on white).
+    /// Add white with plusLighter to brighten without dimming the backdrop.
     static var lightAdd: Double { value("LIGHT_ADD", 0.037) }
-    /// The bright line just inside the edge, both appearances.
-    /// 0.25 in both: the edge 2.4 levels off in Dark Mode and 2.1 in Light, against 6.3.
+    /// Inner bright rim opacity shared by both appearances.
     static var rim: Double { value("RIM", 0.25) }
     /// The hairline above each of the app's buttons when the details are shown.
     static var divider: Double { value("DIVIDER", 0.12) }
@@ -170,8 +160,7 @@ final class BannerAnimationController {
 struct CustomBannerView: View {
     /// Mutable so the overlay follows the real banner as it opens its buttons or a reply.
     var content: BannerContent
-    /// Mutable so a scale change while the banner is on screen re-renders it at
-    /// the new size rather than stretching what is already drawn.
+    /// Redraw at the new scale rather than stretching a previous render.
     var scale: CGFloat
     let animation: BannerAnimation
     let tint: Color
@@ -218,14 +207,10 @@ struct CustomBannerView: View {
         _animRotation = State(initialValue: h.rotation)
     }
 
-    /// Geometry of the system banner, measured in points from a real macOS 27
-    /// banner with scripts/banner-lab rather than eyeballed. Everything is
-    /// multiplied by `scale` at the point of use.
+    /// Native macOS 27 geometry in points; multiply by scale at use sites.
     enum Metrics {
         static let cornerRadius: CGFloat = 20
-        /// Frame the app icon is drawn into. App icons carry the standard grid
-        /// padding, so the visible squircle is about 31pt, which is what the
-        /// system banner shows.
+        /// The 38 point icon frame includes app artwork padding, leaving a visible 31 point icon.
         static let iconFrame: CGFloat = 38
         static let iconLeading: CGFloat = 10
         /// Text starts 58pt from the leading edge: 10 + 38 + 10.
@@ -235,15 +220,11 @@ struct CustomBannerView: View {
         static let textTrailing: CGFloat = 14
         static let lineSpacing: CGFloat = 1
         static let fontSize: CGFloat = 13
-        /// A faint white wash over the glass. Without it the replica sits a few
-        /// levels darker than the system banner on every backdrop measured, in
-        /// both Light and Dark Mode.
+        /// A faint white wash matches native brightness across backdrops.
         static let wash: Double = 0.05
-        /// The close button is centred just inside the corner and overhangs it,
-        /// so the panel is grown by this much on every side to leave it room.
+        /// Grow the panel margins to fit the close button overhanging the card.
         static let closeDiameter: CGFloat = 20
-        /// The close button's top left, from the banner's: it overhangs the corner.
-        /// Measured from a hovered system banner (scripts/banner-lab `real-states`).
+        /// Native close button origin relative to the banner, including its corner overhang.
         static let closeOrigin = CGPoint(x: -6, y: -4)
         static let chromeInset: CGFloat = 8
     }
@@ -326,10 +307,7 @@ struct CustomBannerView: View {
     }
 }
 
-/// The banner itself, as the system draws it: glass, icon, text, and when its details are
-/// shown, the app's buttons. Shared by the custom banner and the custom Notification
-/// Center, whose rows are banners too (measured on 27.0, scripts/panel-lab
-/// `panel-shots`), so both look the same and take the same tint and text colour.
+/// Shared native style card for custom banners and panel rows.
 struct BannerCard: View {
     let content: BannerContent
     let scale: CGFloat
@@ -343,14 +321,12 @@ struct BannerCard: View {
     var onOpen: () -> Void = {}
     var onAction: (String) -> Void = { _ in }
     var onDetails: () -> Void = {}
-    /// The ⋯ of a card with its details shown, and the Options pill of a hovered one, open
-    /// a menu drawn by whoever shows the card, given the button's frame in the card. The
-    /// custom Notification Center does: a menu window of ours would close the real panel
-    /// at the first click. Without them the pill opens a menu of its own and the ⋯ is only
-    /// drawn (custom banners).
+    /// Let the owner draw menus using button frames; a separate menu window would close the native
+    /// panel.
+    /// Without callbacks, Options uses its own menu and the more button is decorative.
     var onMore: ((CGRect) -> Void)? = nil
     var onOptions: ((CGRect) -> Void)? = nil
-    /// A custom banner's ⋯ opens Notification Center's own menu, from here.
+    /// Native menu source for a custom banner's more button.
     var menuSource: BannerMenuSource? = nil
 
     @Environment(\.colorScheme) private var colorScheme
@@ -361,9 +337,8 @@ struct BannerCard: View {
 
     typealias Metrics = CustomBannerView.Metrics
 
-    /// What the system banner adds for the app's buttons, at the places measured on a real
-    /// one: hovered, a chevron that shows the details and an Options menu of the buttons;
-    /// with the details shown, a more menu and the chevron turned down.
+    /// Native hover controls: Options and a chevron, replaced by more and the expanded chevron with
+    /// details.
     @ViewBuilder private var chrome: some View {
         let showDetails = content.expanded || hovered || BannerLook.forceHover
         if showDetails {
@@ -435,8 +410,7 @@ struct BannerCard: View {
             }
             .buttonStyle(.plain)
         } else {
-            // A plain button opening the menu itself: SwiftUI's Menu restyles its label,
-            // moving the arrow in front and dropping the pill.
+            // Use a plain button because SwiftUI Menu restyles and repositions this label.
             Button {
                 if let onOptions { onOptions(pillFrame) } else { menuAnchor.popUp(content.actions, onAction) }
             } label: {
@@ -456,9 +430,7 @@ struct BannerCard: View {
         }
     }
 
-    /// The pill hides the text under it, as the system's does: on a row of 51 it is a flat
-    /// 71 with nothing showing through (measured on 27.0, scripts/panel-lab `real-hover`).
-    /// Its own glass blurs the text away; the lift goes on top.
+    /// Give the pill its own glass to blur the text behind it, then add the highlight.
     private var pillBackground: some View {
         ZStack {
             BannerGlass(shape: Capsule(), cornerRadius: Hovered.optionsSize.height * scale / 2, scale: scale, tint: tint)
@@ -469,18 +441,14 @@ struct BannerCard: View {
     /// The card's coordinate space, which the pill's frame is reported in.
     static let space = "bannerCard"
 
-    /// Hovered, from real frames: the chevron at the top right; the Options pill 10 points
-    /// in from the right and up from the bottom, which is on the last line of text, on a
-    /// one line banner and on a four line panel row alike (scripts/panel-lab `real-hover`).
+    /// Native hover positions: chevron at top right, Options 10 points from the bottom and right.
     enum Hovered {
         static let chevron = CGRect(x: 319, y: 7, width: 17, height: 19)
         static let optionsSize = CGSize(width: 80, height: 22)
         static let optionsInset: CGFloat = 10
     }
 
-    /// The system banner with its details shown, from a real one's frames: the text where
-    /// it is collapsed, then one row per button under a hairline, 16 points in from each
-    /// side, and a little room under the last.
+    /// Expanded actions sit below unchanged text, inset 16 points with a divider above each.
     enum Expanded {
         static let collapsedHeight: CGFloat = 58
         static let gapAboveButtons: CGFloat = 5
@@ -488,14 +456,12 @@ struct BannerCard: View {
         static let divider: CGFloat = 1
         static let sideInset: CGFloat = 16
         static let bottom: CGFloat = 7
-        /// The reply field's box; with its spacing it fills the 40 points between the
-        /// hairline and the send button on the real one.
+        /// Field height plus spacing fills the native 40 point reply area.
         static let replyHeight: CGFloat = 27
-        /// The more menu (⋯) and the chevron, from the top right corner.
+        /// More button and chevron positions relative to the top right.
         static let moreFrame = CGRect(x: 299, y: 10, width: 20, height: 13)
         static let chevronFrame = CGRect(x: 318, y: 8, width: 19, height: 17)
-        /// What the title leaves free at its end for them: from the ⋯ to the text's edge
-        /// (344 wide, text 14 in from the right), and a little gap.
+        /// Reserve title width for the more button, chevron, and a small gap.
         static let titleClearance: CGFloat = 344 - 14 - moreFrame.minX + 4
     }
 
@@ -503,8 +469,7 @@ struct BannerCard: View {
         let shape = RoundedRectangle(cornerRadius: Metrics.cornerRadius * scale, style: .continuous)
         return VStack(spacing: 0) {
             summary
-            // The buttons take what they need and the text the rest: a row of several
-            // lines keeps its own height above them rather than one line's.
+            // Keep button height fixed and give the remaining height to multiline text.
             if content.expanded { expandedButtons.fixedSize(horizontal: false, vertical: true) }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
@@ -519,8 +484,7 @@ struct BannerCard: View {
         .coordinateSpace(name: Self.space)
     }
 
-    /// The app's buttons and an open reply, as the system banner shows them with its
-    /// details: plain centred titles in full-width rows, a hairline above each.
+    /// Native expanded actions use centered titles and a divider above each row.
     private var expandedButtons: some View {
         VStack(spacing: 0) {
             ForEach(Array(content.actions.enumerated()), id: \.element) { index, name in
@@ -555,12 +519,9 @@ struct BannerCard: View {
         Rectangle().fill(Color.primary.opacity(BannerLook.divider)).frame(height: Expanded.divider * scale)
     }
 
-    /// The system's reply field: a rounded box a little lighter than the banner, with the
-    /// app's placeholder and the caret. The typing itself goes to the real one.
+    /// Mirror the native reply field; keystrokes go to the real field.
     private func replyField(_ text: String) -> some View {
-        // The caret is the system accent: Color.accentColor turns gray in a window of an
-        // app that isn't active, which this always is. It stands before the placeholder,
-        // and after what is typed.
+        // Use AppKit's accent color because SwiftUI grays it in inactive windows.
         let caret = Rectangle().fill(Color(nsColor: .controlAccentColor)).frame(width: 1 * scale, height: 15 * scale)
         return HStack(spacing: 0) {
             if text.isEmpty { caret }
@@ -571,7 +532,6 @@ struct BannerCard: View {
             if !text.isEmpty { caret.padding(.leading, 1) }
             Spacer(minLength: 0)
         }
-        // Text and caret 9 points into the box, as on the real one (21 from the banner's edge).
         .padding(.horizontal, 9 * scale)
         .frame(height: Expanded.replyHeight * scale)
         .background(RoundedRectangle(cornerRadius: 5 * scale, style: .continuous).fill(Color.primary.opacity(BannerLook.field)))
@@ -586,8 +546,8 @@ struct BannerCard: View {
         HStack(alignment: .center, spacing: Metrics.iconTextSpacing * scale) {
             iconView
             VStack(alignment: .leading, spacing: Metrics.lineSpacing * scale) {
-                // The system banner shows the app name in the title slot when a
-                // notification has no title, and never shows it anywhere else.
+                // Use the app name only as a fallback for an empty title, matching the native
+                // banner.
                 HStack(alignment: .firstTextBaseline, spacing: 6 * scale) {
                     Text(content.title.isEmpty ? content.appName : content.title)
                         .font(.system(size: Metrics.fontSize * scale, weight: .semibold))
@@ -595,9 +555,8 @@ struct BannerCard: View {
                         .lineLimit(2)
                         .blur(radius: redactContent ? 6 * scale : 0)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                    // A panel row's time ends the title's line, so a long title stops
-                    // before it. Hovered, the chevron takes its place, and the title
-                    // keeps its width.
+                    // Reserve time width when the hover chevron replaces it so titles do not
+                    // reflow.
                     if let time = content.time, !content.expanded {
                         Text(time)
                             .font(.system(size: 11 * scale).monospacedDigit())
@@ -607,7 +566,6 @@ struct BannerCard: View {
                             .opacity(hovered || BannerLook.forceHover ? 0 : 1)
                     }
                 }
-                // With its details shown, the ⋯ and chevron sit at the end of the line.
                 .padding(.trailing, content.expanded ? Expanded.titleClearance * scale : 0)
                 if !content.subtitle.isEmpty {
                     Text(content.subtitle)
@@ -623,37 +581,30 @@ struct BannerCard: View {
                         .foregroundStyle(bodyStyle)
                         .lineLimit(edge == .panelRow ? 4 : 3)
                         .blur(radius: redactContent ? 6 * scale : 0)
-                        // Notification Center fills the body first, up to four lines in its
-                        // panel, and gives the title a second line only with room to spare
-                        // (measured on 27.0, scripts/panel-lab `frames`).
+                        // Prioritize body text; the native panel grants a second title line only
+                        // when space remains.
                         .layoutPriority(1)
                 }
             }
-            // A banner is as tall as its text. A panel row has Notification Center's
-            // height, and its text fits in it, the body giving way first: at its full
-            // height it ran into the row below.
+            // Banners grow to their text; panel rows must fit the native height and truncate body
+            // text first.
             .fixedSize(horizontal: false, vertical: edge == .banner)
-            // Vertical padding belongs to the text alone. The icon frame is taller
-            // than a one line banner leaves room for between the paddings, and it
-            // is centred in the full height on the system banner anyway.
+            // Pad text separately so the icon stays centered in the full card height.
             .padding(.top, Metrics.textTop * scale)
-            // Our lines are a point taller than Notification Center's (two in 32, its in
-            // 31): a little slack, or its row of exactly two lines and one takes one less.
+            // Allow two points for taller SwiftUI lines to avoid losing a line within native row
+            // heights.
             .padding(.bottom, (edge == .panelRow ? Metrics.textBottom - 2 : Metrics.textBottom) * scale)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .padding(.leading, Metrics.iconLeading * scale)
         .padding(.trailing, Metrics.textTrailing * scale)
-        // Collapsed it fills the banner and stays centred, as before; expanded it fills
-        // what the buttons under it leave, at least a one line banner's height, so the
-        // text doesn't move.
+        // Keep text centered above expanded actions with at least the collapsed banner height.
         .frame(maxWidth: .infinity)
         .frame(minHeight: content.expanded ? Expanded.collapsedHeight * scale : nil)
         .frame(maxHeight: .infinity)
     }
 
-    // The system banner draws title, subtitle and body all in the label colour,
-    // which is 85% white in Dark Mode and 85% black in Light Mode.
+    // Use the same native label color for title, subtitle, and body.
     private var titleStyle: AnyShapeStyle {
         textColor.map { AnyShapeStyle($0) } ?? AnyShapeStyle(.primary)
     }
@@ -670,7 +621,6 @@ struct BannerCard: View {
                 .antialiased(true)
                 .frame(width: Metrics.iconFrame * scale, height: Metrics.iconFrame * scale)
         } else {
-            // Without an icon of its own, the generic app icon, as the system banner shows.
             Image(nsImage: NSWorkspace.shared.icon(for: .applicationBundle))
                 .resizable()
                 .interpolation(.high)
@@ -680,12 +630,8 @@ struct BannerCard: View {
     }
 }
 
-/// The system banner's glass, as measured against a real one in both appearances (see
-/// BannerLook), for any shape: the banner itself, and the glass buttons and stack edges
-/// of the custom Notification Center, which the system draws the same way.
-/// How the glass catches the light along its edge. A banner's shines all the way round; a
-/// row of the Notification Center panel is lit from above and below, with a dark line
-/// along its sides instead (both measured, scripts/banner-lab and panel-lab compare.sh).
+/// Banners have a bright rim all around; panel rows have highlights above and below with darker
+/// sides.
 enum GlassEdge { case banner, panelRow }
 
 struct BannerGlass<S: InsettableShape>: View {
@@ -702,15 +648,12 @@ struct BannerGlass<S: InsettableShape>: View {
         ZStack {
             BannerBackground(cornerRadius: cornerRadius)
                 .opacity(isLight ? BannerLook.lightGlassOpacity : 1)
-            // Untinted means "look like the system banner". The glass alone comes out
-            // slightly dark, so it gets the measured wash; a user tint replaces the wash
-            // rather than stacking on top of it.
+            // A user tint replaces the brightness wash instead of adding a second layer.
             if tint != .clear {
                 tint.opacity(0.45)
             } else if BannerBackground.isGlass {
                 Color.white.opacity(isLight ? BannerLook.lightWash : CustomBannerView.Metrics.wash)
-                // Light Mode's glass is brighter by a constant on any backdrop, which a
-                // wash can't give: a wash also dims what shows through.
+                // Additive blending brightens the glass without dimming the backdrop.
                 if isLight, BannerLook.lightAdd > 0 {
                     Color.white.opacity(BannerLook.lightAdd).blendMode(.plusLighter)
                 }
@@ -721,15 +664,13 @@ struct BannerGlass<S: InsettableShape>: View {
             if BannerBackground.isGlass, edge == .panelRow {
                 panelRowEdge(isLight: isLight)
             } else if BannerBackground.isGlass {
-                // The system banner's glass catches the light along its edge, one point
-                // inside it, in both appearances; ours doesn't by itself.
+                // Add the native inner rim, which the glass material does not supply.
                 shape.strokeBorder(Color.white.opacity(BannerLook.rim), lineWidth: scale)
-                // In Light Mode a fine dark line runs just outside it as well.
                 if isLight {
                     shape.inset(by: -0.5 * scale).stroke(Color.black.opacity(BannerLook.lightLine), lineWidth: scale)
                 }
             } else {
-                // The pre-26 material needs the hairline.
+                // Older HUD material needs an explicit hairline.
                 shape.strokeBorder(Color.primary.opacity(0.08), lineWidth: 0.5)
             }
         }
@@ -737,11 +678,8 @@ struct BannerGlass<S: InsettableShape>: View {
 }
 
 extension BannerGlass {
-    /// A panel row's edge: bright just inside its top and bottom, a dark line just outside
-    /// its sides and round its corners, and in Light Mode a fainter one above and below.
-    /// Measured against the real panel over a gray backdrop: the side line comes out at
-    /// 46 where the backdrop is 101, the highlights 17 above the inside at the top and 30
-    /// at the bottom.
+    /// Native panel rim: inner top and bottom highlights, outer dark sides, and faint horizontal
+    /// lines on light.
     @ViewBuilder func panelRowEdge(isLight: Bool) -> some View {
         let sides = LinearGradient(stops: [.init(color: .black, location: 0), .init(color: .black, location: 0.07),
                                            .init(color: .clear, location: 0.13), .init(color: .clear, location: 0.87),
@@ -784,7 +722,6 @@ enum PanelRowLook {
     static var lightOuterLine: Double { value("LIGHT_OUTER_LINE", 0.18) }
 }
 
-/// A custom banner's hosting view, which hands on right clicks.
 final class BannerHostingView<Content: View>: NSHostingView<Content> {
     var onRightClick: ((NSPoint) -> Void)?
 
@@ -794,15 +731,14 @@ final class BannerHostingView<Content: View>: NSHostingView<Content> {
     }
 }
 
-/// Where a custom banner gets Notification Center's own menu (its ⋯, a right click): read
-/// from the real banner, with the app's buttons first unless asked without them, and an
-/// item chosen in it used on the real one. See NCMenus.
+/// Reads native banner menus and forwards selections; optionally omits the app actions. See
+/// NCMenus.
 struct BannerMenuSource {
     let items: (_ withAppActions: Bool, _ done: @escaping ([NCMenuItem]) -> Void) -> Void
     let choose: (NCMenuItem) -> Void
 }
 
-/// Where a menu of the app's buttons opens: under the Options pill, as the system's does.
+/// Anchor app action menus below the Options pill.
 @MainActor
 final class MenuAnchor {
     weak var view: NSView?
@@ -821,8 +757,7 @@ final class MenuAnchor {
         menu.popUp(positioning: nil, at: NSPoint(x: 0, y: view.isFlipped ? view.bounds.maxY + 4 : -4), in: view)
     }
 
-    /// Notification Center's own menu items, headings and separators included, under the
-    /// anchor or at `point` in `view` (a right click).
+    /// Show native menu items, headings, and separators at the anchor or secondary click position.
     func popUp(_ items: [NCMenuItem], at point: NSPoint? = nil, in other: NSView? = nil,
                _ choose: @escaping (NCMenuItem) -> Void) {
         guard let view = other ?? view else { return }
@@ -863,18 +798,16 @@ struct MenuAnchorView: NSViewRepresentable {
     func updateNSView(_ view: NSView, context: Context) { anchor.view = view }
 }
 
-/// Notification Center's own words for what the replica draws, so they read as the
-/// system's do, in the language Notification Center shows.
+/// Resolve replica labels from Notification Center's own localization.
 enum SystemStrings {
     private static let bundle = Bundle(path: "/System/Library/CoreServices/NotificationCenter.app")
     static let options = bundle?.localizedString(forKey: "Options", value: "Options", table: "Localizable") ?? "Options"
     static let showLess = bundle?.localizedString(forKey: "Show less", value: "Show less", table: "Localizable") ?? "Show less"
 }
 
-/// Liquid Glass on macOS 26 and later, which is what the system banner is made
-/// of; the old HUD material before that. Glass goes in a sibling view underneath
-/// the SwiftUI content, never as its container, because content inside a glass
-/// view gets vibrant blending and the system banner's text does not.
+/// Use Liquid Glass from macOS 26 and HUD material before it.
+/// Keep the material behind the content; nesting text inside it would apply vibrancy absent from
+/// native banners.
 private struct BannerBackground: NSViewRepresentable {
     let cornerRadius: CGFloat
 
@@ -898,9 +831,7 @@ private struct BannerBackground: NSViewRepresentable {
         v.material = .hudWindow
         v.blendingMode = .behindWindow
         v.state = .active
-        // No forced appearance: the material follows the system's light/dark
-        // setting, as the real banner does. 1c79558 and bfbd39e both removed a
-        // forced .darkAqua that only matched in Dark Mode.
+        // Let the material follow system appearance.
         v.maskImage = Self.maskImage(cornerRadius: cornerRadius)
         return v
     }
@@ -939,8 +870,7 @@ final class CustomBannerManager {
         let onUnderlyingDismiss: (() -> Void)?
         /// Its time is up: the overlay goes, the notification stays.
         let onExpire: (() -> Void)?
-        /// Kept so a live scale change can re-render the SwiftUI content instead
-        /// of stretching the already-rendered view.
+        /// Keep the hosting view to redraw content when scale changes.
         let hosting: NSHostingView<CustomBannerView>
         var scale: CGFloat
         /// Where a glide is taking the panel; its frame is still on the way.
@@ -987,8 +917,6 @@ final class CustomBannerManager {
             onAction: onAction, onDetails: onDetails)
         bannerView.menuSource = menuSource
         let hosting = BannerHostingView(rootView: bannerView)
-        // A right click opens Notification Center's menu where it was clicked, as on a
-        // system banner, with the app's buttons first.
         if let menuSource {
             let anchor = MenuAnchor()
             hosting.onRightClick = { [weak hosting] point in
@@ -996,9 +924,7 @@ final class CustomBannerManager {
                 menuSource.items(true) { items in anchor.popUp(items, at: point, in: hosting, menuSource.choose) }
             }
         }
-        // The panel's size comes from the real banner, never from SwiftUI. Left
-        // to its default, the hosting view grows the panel to its own minimum
-        // size, which pushes the banner off the spot it is meant to cover.
+        // Use native dimensions; SwiftUI sizing would grow the panel beyond the banner it replaces.
         hosting.sizingOptions = []
         hosting.frame = bounds
         hosting.autoresizingMask = [.width, .height]
@@ -1028,9 +954,8 @@ final class CustomBannerManager {
         dismiss(key: key)
     }
 
-    /// Auto-dismiss: the overlay goes and the notification is left as it is, so it ends up
-    /// in Notification Center as a banner timing out does. Closing it, as a click on ✕
-    /// does, took it out of Notification Center too.
+    /// Expire only the overlay; closing the notification would also remove it from Notification
+    /// Center.
     private func expire(key: CFHashCode) {
         active[key]?.onExpire?()
         dismiss(key: key)
@@ -1059,14 +984,12 @@ final class CustomBannerManager {
 
     func isActive(key: CFHashCode) -> Bool { active[key] != nil }
 
-    /// Shows the real banner's state again: its buttons opened, a reply typed.
     func update(key: CFHashCode, content: BannerContent) {
         guard let entry = active[key], entry.hosting.rootView.content != content else { return }
         entry.hosting.rootView.content = content
     }
 
-    /// Someone is using the banner's buttons or replying: it stays until they are done,
-    /// whatever auto-dismiss says. The real banner still decides when it goes.
+    /// Suspend expiry while interacting; the native banner still controls when it disappears.
     func holdOpen(key: CFHashCode) {
         active[key]?.dismissTimer?.cancel()
         active[key]?.dismissTimer = nil
@@ -1090,18 +1013,13 @@ final class CustomBannerManager {
         }
     }
 
-    /// - Parameter glide: ease into place instead of jumping, for a pile closing
-    ///   a gap or making room. A settings drag must not glide: it would trail
-    ///   behind the pointer.
+    /// With `glide`, ease into a changed pile position. Settings drags must follow the pointer
+    /// immediately.
     func move(key: CFHashCode, axTopLeft: CGPoint, width: CGFloat, height: CGFloat, scale: CGFloat? = nil,
               glide: Bool = false) {
         guard var entry = active[key] else { return }
 
-        // A live scale change has to re-render the SwiftUI content at the new
-        // scale. Previously only the panel's width was touched while its height
-        // stayed at whatever it was when the banner appeared, and the hosting
-        // view autoresized — so the already-rendered banner was stretched into
-        // the new frame instead of laid out again, which is the "squish".
+        // Redraw both dimensions at the new scale so existing content is not stretched.
         if let scale, abs(scale - entry.scale) > 0.001 {
             entry.hosting.rootView.scale = scale
             entry.scale = scale
@@ -1110,14 +1028,12 @@ final class CustomBannerManager {
 
         let target = Self.panelFrame(axOrigin: axTopLeft, size: CGSize(width: width, height: height),
                                      scale: entry.scale)
-        // Compared with where it is heading, so a sweep during a glide doesn't
-        // restart it.
+        // Compare the destination during glides so sweeps do not restart the animation.
         let current = entry.destination ?? entry.panel.frame
         guard current != target else { return }
 
         if glide {
-            // A point or two is the banner settling, not the pile moving; easing
-            // that only made it shimmer.
+            // Ignore tiny settling changes that would otherwise shimmer.
             guard hypot(target.minX - current.minX, target.minY - current.minY) >= 2
                     || abs(target.width - current.width) >= 2 || abs(target.height - current.height) >= 2
             else { return }
@@ -1132,8 +1048,6 @@ final class CustomBannerManager {
             NSAnimationContext.runAnimationGroup { ctx in
                 ctx.duration = duration
                 ctx.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-                // A size change of a point or two rides along; the hosting view
-                // follows the panel through its autoresizing mask.
                 panel.animator().setFrame(target, display: false)
             } completionHandler: { [weak self] in
                 MainActor.assumeIsolated {
@@ -1145,10 +1059,8 @@ final class CustomBannerManager {
         entry.destination = nil
         active[key] = entry
 
-        // Dragging the position tile drives this at screen refresh rate. When only
-        // the origin moves, which is the common case, setFrameOrigin skips the
-        // resize and redraw path; setFrame(display: true) was forcing a
-        // synchronous re-render of the blurred, SwiftUI-hosted content every frame.
+        // Move without resizing when size is unchanged to avoid a synchronous SwiftUI redraw on
+        // every drag frame.
         if current.size == target.size {
             entry.panel.setFrameOrigin(target.origin)
         } else {
@@ -1157,8 +1069,7 @@ final class CustomBannerManager {
         }
     }
 
-    /// How long a pile takes to close a gap or make room, close to macOS's own
-    /// slide: one slot in this, farther up to `maxGlideDuration`.
+    /// Duration for one slot of motion; longer distances are capped by maxGlideDuration.
     static let glideDuration: Double = 0.22
     static let maxGlideDuration: Double = 0.4
 
@@ -1169,8 +1080,7 @@ final class CustomBannerManager {
         panel.level = .statusBar
         panel.isOpaque = false
         panel.backgroundColor = .clear
-        // The system banner casts next to no shadow. A window shadow here is
-        // traced from the glass's alpha and comes out as a hard dark ring.
+        // Glass window shadows form a dark ring absent from the native banner.
         panel.hasShadow = !BannerBackground.isGlass
         panel.collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle]
         panel.isReleasedWhenClosed = false
@@ -1179,9 +1089,8 @@ final class CustomBannerManager {
         return panel
     }
 
-    /// The panel covers the banner plus `chromeInset` on every side, so the
-    /// close button can overhang the corner the way the system one does. The
-    /// margin is transparent, and transparent parts of a window let clicks through.
+    /// Include transparent chrome margins for the overhanging close button; clear pixels pass
+    /// clicks through.
     static func panelFrame(axOrigin: CGPoint, size: CGSize, scale: CGFloat) -> NSRect {
         let inset = CustomBannerView.Metrics.chromeInset * scale
         return axRect(axOrigin: axOrigin, size: size).insetBy(dx: -inset, dy: -inset)

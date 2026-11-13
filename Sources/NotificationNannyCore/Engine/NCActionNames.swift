@@ -1,17 +1,14 @@
 import AppKit
 
-/// The names Notification Center gives a banner's Close and Clear All actions. macOS
-/// translates them (French reports Fermer and Tout effacer), so they are read from
-/// Notification Center's own strings, in every language it ships: it can run in another
-/// language than ours, and a name in any of them is still the same button.
+/// Read every translation of Close and Clear All from Notification Center, whose language may
+/// differ from ours.
 @MainActor
 enum NCActionNames {
     static let close = names(for: "Close")
     static let clearAll = names(for: "Clear All")
     static let showDetails = names(for: "Show Details")
     static let hideDetails = names(for: "Hide Details")
-    /// Notification Center's own actions on a notification, in every language: everything
-    /// else a notification offers is the app's (Reply, Archive, Snooze…).
+    /// Built in action names in every language; other actions belong to the notifying app.
     static let builtIn: Set<String> = close.union(clearAll).union(showDetails).union(hideDetails)
         .union(names(for: "Clear")).union(names(for: "Show")).union(names(for: "Options"))
 
@@ -22,8 +19,7 @@ enum NCActionNames {
         translations(of: key, in: table)
     }
 
-    /// Every translation of `key` in a loctable, which maps each language to its strings.
-    /// The key itself, the English name, is always in.
+    /// All translations of `key`, including the English key itself.
     nonisolated static func translations(of key: String, in table: [String: Any]) -> Set<String> {
         var names: Set<String> = [key]
         for case let strings as [String: Any] in table.values {

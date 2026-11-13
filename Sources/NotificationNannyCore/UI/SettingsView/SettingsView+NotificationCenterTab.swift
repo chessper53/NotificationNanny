@@ -1,9 +1,7 @@
 import AppKit
 import SwiftUI
 
-/// The custom Notification Center's settings, laid out like the Banner tab: one card per
-/// setting, its title on top, a note under it. Everything starts as macOS has it; colours
-/// start as the banners', and the extras that macOS doesn't have start off.
+/// Native defaults with banner color inheritance; additional features start disabled.
 struct NotificationCenterTabView: View {
     @EnvironmentObject var settings: AppSettings
     @ObservedObject private var permission = ScreenRecordingPermission.shared
@@ -13,8 +11,8 @@ struct NotificationCenterTabView: View {
 
     private var screens: [NSScreen] { NSScreen.screens }
 
-    /// The display the preview shows: the chosen one, or while it opens wherever the clock
-    /// is clicked, the one Settings is on, drawn as that laptop or monitor.
+    /// Preview the selected display, or the Settings window's display when following the clicked
+    /// clock.
     private var previewScreen: NSScreen {
         screens.first { $0.displayID == settings.customNotificationCenterDisplayID } ?? NSScreen.main ?? screens[0]
     }
@@ -47,7 +45,7 @@ struct NotificationCenterTabView: View {
         }
     }
 
-    // MARK: - The switch, and widgets under it
+    // MARK: Enable panel and widgets
 
     private var mainCard: some View {
         SettingsCard {
@@ -91,7 +89,7 @@ struct NotificationCenterTabView: View {
         }
     }
 
-    // MARK: - Position
+    // MARK: Position
 
     private var isDefaultPlace: Bool {
         settings.customNotificationCenterSide == .right && settings.customNotificationCenterTopOffset == 0
@@ -130,7 +128,6 @@ struct NotificationCenterTabView: View {
         }
     }
 
-    /// How far it is from its side's place, as the Position tab shows a banner's.
     private var offsetSummary: String? {
         let x = Int(settings.customNotificationCenterXOffset.rounded())
         let y = Int(settings.customNotificationCenterTopOffset.rounded())
@@ -138,7 +135,7 @@ struct NotificationCenterTabView: View {
         return "\(x >= 0 ? "+" : "")\(x), +\(y) px"
     }
 
-    // MARK: - Size
+    // MARK: Size
 
     private var sizeCard: some View {
         SettingsCard {
@@ -151,7 +148,7 @@ struct NotificationCenterTabView: View {
         }
     }
 
-    // MARK: - Colours, as in the Banner tab, with "Same as banners" first
+    // MARK: Colors
 
     private var backgroundCard: some View {
         let own = settings.customNotificationCenterOwnBackground
@@ -203,7 +200,7 @@ struct NotificationCenterTabView: View {
         }
     }
 
-    // MARK: - Animation
+    // MARK: Animation
 
     private var animationCard: some View {
         SettingsCard {
@@ -234,7 +231,7 @@ struct NotificationCenterTabView: View {
             : settings.effectiveBannerTextColor) ?? .primary
     }
 
-    // MARK: - Extras
+    // MARK: Extras
 
     private var extrasCard: some View {
         SettingsCard {
@@ -245,9 +242,7 @@ struct NotificationCenterTabView: View {
     }
 }
 
-/// The display as a device, as on the Position tab, with Notification Center's column on
-/// it at its real size. It goes wherever it is dragged; the third of the screen its
-/// middle is in picks the side it is measured from, and so the edge it comes in from.
+/// Drag the panel preview at native scale; its center's screen third selects the anchor side.
 private struct NCPanelPositionTile: View {
     let screen: NSScreen
     @Binding var side: NCPanelSide
@@ -256,18 +251,17 @@ private struct NCPanelPositionTile: View {
     var maxWidth: CGFloat = 438
     var maxHeight: CGFloat = 260
 
-    /// Where in the column the pointer took hold of it, so it moves with the pointer
-    /// rather than jumping its middle under it.
+    /// Retain the pointer's grab offset to avoid jumping at drag start.
     @State private var grab: CGSize?
 
     private static let rowSize = CGSize(width: 344, height: 58)
     private static let rowGap: CGFloat = 6
     private static let rows = 3
     private static var columnHeight: CGFloat { rowSize.height * CGFloat(rows) + rowGap * CGFloat(rows - 1) }
-    /// Within this of its side's place, or of the system's height, it settles there.
+    /// Snap within this distance of the side anchor or native top offset.
     private static let magnet: CGFloat = 8
 
-    /// The column's left edge on the screen for a side, before any offset.
+    /// Unshifted column origin for each horizontal anchor.
     private static func base(_ side: NCPanelSide, width: CGFloat) -> CGFloat {
         switch side {
         case .right: return width - CustomNCPanelController.rightInset - rowSize.width
@@ -281,7 +275,6 @@ private struct NCPanelPositionTile: View {
         let menuBar = max(0, frame.maxY - screen.visibleFrame.maxY)
         let scale = min(maxWidth / max(frame.width, 1), maxHeight / max(frame.height, 1))
         let size = CGSize(width: frame.width * scale, height: frame.height * scale)
-        // Where the panel will really be: clamped as it is when it opens.
         let options = NCPanelOptions(side: side, xOffset: CGFloat(xOffset))
         let x = Self.base(side, width: frame.width)
             + CustomNCPanelController.xOffset(options, on: NSRect(origin: .zero, size: frame.size))
@@ -316,8 +309,7 @@ private struct NCPanelPositionTile: View {
         return DeviceChrome(screen: screen, screenSize: size) { picture }
     }
 
-    /// Puts the column's top left corner as near the point as the screen allows, never
-    /// above the system's place or closer to an edge than the system's is to its own.
+    /// Clamp the column to native screen margins and keep it below the native top position.
     private func move(left: CGFloat, top: CGFloat, screen size: CGSize) {
         let edge = CustomNCPanelController.rightInset
         let x = min(max(left, edge), max(edge, size.width - edge - Self.rowSize.width))

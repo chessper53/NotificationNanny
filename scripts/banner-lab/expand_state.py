@@ -1,6 +1,4 @@
-# Hand-expands `@State private var x: T = v` / `@State private var x = v` into the
-# stored State<T> the macro would generate, so the file compiles without the
-# SwiftUIMacros plugin that the Command Line Tools do not ship.
+# Expand State storage for Command Line Tools builds that lack the SwiftUI macro plugin.
 import re, sys
 src = open(sys.argv[1]).read()
 def sub(m):

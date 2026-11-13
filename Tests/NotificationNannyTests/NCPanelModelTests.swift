@@ -1,8 +1,7 @@
 import Testing
 @testable import NotificationNannyCore
 
-/// The panel's list is flat; these are the shapes measured on 27.0 with
-/// scripts/panel-lab (`run.sh list`).
+/// Fixtures match the flat AX list observed on macOS 27.
 @Suite("Notification Center panel model")
 struct NCPanelModelTests {
 
@@ -39,8 +38,6 @@ struct NCPanelModelTests {
         #expect(groups[1].rows.first?.isStack == true)
     }
 
-    /// The section heading names no app, so it never opens a group, even when it is
-    /// followed by a row.
     @Test func sectionHeading_followedByRow_isASection() {
         let snap = NCPanelSnapshot.build(from: [
             .heading("Notification Center"), .button, row("m", "Mail"),
@@ -49,7 +46,6 @@ struct NCPanelModelTests {
         #expect(snap.sections[0].groups.map(\.expanded) == [false])
     }
 
-    /// An expanded group ends where another app's row starts.
     @Test func expandedGroup_endsAtAnotherApp() {
         let snap = NCPanelSnapshot.build(from: [
             .heading("Mail"), .button, .button, row("m1", "Mail"), row("m2", "Mail"),
@@ -58,8 +54,7 @@ struct NCPanelModelTests {
         #expect(snap.sections[0].groups.map(\.id) == ["group:0:Mail", "x"])
     }
 
-    /// Caught mid-update: a header whose rows aren't in the tree yet is dropped,
-    /// and a section left with nothing in it too.
+    /// AX can report a header before its rows arrive.
     @Test func headerWithoutRows_isDropped() {
         let snap = NCPanelSnapshot.build(from: [.heading("Notification Center"), .button])
         #expect(snap.isEmpty)
@@ -70,8 +65,7 @@ struct NCPanelModelTests {
         #expect(NCPanelSnapshot.build(from: []) == .empty)
     }
 
-    /// A Lab row's menu as Notification Center's tree had it on 27.0 (`real-hover menu`):
-    /// untitled full height containers, 11 point separators, a section heading.
+    /// Native AX menu fixture: containers, 11 point separators, and a heading.
     @Test func rowMenu_keepsItemsSeparatorsAndHeading() {
         let items = NCMenuItem.build(from: [
             ("", 24, false), ("Reply", 24, true), ("Archive", 24, true), ("Snooze", 24, true),
@@ -99,7 +93,6 @@ struct NCPanelModelTests {
     }
 }
 
-/// Picking a widget's size moves its tick, as the real menu shows it next time.
 @Suite("Menu ticks")
 struct NCMenuTickTests {
     private func menu(ticked: String) -> [NCMenuItem] {

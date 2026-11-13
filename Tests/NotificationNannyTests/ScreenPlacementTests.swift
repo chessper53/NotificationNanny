@@ -29,11 +29,7 @@ struct ScreenPlacementTests {
         }
     }
 
-    // The offset sliders are gone and new placements can only come from dragging
-    // a clamped preview. Configs saved while the sliders existed can hold offsets
-    // far outside the screen, and those must keep decoding and keep their values
-    // — clamping on load would silently move a banner the user had deliberately
-    // placed, and would rewrite presets and backups on import.
+    // Preserve legacy offsets on load; only a new user drag may clamp saved placement.
     @Test func decodesLegacyOutOfRangeOffsetsUnchanged() throws {
         let legacy = #"{"position":"topLeft","xOffset":3200.0,"yOffset":-1800.0}"#
         let decoded = try JSONDecoder().decode(ScreenPlacement.self, from: Data(legacy.utf8))

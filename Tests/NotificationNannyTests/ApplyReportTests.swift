@@ -2,8 +2,6 @@ import Foundation
 import Testing
 @testable import NotificationNannyCore
 
-/// The Developer-tab "Apply a report" tool: parsing a pasted diagnostics report back into
-/// live settings (behavior toggles, auto-dismiss, banner scale) for local reproduction.
 @Suite("Apply report") @MainActor
 struct ApplyReportTests {
 

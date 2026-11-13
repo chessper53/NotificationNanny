@@ -1,7 +1,7 @@
 import SwiftUI
 import AppKit
 
-/// Health-check status for a single diagnostics row.
+/// Health status for a diagnostics row.
 enum DiagStatus {
     case ok, warn, fail, info
     var icon: String {
@@ -112,7 +112,6 @@ enum Diagnostics {
             : "System default"
         r.append(DiagItem(label: "Auto-dismiss", detail: dismissDetail, status: .info))
 
-        // Default position the user picked — the "it moved my notifications somewhere" answer.
         if let main = NSScreen.main {
             let p = settings.placement(for: main)
             let displayLabel = settings.targetDisplayID == 0
@@ -122,8 +121,6 @@ enum Diagnostics {
             r.append(DiagItem(label: "Default position", detail: "\(p.position.label) on \(displayLabel)\(offset)", status: .info))
         }
 
-        // Behavior toggles — these decide whether banners/widgets/the panel get touched, so
-        // they're the first thing to check for "it moved my widgets" / "it grabbed the panel".
         let toggles: [(String, Bool)] = [
             ("Protect desktop widgets", settings.protectDesktopWidgets),
             ("Hold while asleep",       settings.holdWhileAsleep),
@@ -222,15 +219,12 @@ enum Diagnostics {
         return text + "\n\n=== Activity log ===\n" + (logs.isEmpty ? "(empty)" : logs)
     }
 
-    /// Developer tool: reads a pasted diagnostics report and applies the settings it describes
-    /// to `settings`, so a user's configuration can be reproduced locally. Parses the same
-    /// human-readable lines `collect` emits (Behavior toggles, Default position, Auto-dismiss,
-    /// Custom banner scale). Returns a list of the changes applied (empty if nothing matched).
+    /// Applies settings parsed from a diagnostics report and returns the changes made.
     @discardableResult
     static func applyReport(_ text: String, to settings: AppSettings) -> [String] {
         var changes: [String] = []
 
-        // Behavior toggles — match each known label inside the On / Off segments.
+        // Match known labels within the On and Off segments.
         if let detail = value(after: "Behavior:", in: text) {
             let segments = detail.components(separatedBy: "•")
             let onSeg  = segments.first ?? ""
@@ -252,7 +246,6 @@ enum Diagnostics {
             }
         }
 
-        // Default position — "Top Right on active screen (offset 0,12)".
         if let detail = value(after: "Default position:", in: text),
            let onRange = detail.range(of: " on ") {
             let posLabel = String(detail[..<onRange.lowerBound]).trimmingCharacters(in: .whitespaces)
@@ -275,7 +268,6 @@ enum Diagnostics {
             }
         }
 
-        // Auto-dismiss — "8s custom timeout" or "System default".
         if let detail = value(after: "Auto-dismiss:", in: text) {
             if detail.contains("System default") {
                 settings.autoDismissSeconds = 0; changes.append("Auto-dismiss: system default")
@@ -284,7 +276,6 @@ enum Diagnostics {
             }
         }
 
-        // Custom banner scale — "Active — scale 150%".
         if let detail = value(after: "Custom banner (global):", in: text) {
             if let pct = numbers(in: detail, matching: #"scale (\d+)%"#).first {
                 settings.bannerScale = pct / 100; changes.append("Banner scale: \(Int(pct))%")
@@ -306,7 +297,7 @@ enum Diagnostics {
         return nil
     }
 
-    /// All capture-group integers from the first regex match in `text`.
+    /// Numeric captures from the first regex match in `text`.
     private static func numbers(in text: String, matching pattern: String) -> [Double] {
         guard let re = try? NSRegularExpression(pattern: pattern) else { return [] }
         let ns = text as NSString
@@ -317,13 +308,11 @@ enum Diagnostics {
         }
     }
 
-    /// A GitHub "new issue" URL with diagnostics + recent logs prefilled in the body. Logs are
-    /// capped so the URL stays within limits; the full report is also copied to the clipboard.
+    /// Prefills a bug report with diagnostics and capped logs to stay within URL limits.
     static func bugReportURL(items: [DiagItem]) -> URL? {
         let diag = reportText(items)
-        // Keep the inline logs to a recent tail so the URL doesn't blow past server limits.
         let allLogs = NannyLogger.shared.exportText()
-        // After a crash, the session that crashed tells far more than the one that followed.
+        // Include the session that crashed, which may precede the current log.
         let crashLog = NannyLogger.shared.logBefore(CrashReports.latest(), maxLines: 300)
         let logCap = crashLog == nil ? 3000 : 1000
         let logSection: String

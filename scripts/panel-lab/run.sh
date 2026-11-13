@@ -1,12 +1,7 @@
 #!/usr/bin/env bash
-# Runs the panel lab experiments (see lab.swift) on this Mac.
-#
-#   scripts/panel-lab/run.sh [experiment...]    default: all of them
-#
-# Posts two Lab notifications per lab app (build them with notify-lab/build.sh),
-# opens and closes the Notification Center panel several times, and clears the
-# Lab notifications at the end. The flash runs film only the strip where the
-# panel opens, analyse it as numbers, and delete the recording.
+# Run native panel experiments, clear Lab notifications, and discard flash recordings after
+# analysis.
+# Commands are in docs/LABS.md.
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 

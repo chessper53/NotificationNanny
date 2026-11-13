@@ -1,10 +1,9 @@
 #!/usr/bin/env bash
-# Builds and runs scripts/panel-probe.swift; see its header for what it does.
+# Build and run the native panel probe described in docs/LABS.md.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-# The 27.0 SDK in the Command Line Tools needs a SwiftUI macro plugin they don't
-# ship; nothing here uses SwiftUI, but pin the SDK that is known to work.
+# Pin the working older SDK to avoid missing macro plugins in the current Command Line Tools.
 SDK=/Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk
 [[ -d "$SDK" ]] && export SDKROOT="$SDK"
 

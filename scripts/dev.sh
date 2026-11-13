@@ -1,7 +1,5 @@
 #!/usr/bin/env bash
-# Kill, debug-build, and relaunch NotificationNanny. Signed with the dev identity
-# (scripts/dev-signing.sh), every build is the same app to macOS, so Accessibility and
-# Screen Recording, allowed once, stay allowed.
+# Build and relaunch with a stable development signing identity to preserve macOS permissions.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
@@ -20,8 +18,6 @@ swift build
 
 BINARY_PATH="$(swift build --show-bin-path)/${APP_NAME}"
 
-# Shared with build-app.sh so a dev bundle and a release bundle differ only in
-# how the binary was compiled — never in what ends up inside the .app.
 echo "==> Assembling + signing .app bundle..."
 DEV_SIGNING=1 scripts/assemble-bundle.sh "${BINARY_PATH}" "${APP_DIR}" "${VERSION}"
 

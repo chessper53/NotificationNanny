@@ -1,27 +1,5 @@
-// A minimal app whose only job is to post one notification and quit.
-//
-// macOS shows one banner per app at a time and swaps the content when the same
-// app posts again, so stacking can only be exercised with several apps. build.sh
-// wraps this one binary as several bundles with their own names and bundle IDs.
-//
-//   "Lab Alpha.app/Contents/MacOS/notifier" "Title" "Body"
-//   "Lab Alpha.app/Contents/MacOS/notifier" "Title" "Body" --actions
-//                                                         with the app's own buttons:
-//                                                         Archive, Snooze, and Reply
-//                                                         with a text field
-//   "Lab Alpha.app/Contents/MacOS/notifier" "Title" "Body" --reply
-//                                                         with Reply as its only
-//                                                         button, as a chat app has
-//   "Lab Alpha.app/Contents/MacOS/notifier" --clear      removes everything this
-//                                                         app has delivered, e.g. a
-//                                                         backlog queued while locked
-//
-// When one of its notifications is clicked or one of its buttons used, macOS
-// launches the app with no arguments to hand over the response. It then appends
-// it to responses.log next to the lab apps (build/notify-lab) and quits, posting
-// nothing; that log is how panel-lab checks an action really reached the app.
-//
-// The first post from each bundle asks for notification permission.
+// Post Lab notifications or log delivered action responses without posting again.
+// Separate app bundles exercise concurrent banners; see docs/LABS.md for commands.
 
 import AppKit
 import UserNotifications
@@ -34,7 +12,7 @@ final class Delegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterD
     private var handledResponse = false
 
     func applicationWillFinishLaunching(_ note: Notification) {
-        // Before launching ends, or a response that launched the app is never delivered.
+        // Install the delegate before launch completes or launch responses will not be delivered.
         UNUserNotificationCenter.current().delegate = self
         let reply = UNTextInputNotificationAction(identifier: "reply", title: "Reply", options: [],
                                                   textInputButtonTitle: "Send", textInputPlaceholder: "Message")
@@ -78,7 +56,6 @@ final class Delegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterD
         let body = args.count > 1 && !args[1].hasPrefix("--") ? args[1] : "Sent by notify-lab"
         let category = args.contains("--archive-only") ? archiveCategoryID
             : args.contains("--actions") ? categoryID : args.contains("--reply") ? replyCategoryID : nil
-        // --subtitle Text: a second bold line, as mail apps send.
         let subtitle = args.firstIndex(of: "--subtitle").flatMap { $0 + 1 < args.count ? args[$0 + 1] : nil } ?? ""
         Task { @MainActor in
             await post(title: title, subtitle: subtitle, body: body, category: category)

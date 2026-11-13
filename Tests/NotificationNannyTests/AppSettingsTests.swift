@@ -75,11 +75,7 @@ struct AppSettingsTests {
         #expect(s.appGroups.first?.appNames == ["Messages", "Slack", "Zoom"])
     }
 
-    // Reassigning used to mutate appGroups in place: remove from every group,
-    // then append to the target. Each step published separately, so observers saw
-    // a state where the app belonged to no group at all. The Exceptions picker
-    // rendered that torn state and ended up showing checkmarks against the wrong
-    // rows.
+    // Observers must see one atomic membership change, never a temporary unassigned state.
     @Test func addApp_neverPublishesAStateWithTheAppInNoGroup() {
         let (s, _) = makeSettings()
         let g1 = s.addGroup(name: "G1")

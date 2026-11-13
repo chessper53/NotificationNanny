@@ -2,19 +2,14 @@ import AppKit
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// The window our Notification Center list is drawn in.
-///
-/// It never becomes key or main: Notification Center closes its panel when anything
-/// else takes focus. Clicks reach it through `PanelClickRouter`, which sends them to the
-/// window directly, so the hosting view has to take the first click.
+/// Never take key or main status: stealing focus closes the native panel.
+/// PanelClickRouter delivers clicks directly, so the hosting view must accept the first click.
 final class NCPanelWindow: NSPanel {
     override var canBecomeKey: Bool { false }
     override var canBecomeMain: Bool { false }
 }
 
-/// A hosting view that takes the click that would otherwise only make its window key.
-/// Our panel never becomes key; Settings stops being key while Notification Center's
-/// panel is open, and the click router hands it clicks then (dragging the panel's place).
+/// Accept the initial click even while the window is inactive.
 package class FirstClickHostingView<Content: View>: NSHostingView<Content> {
     override package func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 }
@@ -23,7 +18,7 @@ private final class FirstMouseHostingView<Content: View>: FirstClickHostingView<
     /// A right click, at its place in the view (top left origin).
     var onRightClick: ((CGPoint) -> Void)?
 
-    override func mouseDown(with event: NSEvent) { // DEBUG-CLICK
+    override func mouseDown(with event: NSEvent) {
         if ProcessInfo.processInfo.environment["NN_TIMING"] == "1" {
             FileHandle.standardError.write(Data("[panel view] down at \(event.locationInWindow)\n".utf8))
         }
@@ -44,23 +39,19 @@ final class CustomNCPanelController {
     private var screen: NSScreen?
     private var contentHeight: CGFloat = 120
 
-    /// Notification Center's column, measured on 27.0 (scripts/panel-lab `panel-shots`):
-    /// rows 344 points wide, 16 from the screen's right edge, the first 46 from its top.
+    /// Native column dimensions measured on macOS 27, in points.
     static let rowWidth: CGFloat = 344
     static let rightInset: CGFloat = 16
     static let topInset: CGFloat = 46
     /// Room around the rows for what overhangs them: a row's close button.
     static let chrome: CGFloat = CustomBannerView.Metrics.chromeInset
-    /// To the screen's edge, so the panel slides in from beyond it as the system's. Rows
-    /// and what overhangs them grow with the panel's size; the inset from the edge doesn't.
+    /// Scale rows and close button margins, but retain the native screen edge inset.
     static func width(_ o: NCPanelOptions) -> CGFloat {
         // In the middle there is no edge to reach, only the close button's room each side.
         o.side == .center ? (chrome * 2 + rowWidth) * o.scale : (chrome + rowWidth) * o.scale + rightInset
     }
 
-    /// Where the rows sit in a window frame of ours (AppKit coordinates): the inset from
-    /// the screen's edge on the panel's side, the close button's room on the other and
-    /// above.
+    /// Row bounds in AppKit coordinates, leaving room for the screen inset and close button.
     static func rowsRect(in frame: NSRect, options o: NCPanelOptions) -> NSRect {
         let width = rowWidth * o.scale
         let x: CGFloat
@@ -73,9 +64,7 @@ final class CustomNCPanelController {
         return NSRect(x: x, y: frame.minY, width: width, height: top - frame.minY)
     }
 
-    /// The offset across that the screen has room for: the rows never come closer to
-    /// either edge than the system's do to the right one. Clamped here rather than when
-    /// it is set, as the same offset is used on screens of every width.
+    /// Clamp offsets for the current screen, retaining the native edge inset on both sides.
     static func xOffset(_ o: NCPanelOptions, on frame: NSRect) -> CGFloat {
         let width = rowWidth * o.scale
         let base: CGFloat
@@ -91,7 +80,6 @@ final class CustomNCPanelController {
 
     private var options: NCPanelOptions { takeover?.options ?? NCPanelOptions() }
 
-    /// Whether the panel is in or out, which its animation follows.
     let presentation = PanelPresentation()
 
     init(takeover: NCPanelTakeover) {
@@ -101,12 +89,12 @@ final class CustomNCPanelController {
         window.level = .statusBar
         window.isOpaque = false
         window.backgroundColor = .clear
-        // The rows are glass and cast none, as the system's don't.
+        // Native rows cast no panel shadow.
         window.hasShadow = false
         window.isReleasedWhenClosed = false
         window.hidesOnDeactivate = false
         window.collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle, .fullScreenAuxiliary]
-        // scripts/panel-lab checks both appearances without switching the system's.
+        // Override appearance in lab runs without changing the system setting.
         switch ProcessInfo.processInfo.environment["NN_LAB_PANEL_APPEARANCE"] {
         case "light": window.appearance = NSAppearance(named: .aqua)
         case "dark": window.appearance = NSAppearance(named: .darkAqua)
@@ -117,15 +105,13 @@ final class CustomNCPanelController {
             self?.contentHeightChanged(height)
         }, hitMap: hitMap, maxHeightOnScreen: { [weak self] in self?.maxHeight ?? 600 })
         let host = FirstMouseHostingView(rootView: view)
-        // The window's size is the controller's (layout()), never the content's.
+        // The controller owns window size; content must not resize it.
         host.sizingOptions = []
-        // A right click on a row opens its menu where it was clicked, as on the system's.
         host.onRightClick = { [weak takeover] point in
-            if ProcessInfo.processInfo.environment["NN_TIMING"] == "1" { // DEBUG-CLICK
+            if ProcessInfo.processInfo.environment["NN_TIMING"] == "1" {
                 FileHandle.standardError.write(Data("[panel view] right click at \(point) → \(hitMap.row(at: point) ?? "nothing"), \(hitMap.rowFrames.count) frames\n".utf8))
             }
             guard let takeover, let id = hitMap.row(at: point) else { return }
-            // A widget's menu, as a right click on it opens on the system's.
             if id.hasPrefix(NCPanelHitMap.widgetPrefix) {
                 let widgetID = String(id.dropFirst(NCPanelHitMap.widgetPrefix.count))
                 if let widget = takeover.widgets.first(where: { $0.id == widgetID }) {
@@ -138,7 +124,7 @@ final class CustomNCPanelController {
             takeover.showMenu(for: row, withAppActions: true, at: point, trailing: false)
         }
         window.contentView = host
-        if ProcessInfo.processInfo.environment["NN_TIMING"] == "1" { // DEBUG-CLICK
+        if ProcessInfo.processInfo.environment["NN_TIMING"] == "1" {
             NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak window] event in
                 FileHandle.standardError.write(Data("[app] scroll \(event.scrollingDeltaY) to window \(event.windowNumber), panel \(window?.windowNumber ?? -1)\n".utf8))
                 return event
@@ -151,15 +137,14 @@ final class CustomNCPanelController {
         layout()
         window.alphaValue = 1
         window.orderFrontRegardless()
-        if ProcessInfo.processInfo.environment["NN_TIMING"] == "1" { // DEBUG-CLICK
+        if ProcessInfo.processInfo.environment["NN_TIMING"] == "1" {
             FileHandle.standardError.write(Data("[panel window] shown uptime \(ProcessInfo.processInfo.systemUptime)\n".utf8))
         }
-        // Out first, then in on the next pass, so the animation has somewhere to start.
+        // Start outside, then animate inward on the next pass.
         presentation.shown = false
         DispatchQueue.main.async { [presentation] in presentation.shown = true }
     }
 
-    /// Plays the panel's way out, then takes the window away.
     func hide(after outro: Double) {
         guard window.isVisible else { return }
         presentation.shown = false
@@ -169,13 +154,11 @@ final class CustomNCPanelController {
         }
     }
 
-    /// The tallest the panel can be on its screen.
     var maxHeight: CGFloat {
         guard let screen else { return 600 }
         return screen.frame.height - Self.topInset - options.topOffset - Self.rightInset + Self.chrome * options.scale * 2
     }
 
-    /// Places it again, for a change of its place or size while it is open.
     func relayout() { layout() }
 
     private func contentHeightChanged(_ height: CGFloat) {
@@ -184,8 +167,7 @@ final class CustomNCPanelController {
         layout()
     }
 
-    /// Exactly as tall as what it shows: the click router takes every click inside the
-    /// window, so a transparent margin would swallow clicks meant for what is below.
+    /// Fit content exactly: the click router would otherwise swallow clicks in transparent margins.
     private func layout() {
         guard let screen else { return }
         let o = options
@@ -201,21 +183,20 @@ final class CustomNCPanelController {
         x += Self.xOffset(o, on: screen.frame)
         let frame = NSRect(x: x, y: top - height, width: width, height: height)
         window.setFrame(frame, display: true)
-        if ProcessInfo.processInfo.environment["NN_TIMING"] == "1" { // DEBUG-CLICK
+        if ProcessInfo.processInfo.environment["NN_TIMING"] == "1" {
             FileHandle.standardError.write(Data("[panel window] height \(Int(height)) uptime \(ProcessInfo.processInfo.systemUptime)\n".utf8))
         }
     }
 }
 
-/// In or out: the panel's animation, chosen in Settings, plays between the two.
 @MainActor
 final class PanelPresentation: ObservableObject {
     @Published var shown = false
 }
 
-// MARK: - View
+// MARK: View
 
-/// The panel's size, 1 being the system's; every measurement below is multiplied by it.
+/// Panel scale relative to native size; apply it to every measurement.
 private struct PanelScaleKey: EnvironmentKey { static let defaultValue: CGFloat = 1 }
 extension EnvironmentValues {
     var panelScale: CGFloat {
@@ -229,7 +210,7 @@ private struct ContentHeightKey: PreferenceKey {
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = max(value, nextValue()) }
 }
 
-/// Where each row is in the panel's view, for a right click to find it.
+/// Row bounds used to route secondary clicks.
 private struct RowFramesKey: PreferenceKey {
     static let defaultValue: [String: CGRect] = [:]
     static func reduce(value: inout [String: CGRect], nextValue: () -> [String: CGRect]) {
@@ -237,13 +218,11 @@ private struct RowFramesKey: PreferenceKey {
     }
 }
 
-/// The panel view's coordinate space: the window's content, top left origin. Menus and
-/// right clicks are placed in it.
+/// Panel content coordinates with a top left origin for menus and secondary clicks.
 enum NCPanelSpace {
     static let name = "ncPanel"
 }
 
-/// Hands a view's frame in the panel's space to `frame`, as it changes.
 private struct PanelFrameReader: ViewModifier {
     @Binding var frame: CGRect
     func body(content: Content) -> some View {
@@ -255,9 +234,7 @@ private struct PanelFrameReader: ViewModifier {
     }
 }
 
-/// Notification Center's list, drawn as the system draws it: every row is a banner, rows
-/// stand apart on the desktop with no panel behind them, and headings sit over the desktop
-/// in bold. Spacing measured on 27.0 (scripts/panel-lab `panel-shots`, `tree`).
+/// Native list geometry measured on macOS 27.
 enum NCPanelMetrics {
     static let rowGap: CGFloat = 6
     /// A collapsed stack shows the edges of the cards behind it under its own.
@@ -269,25 +246,19 @@ enum NCPanelMetrics {
     static let headingFont: CGFloat = 15
     static let showLessWidth: CGFloat = 73
     static let roundButton: CGFloat = 20
-    /// Under the list: Edit Widgets (87 wide) and the Clear Notifications ✕, both 24 high,
-    /// 8 apart, centred on the column, 16 under what is above them.
+    /// Native footer button dimensions and spacing, in points.
     static let footerAbove: CGFloat = 16
     /// From the last notification to the first widget under them.
     static let widgetsAbove: CGFloat = 16
     static let footerHeight: CGFloat = 24
     static let footerGap: CGFloat = 8
     static let editWidgetsWidth: CGFloat = 87
-    /// Notification Center darkens what is behind its list, in both appearances alike:
-    /// the column by 12% and behind the rows by 10% more, 21% in all (measured against
-    /// the same gray backdrop under the real panel and ours, scripts/panel-lab/compare.sh).
-    /// It shows through the rows' glass, which is why they look darker in the panel than
-    /// as banners. Ours darkens only under each row and button, exactly where their glass
-    /// shows it: a dimmed column read as a dark box over the windows behind the panel.
+    /// Darken beneath glass by 21% to match the native panel.
+    /// Apply only under rows and buttons to avoid a visible rectangular backdrop.
     static let behindGlass: Double = 0.21
     static let stackLayerDim: Double = 0.09
 }
 
-/// The darkening Notification Center has behind its list, under one piece of glass.
 private extension View {
     func panelBackdrop<S: Shape>(_ shape: S) -> some View {
         background(shape.fill(Color.black.opacity(NCPanelMetrics.behindGlass)))
@@ -300,9 +271,7 @@ struct CustomNCPanelView: View {
     let onHeight: (CGFloat) -> Void
     /// Rows by where they are, for a right click.
     let hitMap: NCPanelHitMap
-    /// The tallest the panel can be: its screen's height under where it starts, which the
-    /// window knows. Taken from there so the list and its window never disagree; a list
-    /// taller than its window was cut off wrong when the panel was placed low.
+    /// Use the controller's available height so the list and window clamp identically.
     let maxHeightOnScreen: () -> CGFloat
     @State private var filter: String?
     @State private var contentHeight: CGFloat = 0
@@ -338,10 +307,7 @@ struct CustomNCPanelView: View {
             }
         }
         .frame(width: width, height: height, alignment: .topLeading)
-        // Pinned to the window's top whatever height it has: the window's size comes from
-        // the controller, a step ahead of this view's own idea of its height right after
-        // opening, and the content was centred in the window meanwhile. It then jumped up
-        // under the pointer, and a click made then was lost.
+        // Pin to the top while the controller's window size and the view's content height catch up.
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .coordinateSpace(name: NCPanelSpace.name)
         .onPreferenceChange(ContentHeightKey.self) { h in
@@ -375,9 +341,8 @@ struct CustomNCPanelView: View {
                     }
                     ForEach(section.groups) { group in GroupView(group: group, takeover: takeover) }
                 }
-                // Under the notifications, 16 below the last, as Notification Center has them
-                // (measured on 27.0, scripts/panel-lab `widget-park`); the rows end in their
-                // gap already.
+                // Keep the native 16 point widget gap; notification rows already include their own
+                // trailing gap.
                 if !takeover.widgets.isEmpty {
                     VStack(spacing: NCPanelMetrics.rowGap * s) {
                         ForEach(takeover.widgets) { widget in WidgetView(widget: widget, takeover: takeover) }
@@ -399,15 +364,12 @@ struct CustomNCPanelView: View {
             })
         }
         .frame(width: CustomNCPanelController.width(o), height: listHeight)
-        // The window server sends a scroll over a clear pixel to the window behind: in the
-        // gaps between rows and stacks the scroll moved what was under the panel. Clicks
-        // there are ours already (PanelClickRouter). One level of alpha, too little to see.
+        // An almost transparent fill keeps scrolls in the row gaps from reaching windows behind the
+        // panel.
         .background(Color.black.opacity(0.005))
     }
 
-    /// A menu over the panel, with a layer under it that closes it on a click elsewhere in
-    /// the panel, as a click outside a menu does. A click outside the panel closes
-    /// Notification Center's, and ours with it.
+    /// Draw the menu over a dismiss layer; clicks outside the panel close the native panel too.
     private func menuLayer(_ menu: NCPanelMenu, width: CGFloat, height: CGFloat) -> some View {
         ZStack(alignment: .topLeading) {
             Color.black.opacity(0.001)
@@ -430,8 +392,7 @@ struct CustomNCPanelView: View {
     private var listHeight: CGFloat { max(min(contentHeight, maxHeight), 1) }
 }
 
-/// Rows by where they are in the panel's view, kept by the view, asked by the window when
-/// it is right clicked.
+/// Maps panel frames to row and widget identifiers for secondary clicks.
 @MainActor
 final class NCPanelHitMap {
     /// Rows by their ID, widgets by this and theirs.
@@ -443,8 +404,7 @@ final class NCPanelHitMap {
     }
 }
 
-/// Not part of the system's panel: a row of the apps listed, to show one at a time, only
-/// when asked for in Settings. Glass pills like the system's own, with All first.
+/// Optional app filter using glass pills, with All first.
 private struct AppFilterBar: View {
     let apps: [String]
     @Binding var filter: String?
@@ -488,7 +448,7 @@ private struct AppFilterBar: View {
     }
 }
 
-/// The panel's way in and out: the banners' animations, applied to the whole list.
+/// Apply the chosen banner animation to the entire panel.
 private struct PanelMotion: ViewModifier {
     let shown: Bool
     let animation: BannerAnimation
@@ -496,8 +456,7 @@ private struct PanelMotion: ViewModifier {
 
     func body(content: Content) -> some View {
         let t = shown ? BannerAnimation.Transform() : animation.hidden
-        // Sideways motion comes from the panel's own edge: mirrored on the left, and in
-        // the middle, where there is no edge, down from the top with a fade instead.
+        // Mirror motion at the left edge; centered panels enter from above with a fade.
         var x = t.x, y = t.y, opacity = t.opacity
         switch side {
         case .right: break
@@ -515,8 +474,7 @@ private struct PanelMotion: ViewModifier {
     }
 }
 
-/// A heading over the desktop, as Notification Center draws its own and an expanded
-/// stack's: bold, with its buttons on the right.
+/// Native heading with buttons on the right.
 private struct Heading<Buttons: View>: View {
     let title: String
     var isFirst = false
@@ -541,8 +499,6 @@ private struct Heading<Buttons: View>: View {
     }
 }
 
-/// The system's round glass button beside a heading and under the list: Clear, Clear All,
-/// Clear Notifications.
 private struct RoundButton: View {
     let symbol: String
     var size: CGFloat = NCPanelMetrics.roundButton
@@ -562,7 +518,6 @@ private struct RoundButton: View {
     }
 }
 
-/// A glass pill: Show Less beside an expanded stack's heading, Edit Widgets under the list.
 private struct PillButton: View {
     let title: String
     var width: CGFloat = NCPanelMetrics.showLessWidth
@@ -586,9 +541,7 @@ private struct PillButton: View {
     }
 }
 
-/// Under the list, as Notification Center has it: Edit Widgets, and while there is
-/// something to clear, the ✕ with Clear Banners Only and Clear All Notifications. With no
-/// notifications and no widgets it is all the panel shows, as on the system's.
+/// Native footer actions, also shown when the list and widget area are empty.
 private struct Footer: View {
     @ObservedObject var takeover: NCPanelTakeover
     let hasContent: Bool
@@ -638,7 +591,6 @@ private struct GroupView: View {
             }
             ForEach(group.rows) { row in
                 RowView(row: row, takeover: takeover)
-                // A collapsed stack: the edges of the cards behind it, under its own.
                 if row.isStack {
                     // Part of the stack: a click on them expands it, as on the system's.
                     StackEdges(tint: takeover.tint(row.appName))
@@ -652,8 +604,7 @@ private struct GroupView: View {
     }
 }
 
-/// A notification as a banner, the system's way: the same card the custom banner draws,
-/// with the banners' tint, text colour and blur.
+/// Share BannerCard appearance and interaction with custom banners.
 private struct RowView: View {
     let row: NCPanelRow
     @ObservedObject var takeover: NCPanelTakeover
@@ -680,7 +631,7 @@ private struct RowView: View {
                    onOpen: { takeover.activate(row) },
                    onAction: { takeover.perform($0, on: row) },
                    onDetails: { takeover.toggleDetails(row) },
-                   // The system's menu hangs from under the ⋯, its right edge past the row's.
+                   // Anchor the native style menu under the more button, extending beyond the row.
                    onMore: { more in
                        takeover.showMenu(for: row, withAppActions: false,
                                          at: CGPoint(x: frame.minX + more.maxX + 40 * s, y: frame.minY + more.maxY + 6 * s),
@@ -690,13 +641,10 @@ private struct RowView: View {
                        takeover.showOptions(for: row, at: CGPoint(x: frame.minX + pill.maxX, y: frame.minY + pill.maxY + 4 * s))
                    })
             .frame(width: CustomNCPanelController.rowWidth * s, height: row.height * s)
-            // Notification Center animates a row growing for its buttons or a reply, and
-            // its height is read a few times on the way: ours glides between them rather
-            // than jumping at each.
+            // Smoothly follow native row height changes while details or replies animate.
             .animation(.smooth(duration: 0.22), value: row.height)
             .animation(.smooth(duration: 0.22), value: row.expanded)
-            // Nothing of a row ever reaches the next: its text fits in it, and while it
-            // grows or shrinks what doesn't fit yet is cut off.
+            // Clip animated content so a changing row never draws over its neighbour.
             .clipShape(shape)
             .panelBackdrop(shape)
             .overlay(alignment: .topLeading) {
@@ -713,10 +661,7 @@ private struct RowView: View {
     }
 }
 
-/// A menu of Notification Center's, drawn in our panel as the system draws its menus:
-/// glass, 24 point items, short separators, a section's name in small bold gray, the item
-/// under the pointer in the accent colour (sizes from the real menu's frames, scripts/
-/// panel-lab `real-hover`).
+/// Native menu appearance: glass, 24 point actions, short separators, and small section headings.
 private struct PanelMenuView: View {
     let menu: NCPanelMenu
     @ObservedObject var takeover: NCPanelTakeover
@@ -773,8 +718,7 @@ private struct PanelMenuView: View {
 
 private struct MenuItemRow: View {
     let title: String
-    /// Ticked, and whether the menu has ticks at all: then every item leaves room for
-    /// one, as on the system's menus.
+    /// Align every title with the checkmark column whenever any item is checked.
     var checked = false
     var ticks = false
     let action: () -> Void
@@ -809,10 +753,7 @@ private struct MenuItemRow: View {
     }
 }
 
-/// The two cards a collapsed stack shows under its own, glass like it and each narrower,
-/// one 8 point strip each. Each shows only its own strip: on the system's, the nearer
-/// card hides the one behind it, where two layers of glass would come out twice as bright.
-/// Measured: each as bright as the card, ending in its bright edge (compare.sh).
+/// Draw each collapsed card's exposed strip only; overlapping glass would brighten it twice.
 private struct StackEdges: View {
     let tint: Color
     @Environment(\.panelScale) private var s
@@ -827,9 +768,7 @@ private struct StackEdges: View {
     private func layer(inset: CGFloat) -> some View {
         let radius = CustomBannerView.Metrics.cornerRadius * s
         let shape = RoundedRectangle(cornerRadius: radius, style: .continuous)
-        // Glass this thin, right under a card, comes out brighter than a card: it takes
-        // in the card above it. The system's are as bright as the card; 9% less brings
-        // them there in both appearances (compare.sh).
+        // Reduce brightness 9% to compensate for the card above showing through the thin glass.
         return BannerGlass(shape: shape, cornerRadius: radius, scale: s, tint: tint)
             .overlay(shape.fill(Color.black.opacity(NCPanelMetrics.stackLayerDim)))
             .panelBackdrop(shape)
@@ -840,7 +779,6 @@ private struct StackEdges: View {
     }
 }
 
-/// The banner's close button, the same as the custom banner's.
 private struct CloseButton: View {
     let action: () -> Void
     @Environment(\.panelScale) private var s
@@ -860,22 +798,19 @@ private struct CloseButton: View {
     }
 }
 
-/// A picture of a real widget, sized as Notification Center draws it. A click goes to the
-/// real one, at the same spot.
+/// Native widget capture; forward clicks at the corresponding position on the real widget.
 private struct WidgetView: View {
     let widget: NCWidget
     @ObservedObject var takeover: NCPanelTakeover
 
     @Environment(\.panelScale) private var s
 
-    /// A widget's corners: a circle of 28 fits where its capture turns black, row by row
-    /// (measured on 27.0, scripts/panel-lab `widget-park`); at 20 black showed in them.
+    /// Measured native corner radius; smaller masks expose the capture's black corners.
     static let cornerRadius: CGFloat = 28
 
     var body: some View {
-        // As large as its picture: resized, it keeps the last picture at the last size until
-        // one at the new size comes, and then changes once. Stretched to the new size, or a
-        // faint box meanwhile, it looked broken or gone. A box only before any picture.
+        // Keep the previous image and size until a new capture arrives; use a placeholder only
+        // before the first capture.
         let shown = widget.image?.size ?? widget.frameInWindow.size
         let size = CGSize(width: shown.width * s, height: shown.height * s)
         Group {
@@ -904,7 +839,6 @@ private struct AppIcon: View {
     let appName: String
     let size: CGFloat
     var body: some View {
-        // Without an icon of its own, the generic app icon, as the system shows.
         Image(nsImage: AppIconCache.shared.icon(for: appName) ?? NSWorkspace.shared.icon(for: .applicationBundle))
             .resizable().interpolation(.high).frame(width: size, height: size)
     }

@@ -1,5 +1,4 @@
-/* NotificationNanny landing page. Navy from the demo's wallpaper, amber from the app. Follows the
-   system appearance, the same way the app does. */
+/* Match the app's amber accent and follow system appearance. */
 
 :root {
   --bg: #f6f6f9;

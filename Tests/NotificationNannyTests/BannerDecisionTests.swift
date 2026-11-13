@@ -2,9 +2,6 @@ import Foundation
 import Testing
 @testable import NotificationNannyCore
 
-/// Covers the custom-vs-native decision tree and the per-group "effective" value
-/// resolution in `AppSettings` — the logic that drives whether a banner is
-/// repositioned natively or replaced with the custom overlay.
 @Suite("Banner decision") @MainActor
 struct BannerDecisionTests {
 
@@ -15,7 +12,6 @@ struct BannerDecisionTests {
         return AppSettings(defaults: ud, knownAppsFileURL: tempURL)
     }
 
-    /// Adds a group containing `app` and lets the caller mutate it in place.
     @discardableResult
     private func addGroup(_ s: AppSettings, app: String, _ mutate: (inout AppGroup) -> Void) -> UUID {
         let id = s.addGroup(name: "G")
@@ -25,7 +21,7 @@ struct BannerDecisionTests {
         return id
     }
 
-    // MARK: - Global defaults
+    // MARK: Global defaults
 
     @Test func defaults_useNativeBanner() {
         let s = makeSettings()
@@ -70,11 +66,11 @@ struct BannerDecisionTests {
         #expect(s.shouldUseCustomBanner(for: "Slack") == false)
     }
 
-    // MARK: - Per-group overrides
+    // MARK: Group overrides
 
     @Test func groupModeNative_forcesNative_evenWithScale() {
         let s = makeSettings()
-        s.bannerScale = 2.0   // global would otherwise force custom
+        s.bannerScale = 2.0   // The global scale would otherwise force custom rendering.
         addGroup(s, app: "Slack") { $0.bannerMode = .native }
         #expect(s.shouldUseCustomBanner(for: "Slack") == false)
     }
@@ -103,12 +99,12 @@ struct BannerDecisionTests {
         #expect(s.shouldUseCustomBanner(for: "Slack") == true)
     }
 
-    // MARK: - Effective value resolution (override vs inherit)
+    // MARK: Inherited values
 
     @Test func effectiveScale_inheritsGlobalWhenGroupNil() {
         let s = makeSettings()
         s.bannerScale = 1.3
-        addGroup(s, app: "Slack") { _ in }   // no scale override
+        addGroup(s, app: "Slack") { _ in }
         #expect(s.effectiveBannerScale(for: "Slack") == 1.3)
     }
 
@@ -142,11 +138,10 @@ struct BannerDecisionTests {
     @Test func appNotInGroup_usesGlobalDecision() {
         let s = makeSettings()
         addGroup(s, app: "Slack") { $0.bannerMode = .custom }
-        // A different app inherits global (native by default).
         #expect(s.shouldUseCustomBanner(for: "Mail") == false)
     }
 
-    // MARK: - GroupID variants mirror the appName variants
+    // MARK: Group ID lookup
 
     @Test func byGroupID_matchesByAppName() {
         let s = makeSettings()

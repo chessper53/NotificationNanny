@@ -2,13 +2,11 @@ import Foundation
 import Testing
 @testable import NotificationNannyCore
 
-/// `AppGroup` and `Preset` carry custom decoders that migrate the legacy
-/// `bannerColorR/G/B` (+ `hasBannerColor` for Preset) representation to the newer
-/// single `bannerTint`. Old backups must keep decoding correctly.
+/// Keep legacy RGB backups compatible with the combined bannerTint representation.
 @Suite("Tint migration")
 struct TintMigrationTests {
 
-    // MARK: - AppGroup
+    // MARK: AppGroup
 
     @Test func appGroup_prefersBannerTintKey() throws {
         let json = """
@@ -61,12 +59,11 @@ struct TintMigrationTests {
         let str = String(data: data, encoding: .utf8)!
         #expect(str.contains("bannerTint"))
         #expect(!str.contains("bannerColorR"))
-        // Round-trips back to the same value.
         let decoded = try JSONDecoder().decode(AppGroup.self, from: data)
         #expect(decoded.bannerTint == g.bannerTint)
     }
 
-    // MARK: - Preset
+    // MARK: Preset
 
     @Test func preset_migratesLegacyRGB_whenHasColorTrue() throws {
         let json = """

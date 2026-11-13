@@ -2,48 +2,39 @@ import Foundation
 
 /// One notification in the open Notification Center panel, read through Accessibility.
 struct NCPanelRow: Equatable, Identifiable {
-    /// The row's `AXIdentifier`. It stays the same while the notification exists, from
-    /// banner to panel row and across the panel closing and opening again (measured on
-    /// 27.0 with scripts/panel-lab).
+    /// Stable notification identifier across banners, panel rows, and panel reopenings on macOS 27.
     let id: String
     let appName: String
     let title: String
     let subtitle: String
     let body: String
-    /// A collapsed stack: one row standing for several notifications from one app,
-    /// showing the newest. Pressing it expands the stack in place.
+    /// One row represents several notifications from an app; pressing it expands the stack.
     let isStack: Bool
-    /// The app's own buttons (Reply, Archive…); see NotificationActions.
+    /// The notifying app's actions; see NotificationActions.
     var actions: [String] = []
     /// What is typed in its open reply field, nil while no reply is open.
     var reply: String? = nil
-    /// The reply field's placeholder, as the app set it.
     var replyPlaceholder: String = ""
     /// Its details are shown in Notification Center: the app's buttons under the text.
     var expanded = false
-    /// Its height in Notification Center, which grows with details and a reply: ours is
-    /// drawn the same.
+    /// Match the native height, including expanded details and replies.
     var height: CGFloat = 58
-    /// The time Notification Center draws on it ("17:46", "2 days ago"): the row's one
-    /// text without an identifier. Alerts still up have none (measured on 27.0,
-    /// scripts/panel-lab `real-times`).
+    /// The native time is the row's unlabelled text; active alerts have none on macOS 27.
     var time: String? = nil
 }
 
-/// One item of a menu Notification Center shows, read from it: a row's (⋯, right click)
-/// or the footer's Clear Notifications.
+/// An item read from a native row or footer menu.
 struct NCMenuItem: Equatable, Identifiable {
     enum Kind: Equatable { case action, header, separator }
     let kind: Kind
     let title: String
     /// Which of the menu's items with this title it is, to find it again.
     let occurrence: Int
-    /// Ticked, as a widget's current size is.
     var checked = false
     var id: String { "\(kind)-\(title)-\(occurrence)" }
 
-    /// The menu once `chosen` is picked: a tick moves to it from the other items of its
-    /// group, between separators (a widget's sizes). Items of a group without a tick stay.
+    /// Moves a checkmark within the chosen separator group; groups without a checkmark stay
+    /// unchanged.
     static func choosing(_ chosen: NCMenuItem, in items: [NCMenuItem]) -> [NCMenuItem] {
         guard let at = items.firstIndex(where: { $0.id == chosen.id }) else { return items }
         var start = at, end = at
@@ -55,10 +46,8 @@ struct NCMenuItem: Equatable, Identifiable {
         return next
     }
 
-    /// The menu's items from its AX children, as (title, height) in order. Separators are
-    /// short untitled items; untitled full height items are containers and are left out;
-    /// a titled item that isn't a `menuAction:` is a section heading (measured on 27.0:
-    /// "Lab Bravo Notifications" over Mute for 1 Hour…).
+    /// Builds menu items from AX children; short untitled items separate groups, titled nonactions
+    /// are headings.
     static func build(from children: [(title: String, height: CGFloat, isAction: Bool)]) -> [NCMenuItem] {
         var items: [NCMenuItem] = []
         var seen: [String: Int] = [:]
@@ -77,24 +66,15 @@ struct NCMenuItem: Equatable, Identifiable {
     }
 }
 
-/// A child of the panel's `AXNotificationListItems` list, reduced to what decides the
-/// layout. The list is flat: section headings, group headers and rows are siblings.
+/// Flat list entries: section headings, group headers, and rows are siblings.
 enum NCListEntry: Equatable {
     case heading(String)
     case button
     case row(NCPanelRow)
 }
 
-/// The panel's notifications in Notification Center's own order and grouping.
-///
-/// Measured on 27.0, the list reads, top to bottom:
-///
-///     alerts still up            rows, no heading
-///     "Notification Center"      a heading, then its Clear All button
-///     history                    rows
-///
-/// An expanded stack is a heading with the app's name, its Show Less and Clear
-/// buttons, then one row per notification. A collapsed stack is a single row.
+/// Native list order: active alerts, the Notification Center heading and Clear All, then history.
+/// Expanded stacks have a header and rows; collapsed stacks have one row.
 struct NCPanelSnapshot: Equatable {
     struct Group: Equatable, Identifiable {
         let id: String
@@ -118,8 +98,7 @@ struct NCPanelSnapshot: Equatable {
     var rowCount: Int { sections.reduce(0) { $0 + $1.groups.reduce(0) { $0 + $1.rows.count } } }
     var isEmpty: Bool { rowCount == 0 }
 
-    /// Whether the heading at `i` heads an expanded stack rather than a section: the row
-    /// after it, before any other heading, belongs to an app of that name.
+    /// A heading opens an expanded group when the next row belongs to an app with that name.
     static func headingOpensGroup(at i: Int, in entries: [NCListEntry]) -> Bool {
         guard case .heading(let text) = entries[i] else { return false }
         for entry in entries[(i + 1)...] {
@@ -132,9 +111,8 @@ struct NCPanelSnapshot: Equatable {
         return false
     }
 
-    /// Builds the layout from the list's children in order. A heading starts an expanded
-    /// group when the row after it belongs to an app of that name, and a new section
-    /// otherwise; buttons only ever follow headings and carry no layout of their own.
+    /// Builds groups and sections from headings and following rows; header buttons have no separate
+    /// layout.
     static func build(from entries: [NCListEntry]) -> NCPanelSnapshot {
         var sections: [Section] = [Section(id: 0, title: nil, groups: [])]
         var openGroup: (appName: String, index: Int)?

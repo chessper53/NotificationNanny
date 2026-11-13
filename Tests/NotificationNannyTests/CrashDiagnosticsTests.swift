@@ -2,8 +2,6 @@ import Foundation
 import Testing
 @testable import NotificationNannyCore
 
-/// When NN quits on its own, the crash report and the log of the session that crashed
-/// are all there is to go on. These cover reading them back.
 @Suite("Crash diagnostics")
 struct CrashDiagnosticsTests {
 

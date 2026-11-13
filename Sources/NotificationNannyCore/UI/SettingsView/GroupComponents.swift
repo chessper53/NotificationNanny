@@ -1,11 +1,8 @@
 import SwiftUI
 import AppKit
 
-// The pieces a tab of app groups is built from: the row of groups on top, and the card
-// that puts apps in one. Shared by the Banner tab's exception groups and the Sounds tab.
 
-/// A row of chips, one per group, an optional one for everything outside them first,
-/// then a button that names and adds a new group.
+/// Group chips with an optional leading scope and a named add action.
 struct GroupScopeBar: View {
     struct Item: Identifiable {
         let id: UUID
@@ -31,7 +28,6 @@ struct GroupScopeBar: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             bar
-            // Until there is a group, nothing on the tab says groups exist or what one is.
             if groups.isEmpty && !adding {
                 SettingsNote(emptyNoteKey)
                     .padding(.leading, 2)
@@ -69,8 +65,7 @@ struct GroupScopeBar: View {
                     .buttonStyle(.borderless).foregroundStyle(.secondary)
                 }
             } else {
-                // Named, not a bare plus: beside "All apps" a plus alone didn't say
-                // what it adds.
+                // Name the action so users know the plus creates a group.
                 Button { adding = true } label: {
                     HStack(spacing: 4) {
                         Image(systemName: "plus").font(.system(size: 9, weight: .bold))
@@ -120,16 +115,11 @@ struct GroupScopeBar: View {
     }
 }
 
-/// A group's apps: the ones in it, then everything else, each a click away from moving
-/// in or out.
+/// Move apps into or out of the selected group.
 struct GroupAppPicker: View {
-    /// The apps in the group.
-    ///
-    /// Taken from the group directly rather than from the apps seen, so an app that
-    /// hasn't notified since launch, or came in with an import or preset, is still
-    /// listed and can be taken out.
+    /// Read membership from the group so imported apps remain editable before they send a
+    /// notification.
     let assigned: [String]
-    /// Every app seen notifying.
     let knownApps: [String]
     /// The other group an app outside this one is in now, if any.
     let owner: (String) -> String?
@@ -141,9 +131,7 @@ struct GroupAppPicker: View {
     @State private var appFilter = ""
     private let iconCache = AppIconCache.shared
 
-    /// One row of the app picker. App names are unique within the picker, so the
-    /// name is the identity — and it stays stable as a row moves between the
-    /// assigned and available halves.
+    /// Use the unique app name as identity across assigned and available sections.
     private struct AppPick: Identifiable, Equatable {
         let name: String
         let isAssigned: Bool
@@ -156,12 +144,8 @@ struct GroupAppPicker: View {
         let available = knownApps
             .filter { !assigned.contains($0) }
             .filter { query.isEmpty || $0.localizedCaseInsensitiveContains(query) }
-        // One ForEach over one array, not two siblings with a conditional
-        // Divider between them. Clicking a row moves it between the assigned
-        // and available sets; across two ForEachs that reshuffles structural
-        // identity and SwiftUI would leave rows showing another row's
-        // checkmark. The separator rides along inside the row that starts the
-        // available section so the identity space stays flat.
+        // Use one ForEach so row identity survives membership changes. Keep the separator inside
+        // the first available row.
         let rows = assigned.map { AppPick(name: $0, isAssigned: true) }
                  + available.map { AppPick(name: $0, isAssigned: false) }
 
@@ -173,14 +157,11 @@ struct GroupAppPicker: View {
                     .padding(.horizontal, 5).padding(.vertical, 1)
                     .background(Color.nannyWash(0.22), in: Capsule())
                 Spacer()
-                // Only worth the space once scanning the list by eye stops working.
                 if knownApps.count > 8 { filterField }
             }
 
             ScrollView(showsIndicators: true) {
-                // Plain VStack, not Lazy: the list tops out around twenty rows, and
-                // LazyVStack was opening the scroller part-way down, hiding exactly
-                // the assigned rows this section exists to show.
+                // Use eager layout to keep assigned rows visible at the top when the picker opens.
                 VStack(alignment: .leading, spacing: 1) {
                     ForEach(rows) { row in
                         if row.name == available.first && !assigned.isEmpty {
@@ -225,8 +206,7 @@ struct GroupAppPicker: View {
     }
 
     private func appRow(_ appName: String, isAssigned: Bool) -> some View {
-        // Membership is exclusive, so this is a "will be moved out of X" warning,
-        // not a conflict.
+        // Membership is exclusive; show which existing group the app will leave.
         let currentOwner = isAssigned ? nil : owner(appName)
 
         return Button {
@@ -239,9 +219,8 @@ struct GroupAppPicker: View {
                 if let icon = iconCache.icon(for: appName) {
                     Image(nsImage: icon).resizable().frame(width: 16, height: 16)
                 } else {
-                    // Blank, not a placeholder glyph: anything drawn here sits
-                    // right next to the selection circle and reads as a second
-                    // checkbox. Reserving the space keeps the names aligned.
+                    // Reserve icon space without a placeholder that could look like a second
+                    // selection control.
                     Color.clear.frame(width: 16, height: 16)
                 }
                 Text(appName).font(.caption).lineLimit(1)

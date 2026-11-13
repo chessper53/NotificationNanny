@@ -1,15 +1,8 @@
 import AppKit
 @preconcurrency import ApplicationServices
 
-/// Notification Center's own menu of a notification (its ⋯, a right click) or of the
-/// panel's Clear Notifications ✕, used from the custom Notification Center and from
-/// custom banners.
-///
-/// Notification Center builds the menu, so it is asked for it: the real one is opened on
-/// the parked notification, read, and closed again at once, and an item chosen in ours is
-/// pressed in it, opened again. It opens at the parked notification's place pulled onto
-/// the screen, never where it was asked for, which is why ours is drawn instead; used at
-/// once, no frame of it was filmed (measured on 27.0, scripts/panel-lab `parked-menu`).
+/// Mirrors Notification Center menus by opening, reading, and closing the real menu before drawing
+/// ours.
 @MainActor
 enum NCMenus {
     /// The row's menu answers on its texts, not on the row (measured on 27.0).
@@ -19,22 +12,20 @@ enum NCMenus {
             ?? row
     }
 
-    /// Opens Notification Center's menu on `el`, in `window`, reads it, and closes it:
-    /// with Escape, or by pressing `press` in it. Nil if no menu came.
+    /// Reads a real menu and dismisses it with Escape or the chosen item; returns nil if none
+    /// opens.
     static func read(of el: AXUIElement, in window: AXUIElement, press: NCMenuItem? = nil, logger: NannyLogger,
                      _ done: @escaping ([NCMenuItem]?) -> Void) {
-        // Only a menu that wasn't there before is the one asked for: Escape goes to
-        // whatever has the keyboard, and without the menu up that is the user's app.
+        // Only dismiss a newly opened menu so Escape cannot reach the user's app.
         let before = Self.openMenu(of: el, in: window)
-        // The call waits for the menu to close again; with a short timeout it returns while
-        // the menu is up.
+        // The AX action waits for menu closure; a short timeout lets us read it while open.
         AXUIElementSetMessagingTimeout(el, 0.05)
         AXUIElementPerformAction(el, kAXShowMenuAction as CFString)
         AXUIElementSetMessagingTimeout(el, 0)
         let deadline = ProcessInfo.processInfo.systemUptime + 0.6
         let started = ProcessInfo.processInfo.systemUptime
         let timing = ProcessInfo.processInfo.environment["NN_TIMING"] == "1"
-        func trace(_ what: String) { // DEBUG-CLICK
+        func trace(_ what: String) {
             guard timing else { return }
             let ms = Int((ProcessInfo.processInfo.systemUptime - started) * 1000)
             FileHandle.standardError.write(Data("[menu] \(ms) ms \(what), window at \(window.point().map { "(\(Int($0.x)),\(Int($0.y)))" } ?? "?")\n".utf8))
@@ -69,10 +60,8 @@ enum NCMenus {
             if let press, let hit = Self.item(press, in: children, read: read) {
                 AXUIElementPerformAction(hit, kAXPressAction as CFString)
             } else {
-                // AXCancel says it worked and leaves the menu open; Escape closes it. Sent
-                // to Notification Center itself: posted to the session it went to the app
-                // with the keyboard, and a widget's menu, which doesn't take it, stayed up
-                // until the panel moved, a third of a second on screen.
+                // AXCancel leaves the menu open. Send Escape to Notification Center because widget
+                // menus do not take focus.
                 var pid: pid_t = 0
                 AXUIElementGetPid(el, &pid)
                 for down in [true, false] {
@@ -98,8 +87,7 @@ enum NCMenus {
         return nil
     }
 
-    /// A menu Notification Center has open for `el`: a row's sits in the panel's window,
-    /// beside the panel; a menu button's under the button (measured on 27.0).
+    /// Finds the menu beside a row or under a menu button.
     static func openMenu(of el: AXUIElement, in window: AXUIElement) -> AXUIElement? {
         if let own = el.children().first(where: { $0.stringAttribute(kAXRoleAttribute as String) == (kAXMenuRole as String) }) {
             return own

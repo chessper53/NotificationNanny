@@ -4,8 +4,8 @@ import Testing
 @testable import NotificationNannyCore
 import ApplicationServices
 
-/// Explicit opt-in: ordinary unit tests must never move the user's banners.
-/// Missing prerequisites fail an opted-in run. A send log cannot pass this test.
+/// Run only when explicitly enabled; missing prerequisites must fail rather than silently skip
+/// observations.
 @Suite("AX integration (opt-in)", .enabled(if: ProcessInfo.processInfo.environment["NN_RUN_AX_TESTS"] == "1"))
 @MainActor
 struct AXIntegrationTests {

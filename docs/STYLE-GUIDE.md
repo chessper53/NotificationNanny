@@ -3,6 +3,8 @@
 How the Settings window looks and behaves, and the pieces it is built from. Read this
 before adding or changing anything in `Sources/NotificationNannyCore/UI/SettingsView/`.
 
+For source comments, follow the [comment convention](ARCHITECTURE.md#comments).
+
 The pieces live in two files:
 
 - [SettingsComponents.swift](../Sources/NotificationNannyCore/UI/SettingsView/SettingsComponents.swift): cards, rows, chips, swatches, menus, the switch and button styles.

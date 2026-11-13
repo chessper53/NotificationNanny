@@ -1,7 +1,7 @@
 import ApplicationServices
 import CoreGraphics
 
-// MARK: - CGS private symbols (linked via @_silgen_name)
+// MARK: Linked CGS symbols
 
 @_silgen_name("_AXUIElementGetWindow")
 private func _AXUIElementGetWindow(_ element: AXUIElement, _ windowID: UnsafeMutablePointer<CGWindowID>) -> AXError
@@ -17,7 +17,7 @@ private func CGSSetWindowTransform(_ connection: Int32, _ windowID: CGWindowID, 
 @discardableResult
 private func CGSSetWindowAlpha(_ connection: Int32, _ windowID: CGWindowID, _ alpha: Float) -> Int32
 
-// MARK: - SkyLight runtime symbols (loaded via dlopen to avoid linker errors)
+// MARK: Runtime SkyLight symbols
 
 private let _skyLight: UnsafeMutableRawPointer? = dlopen(
     "/System/Library/PrivateFrameworks/SkyLight.framework/SkyLight", RTLD_LAZY
@@ -38,7 +38,7 @@ private func slsSetWindowAlpha(_ conn: Int32, _ wid: CGWindowID, _ alpha: Float)
     return unsafeBitCast(fn, to: (@convention(c) (Int32, CGWindowID, Float) -> Int32).self)(conn, wid, alpha)
 }
 
-// MARK: - Clean Swift interface
+// MARK: Swift interface
 
 enum PrivateWindowAPI {
     /// Extracts the CGWindowID from an AXUIElement. Returns nil if the element has no associated window.
@@ -48,8 +48,7 @@ enum PrivateWindowAPI {
         return wid
     }
 
-    /// Applies a 2D affine transform to the window at the compositor level.
-    /// Tries CGS first, then SkyLight. Returns true if either succeeded.
+    /// Applies a compositor transform, trying CGS then SkyLight; returns whether either succeeds.
     @discardableResult
     static func setTransform(_ transform: CGAffineTransform, on windowID: CGWindowID) -> Bool {
         let cgsConn = CGSMainConnectionID()
@@ -65,8 +64,7 @@ enum PrivateWindowAPI {
         setTransform(.identity, on: windowID)
     }
 
-    /// Sets the alpha (opacity) of a window at the compositor level.
-    /// Tries CGS first, then SkyLight. Returns true if either succeeded.
+    /// Sets compositor opacity, trying CGS then SkyLight; returns whether either succeeds.
     @discardableResult
     static func setAlpha(_ alpha: Float, on windowID: CGWindowID) -> Bool {
         let cgsConn = CGSMainConnectionID()

@@ -52,7 +52,6 @@ struct Preset: Codable, Identifiable, Equatable {
         appGroups          = try c.decodeIfPresent([AppGroup].self,       forKey: .appGroups) ?? []
         let rawAnim        = try c.decodeIfPresent(String.self,           forKey: .bannerAnimation) ?? BannerAnimation.default.rawValue
         bannerAnimation    = BannerAnimation(rawValue: rawAnim) ?? .default
-        // Prefer new bannerTint key; fall back to legacy hasBannerColor + R/G/B keys.
         if let tint = try c.decodeIfPresent(BannerTint.self, forKey: .bannerTint) {
             bannerTint = tint
         } else if (try c.decodeIfPresent(Bool.self, forKey: .hasBannerColor)) == true,

@@ -42,8 +42,7 @@ struct LogEntryRow: View {
         .padding(.vertical, 2).padding(.horizontal, 4)
     }
 
-    // Light variants are darker shades of the same hues: the dark ones are tuned to
-    // glow on a near black log and wash out to almost nothing on a light one.
+    // Use darker tag colors on light backgrounds to preserve contrast.
     private func tagColor(_ tag: String) -> Color {
         switch tag {
         case "AX":     return hue(light: (0.10, 0.36, 0.85), dark: (0.4, 0.6, 1.0))

@@ -107,8 +107,7 @@ if args == ["status"] {
           }] as [String: Any])
     exit(0)
 }
-// Ask only the runner's own app to quit normally, so its delegate flushes
-// preferences and restores Notification Center's parked window before exit.
+// Quit the runner's app normally so its delegate flushes settings and restores parked windows.
 if args.count == 2, args[0] == "quit", let pid = pid_t(args[1]),
    let app = NSRunningApplication(processIdentifier: pid), app.bundleIdentifier == "com.notificationnanny.app" {
     exit(app.terminate() ? 0 : 1)
