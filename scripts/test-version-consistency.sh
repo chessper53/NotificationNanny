@@ -1,9 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Guards against the exact bug that shipped in v7.6.0/7.6.1/7.7.0: Info.plist's
-# LSMinimumSystemVersion silently drifting from the cask's `depends_on macos:`
-# requirement. Pure text parsing (no PlistBuddy) so this runs on any runner.
+# Keep the plist and cask macOS requirements consistent using portable text parsing.
 
 root="$(cd "$(dirname "$0")/.." && pwd)"
 cask="$root/Casks/notificationnanny.rb"

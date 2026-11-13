@@ -1,13 +1,7 @@
 import AppKit
 import SwiftUI
 
-/// The app's own bell artwork, shipped as template PNGs in `Resources/Glyphs`
-/// and copied into the bundle by `build-app.sh`.
-///
-/// The assets are black-on-transparent so `isTemplate` can do its job: AppKit
-/// reads only the alpha channel and recolours the glyph for the menu bar's
-/// current appearance (and for SwiftUI's `.tint`), which is why there's no
-/// light/dark pair here.
+/// Bundled bell templates use the alpha channel so one asset adapts to both appearances.
 package enum NannyGlyph: String, CaseIterable {
     /// Normal operation.
     case bell = "bell-nanny"
@@ -18,14 +12,12 @@ package enum NannyGlyph: String, CaseIterable {
         hasPermission && isActive ? .bell : .bellSlash
     }
 
-    /// Nil when the asset is missing — callers fall back to an SF Symbol rather
-    /// than shipping an invisible menu-bar item. Notably nil under `swift test`,
-    /// where there is no app bundle to load from.
+    /// Nil if the bundled asset is unavailable, including tests; callers must supply a symbol
+    /// fallback.
     package func image(pointSize: CGFloat) -> NSImage? {
         guard let url = Bundle.main.url(forResource: rawValue, withExtension: "png", subdirectory: "Glyphs"),
               let image = NSImage(contentsOf: url) else { return nil }
-        // The artwork is cropped to fit the slashed variant, so the bell sits
-        // inside some margin; 20pt lands it at roughly the 16pt the menu bar wants.
+        // Allow for artwork margins so the visible bell fits the menu bar.
         image.size = NSSize(width: pointSize, height: pointSize)
         image.isTemplate = true
         return image

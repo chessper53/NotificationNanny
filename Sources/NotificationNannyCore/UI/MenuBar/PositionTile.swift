@@ -2,11 +2,9 @@ import SwiftUI
 import AppKit
 import UserNotifications
 
-// MARK: - Preview colours
+// MARK: Preview colours
 
-/// The colours the screen previews are drawn in. Dark keeps the dark device and desktop
-/// they always had. Light draws them light and flat, silver on a pale desktop: a dark
-/// monitor sat heavy on the light window.
+/// Appearance aware screen preview colors.
 enum ScreenPreview {
     /// A grey, at `dark` in Dark and `light` in Light.
     static func tone(_ dark: CGFloat, light: CGFloat, alpha: CGFloat = 1) -> Color {
@@ -19,8 +17,7 @@ enum ScreenPreview {
         LinearGradient(colors: [tone(top, light: light), tone(bottom, light: light)], startPoint: start, endPoint: end)
     }
 
-    /// Stands in for the desktop picture so the banner chips read as sitting on a
-    /// screen rather than floating in an empty box.
+    /// Desktop backdrop for the screen preview.
     static let wallpaper = LinearGradient(
         colors: [Color.nannyAdaptive(light: NSColor(srgbRed: 0.87, green: 0.89, blue: 0.93, alpha: 1),
                                      dark: NSColor(srgbRed: 0.13, green: 0.15, blue: 0.20, alpha: 1)),
@@ -35,29 +32,22 @@ enum ScreenPreview {
     static let shadow = Color.nannyAdaptive(light: .black.withAlphaComponent(0.12), dark: .black.withAlphaComponent(0.45))
 }
 
-// MARK: - Device chassis
+// MARK: Device chassis
 
-/// Draws the screen preview inside a physical-looking display: a laptop lid and
-/// base for the built-in screen, a monitor on a stand for anything external.
-///
-/// Worth the pixels because it makes a multi-display setup legible at a glance —
-/// you recognise which preview is the MacBook without reading the picker — and it
-/// frames the preview as "your screen" rather than an abstract grey rectangle.
+/// Distinguish the internal laptop display from external monitors in screen previews.
 struct DeviceChrome<Content: View>: View {
     let screen: NSScreen
     let screenSize: CGSize
     @ViewBuilder var content: () -> Content
 
     private var isLaptop: Bool { CGDisplayIsBuiltin(screen.displayID) != 0 }
-    /// Notched Macs report a non-zero top safe area; drawing the notch only when
-    /// the real display has one keeps the preview honest.
+    /// Draw a notch only when the real display reports one.
     private var hasNotch: Bool { screen.safeAreaInsets.top > 0 }
 
     private var bezel: CGFloat { isLaptop ? 5 : 6 }
     private var chin: CGFloat { isLaptop ? 10 : 16 }
 
-    // Not `static` — DeviceChrome is generic over its content, and generic types
-    // can't hold static stored properties.
+    // Generic types cannot have static stored properties.
     private var shell: LinearGradient {
         ScreenPreview.shade(0.42, 0.26, light: 0.84)
     }
@@ -95,7 +85,6 @@ struct DeviceChrome<Content: View>: View {
 
             if isLaptop { laptopBase } else { monitorStand }
         }
-        // Sits the whole device on the panel rather than letting it float.
         .shadow(color: ScreenPreview.shadow, radius: 6, y: 3)
     }
 
@@ -127,17 +116,9 @@ struct DeviceChrome<Content: View>: View {
     }
 }
 
-// MARK: - Placement editor
+// MARK: Placement editor
 
-/// The device preview, plus a one-line read-out of where the banner sits.
-///
-/// The offset sliders this replaces were the only control that could push a
-/// banner off-screen — they ran to ±the full screen width — and they cost enough
-/// width that the preview had to stay small. Dragging on a true-to-scale preview
-/// does the same job directly, so the preview gets the space instead.
-///
-/// Shared by the Position and Exceptions tabs, which previously carried
-/// near-identical copies of the fine-tune block.
+/// Shared display preview and placement editor for Position and Exceptions.
 struct PlacementEditor: View {
     let screen: NSScreen
     @Binding var placement: ScreenPlacement
@@ -173,8 +154,7 @@ struct PlacementEditor: View {
         .frame(maxWidth: .infinity)
     }
 
-    /// Keeps the numbers the sliders used to show, without giving them a control
-    /// that can put the banner somewhere invalid.
+    /// Readout of the current placement offsets.
     private var offsetSummary: String {
         let x = Int(placement.xOffset.rounded())
         let y = Int(placement.yOffset.rounded())
@@ -182,38 +162,30 @@ struct PlacementEditor: View {
     }
 }
 
-// MARK: - Shared drag tile
+// MARK: Shared drag tile
 
 struct DraggableScreenTile: View {
     let screen: NSScreen
     @Binding var placement: ScreenPlacement
-    /// Budget for the picture area. The preview is scaled to fit inside this
-    /// while keeping the display's real proportions, so it never fills both.
+    /// Fit the preview inside these bounds while preserving display proportions.
     var maxWidth: CGFloat = 430
     var maxHeight: CGFloat = 280
 
-    /// How far from the banner's middle the pointer took hold of it, so it moves with
-    /// the pointer rather than jumping its middle under it.
+    /// Pointer offset from the banner center, preventing a jump when dragging starts.
     @State private var grab: CGSize?
 
     private static let realBannerSize = CGSize(width: 372, height: 100)
 
     var body: some View {
-        // The preview shows the whole display, not just the visible frame.
-        // Banner placement is measured from the visible frame — which already
-        // excludes the menu bar — so drawing a menu bar *inside* a visible-frame
-        // preview counted it twice, and a top-anchored banner appeared to sit
-        // over the menu bar when in reality it sits below it.
+        // Preview the full display; placement uses the visible frame that already excludes the menu
+        // bar.
         let frame   = screen.frame
         let visible = screen.visibleFrame
         let menuBarHeight = max(0, frame.maxY - visible.maxY)
         let dockHeight    = max(0, visible.minY - frame.minY)
         let visibleLeft   = visible.minX - frame.minX
 
-        // One scale for both axes. The old code clamped tile height into
-        // 100...220 and then compensated with separate x/y scales, which meant
-        // the preview was a stretched version of the display and dragging didn't
-        // correspond to where the banner actually landed.
+        // Use one scale for both axes so dragging matches the real display.
         let scale = min(maxWidth / max(frame.width, 1),
                         maxHeight / max(frame.height, 1))
         let tileWidth  = frame.width  * scale
@@ -240,16 +212,14 @@ struct DraggableScreenTile: View {
                         .frame(height: dockHeight * scale)
                         .offset(y: tileHeight - dockHeight * scale)
                 }
-                // Drawn without clamping: a config saved with the old sliders can
-                // sit partly off-screen, and the preview should show that honestly
-                // rather than quietly pretending it's somewhere else.
+                // Show legacy offsets as saved, even when they place the banner partly off screen.
                 BannerChip(width: bannerWidth, height: bannerHeight)
                     .position(x: bannerCenterTile.x, y: bannerCenterTile.y)
             }
             .frame(width: tileWidth, height: tileHeight)
             .clipped()
             .contentShape(Rectangle())
-            // Gesture on the ZStack so .local coords = tile coords, not chip-local coords
+            // Attach to the stack so gesture coordinates use the tile, not the banner chip.
             .gesture(
                 DragGesture(minimumDistance: 0, coordinateSpace: .local)
                     .onChanged { value in
@@ -274,7 +244,7 @@ struct DraggableScreenTile: View {
         }
     }
 
-    /// Tile point (full-frame, top-left origin) back into visible-frame coords.
+    /// Convert tile coordinates to the visible frame with a top left origin.
     private func commitDrag(at point: CGPoint, scale: CGFloat, visible: CGRect,
                             visibleLeft: CGFloat, menuBarHeight: CGFloat) {
         updatePlacement(visiblePoint: CGPoint(x: point.x / scale - visibleLeft,
@@ -283,8 +253,7 @@ struct DraggableScreenTile: View {
     }
 
 
-    /// Banner centre in visible-frame coordinates, top-left origin — the same
-    /// frame of reference the repositioner uses when it places the real window.
+    /// Banner center in visible frame coordinates, matching the repositioner.
     private func bannerCentreInVisible(visible: CGRect) -> CGPoint {
         let banner = Self.realBannerSize
         let inset: CGFloat = 8
@@ -304,10 +273,8 @@ struct DraggableScreenTile: View {
                        y: y + banner.height / 2 + CGFloat(placement.yOffset))
     }
 
-    /// Clamped so a drag can only ever produce an on-screen banner. This is now
-    /// the only way to set a placement — the old offset sliders ran to ±the full
-    /// screen width, which is how banners ended up off-screen. Existing stored
-    /// offsets are left alone; they're only replaced once the user drags.
+    /// Clamp new drags to the visible frame; do not rewrite saved offsets until the user edits
+    /// them.
     private func updatePlacement(visiblePoint point: CGPoint, visible: CGRect) {
         let banner = Self.realBannerSize
         let inset: CGFloat = 8
@@ -343,10 +310,7 @@ struct DraggableScreenTile: View {
         case .end:    refY = visible.height - inset - banner.height / 2
         }
 
-        // One write, not three. Each assignment through the binding is a full
-        // get-mutate-set of the placements dictionary — at 60 Hz, writing the
-        // three fields separately tripled the JSON encode, the UserDefaults
-        // write, and the SwiftUI invalidation for every frame of the drag.
+        // Assign once per drag update to avoid repeated publications of the placement dictionary.
         var updated = placement
         updated.position = anchor
         updated.xOffset  = Double(centreX - refX)
@@ -386,17 +350,11 @@ struct BannerChip: View {
     }
 }
 
-// MARK: - Test notification helper
+// MARK: Test notification helper
 
 package enum TestNotification {
-    /// Sends the test banner and returns its unique title, so the repositioner can tell
-    /// this specific banner apart from real notifications that arrive at the same time.
-    ///
-    /// Prefers `UNUserNotificationCenter` (no subprocess) when the user has granted
-    /// notification permission — requested once, silently, at first launch. Falls back
-    /// to `osascript`'s `display notification`, which posts under a distinct identity
-    /// that doesn't require this app's own notification permission, when the user
-    /// hasn't granted (or hasn't yet responded to) that request.
+    /// Returns a unique test title to distinguish concurrent real notifications.
+    /// Uses native notifications when allowed, with osascript as the permission fallback.
     @discardableResult
     static func send() -> String {
         let stamp = Int(Date().timeIntervalSince1970) % 100000
@@ -405,8 +363,7 @@ package enum TestNotification {
         return title
     }
 
-    /// Fires `count` notifications back-to-back from a single AppleScript run (with a short delay
-    /// between each) to reproduce the rapid-succession race. Used by the hidden Debug tab.
+    /// Posts a short burst to exercise rapid notification races from Diagnostics.
     static func sendBurst(count: Int) {
         let stamp = Int(Date().timeIntervalSince1970) % 100000
         var lines: [String] = []
@@ -417,22 +374,19 @@ package enum TestNotification {
         run(script: lines.joined(separator: "\n"))
     }
 
-    /// One real-path notification with an arbitrary title/body — used by the Diagnostics tab to
-    /// exercise content extraction (`splitTitleBody`), wrapping, unicode handling, and width logic.
+    /// Posts arbitrary content through the normal path to exercise extraction and layout.
     static func sendCustom(title: String, body: String) {
         dispatch(title: title, body: body)
     }
 
-    /// Escapes a Swift string for safe embedding inside an AppleScript double-quoted literal.
+    /// Escapes a string for an AppleScript quoted literal.
     private static func escapeAS(_ s: String) -> String {
         s.replacingOccurrences(of: "\\", with: "\\\\")
          .replacingOccurrences(of: "\"", with: "\\\"")
     }
 
     private static func dispatch(title: String, body: String) {
-        // UNUserNotificationCenter.current() raises when the process has no bundle
-        // identifier (unit tests, `swift run`), so take the osascript path there
-        // rather than trapping.
+        // Native notifications require a bundle identifier; tests and swift run must use osascript.
         guard Bundle.main.bundleIdentifier != nil else {
             run(script: "display notification \"\(escapeAS(body))\" with title \"\(escapeAS(title))\"")
             return
@@ -442,10 +396,8 @@ package enum TestNotification {
             let status = await center.notificationSettings().authorizationStatus
             var authorized = status == .authorized
             if status == .notDetermined {
-                // Only the launch request has asked so far, and it went unanswered.
-                // Sending a test is an explicit request for a notification, so ask
-                // here: without permission the test goes through osascript, which
-                // macOS shows as Script Editor with Script Editor's icon.
+                // A user requested a test; ask now if the initial permission request is still
+                // unanswered.
                 authorized = (try? await center.requestAuthorization(options: [.alert, .sound])) ?? false
             }
             guard authorized else {

@@ -1,23 +1,7 @@
 #!/usr/bin/env swift
-// Dumps the Notification Center accessibility tree and tests the one assumption
-// NotificationNanny's repositioning depends on.
-//
-// Since macOS 26, banners are not separate windows. They are SwiftUI views
-// inside a single fullscreen host window (AXWindow/AXSystemDialog containing an
-// AXHostingView). The banner's own AX position is read-only, so the app cannot
-// move the banner directly. What it does instead is move the *host window* so
-// the banner child lands where the user asked. That works only while the host
-// window's AXPosition is settable and the value it is given actually sticks.
-//
-// This probe reports whether that is still true. Run it while a banner is on
-// screen; it posts one itself.
-//
-//   swift scripts/ax-probe.swift
-//
-// The process running it needs Accessibility permission (System Settings >
-// Privacy & Security > Accessibility). If you run it from Terminal, grant it to
-// Terminal. Quit NotificationNanny first, otherwise you will be measuring its
-// repositioning rather than the system's behaviour.
+// Probe host movement and AX arrival events. Quit NotificationNanny to avoid measuring its own
+// moves.
+// Requires Accessibility. Usage is in docs/LABS.md.
 
 import AppKit
 import ApplicationServices
@@ -82,7 +66,6 @@ guard let nc = NSRunningApplication
 }
 print("NotificationCenter pid \(nc.processIdentifier)")
 
-// Give ourselves something to look at.
 let task = Process()
 task.launchPath = "/usr/bin/osascript"
 task.arguments = ["-e", "display notification \"AX probe\" with title \"NotificationNanny probe\""]
@@ -109,8 +92,7 @@ for w in windows {
     let err = AXUIElementSetAttributeValue(w, kAXPositionAttribute as CFString, value)
     Thread.sleep(forTimeInterval: 0.3)
     let immediately = point(w, kAXPositionAttribute as String)
-    // The failure the 26.6.2 reports describe is the layout engine putting it
-    // back, which a single read right after the write would miss.
+    // Wait for asynchronous native layout to reveal positions that fail to stick.
     Thread.sleep(forTimeInterval: 1.2)
     let afterSettling = point(w, kAXPositionAttribute as String)
 
@@ -136,11 +118,7 @@ if !testedAny {
     print("hierarchy changed shape again; the tree above is the useful part.")
 }
 
-// The decisive question. NotificationNanny repositions when it sees
-// AXWindowCreated. If the fullscreen host is torn down between banners that
-// fires every time and all is well; if the host persists, the only signal a
-// banner arrived is AXLayoutChanged, which older builds do not subscribe to,
-// and the banner is never moved.
+// Count window and layout events to detect arrivals within persistent hosts.
 print("\n=== which events does a banner actually emit? ===")
 
 let watched = [kAXWindowCreatedNotification, kAXFocusedWindowChangedNotification,

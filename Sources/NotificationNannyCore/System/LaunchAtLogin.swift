@@ -1,11 +1,7 @@
 import Foundation
 import ServiceManagement
 
-/// Wraps `SMAppService.mainApp` (macOS 13+ Login Items API).
-///
-/// Registration is tied to the bundle identifier + the path the app was
-/// launched from, so this only behaves predictably when the app lives in
-/// a stable location like `/Applications`.
+/// Login registration depends on bundle ID and launch path; use a stable installation location.
 @MainActor
 package final class LaunchAtLogin: ObservableObject {
     @Published private(set) var isEnabled: Bool = false

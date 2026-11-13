@@ -1,18 +1,5 @@
-// Samples where banners actually are and checks them.
-//
-//   watch <seconds> [--quiet]
-//
-// Every 50 ms it reads the Notification Center banners (AX) and
-// NotificationNanny's custom overlay panels (CGWindowList), prints a line
-// whenever that picture changes, and at the end reports:
-//
-//   offscreen   a visible banner or overlay sticking out of its screen's visible frame
-//   swallowed   banners exist but nothing has been visible for more than 1.5 s
-//   hidden      some banners have no visible counterpart for more than 1.5 s
-//   overlap     two visible banners or overlays covering each other
-//
-// Exit status is the number of failed checks. Needs Accessibility for whatever
-// runs it.
+// Sample native and custom banner geometry every 50 ms, counting persistent placement failures.
+// Requires Accessibility; commands and verdicts are in docs/LABS.md.
 
 import AppKit
 import ApplicationServices
@@ -66,22 +53,20 @@ func fullyVisible(_ c: CGRect) -> Bool {
 
 let args = CommandLine.arguments.dropFirst()
 
-// `watch --locked`: exit status 0 when the screen is locked. While locked macOS
-// shows no banners and only queues them, so any run then measures nothing.
+// Locked screens queue notifications without banners, so live measurements are invalid.
 if args.first == "--locked" {
     let session = CGSessionCopyCurrentDictionary() as? [String: Any] ?? [:]
     exit((session["CGSSessionScreenIsLocked"] as? Bool ?? false) ? 0 : 1)
 }
 
-// `watch --windows <pid>`: how many windows the process owns, on screen or not.
-// Custom overlays are panels; a count that only grows means they leak.
+// Count every process window, including hidden ones, to detect leaked overlay panels.
 if args.first == "--windows", let pid = args.dropFirst().first.flatMap({ Int32($0) }) {
     let all = CGWindowListCopyWindowInfo([.optionAll], kCGNullWindowID) as? [[String: Any]] ?? []
     print(all.filter { ($0[kCGWindowOwnerPID as String] as? Int32) == pid }.count)
     exit(0)
 }
 
-// `watch --screens`: display UUIDs, the keys NotificationNanny stores placements under.
+// Report stable display keys used by saved placements.
 if args.first == "--screens" {
     for s in NSScreen.screens {
         guard let n = s.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID,
@@ -96,9 +81,7 @@ guard AXIsProcessTrusted(),
 else { print("needs Accessibility, and Notification Center running"); exit(99) }
 let ncApp = AXUIElementCreateApplication(nc.processIdentifier)
 
-// `watch --clock`: presses the menu bar clock, which opens or closes the Notification
-// Center panel. macOS 27 keeps the clock in MenuBarAgent, so hit-test the bar and press
-// only the element that identifies itself as the clock.
+// On macOS 27 the clock belongs to MenuBarAgent; press only the hit tested clock element.
 if args.first == "--clock" {
     let system = AXUIElementCreateSystemWide()
     let right = Int(NSScreen.screens.first?.frame.maxX ?? 1700)
@@ -112,9 +95,8 @@ if args.first == "--clock" {
     exit(1)
 }
 
-// `watch --click-clock N`: a real mouse click on the clock of the Nth screen (the order of
-// `--screens`), the way a person opens Notification Center there; the pointer goes back
-// afterwards. An accessibility press always opens it on the main display.
+// Real clock clicks select a display; AX presses always open the main display. Restore the pointer
+// afterwards.
 if args.first == "--click-clock", let n = args.dropFirst().first.flatMap({ Int($0) }),
    n >= 1, n <= NSScreen.screens.count {
     let screen = NSScreen.screens[n - 1]
@@ -140,8 +122,7 @@ if args.first == "--click-clock", let n = args.dropFirst().first.flatMap({ Int($
     exit(1)
 }
 
-// `watch --expand Alpha`: expands that lab app's stack, as a click on it in the open
-// Notification Center panel does. Only lab stacks are ever pressed.
+// Expand only Lab stacks; leave personal notifications untouched.
 if args.first == "--expand" {
     let prefix = "Lab \(args.dropFirst().first ?? ""),"
     for w in (attr(ncApp, kAXWindowsAttribute) as? [AXUIElement] ?? []) {
@@ -154,17 +135,15 @@ if args.first == "--expand" {
     exit(1)
 }
 
-// `watch --wake`: tells a NotificationNanny started with NN_LAB=1 to act as if the Mac
-// had just woken.
+// Simulate wake only for apps started in lab mode.
 if args.first == "--wake" {
     DistributedNotificationCenter.default().postNotificationName(
         Notification.Name("com.notificationnanny.lab.wake"), object: nil, userInfo: nil, deliverImmediately: true)
     exit(0)
 }
 
-// `watch --close-all`: closes the lab apps' banners, e.g. persistent leftovers.
-// Only theirs: anything else on screen is a real notification and stays.
-// `watch --close-app Bravo`: closes just that lab app's banner, as a user would.
+// Close only Lab notifications, including Persistent leftovers; never touch other apps'
+// notifications.
 if args.first == "--close-all" || args.first == "--close-app" {
     let prefix = args.first == "--close-app" ? "Lab \(args.dropFirst().first ?? "")," : "Lab "
     // Close and Clear All in every language Notification Center ships, as the app does.
@@ -192,8 +171,7 @@ if args.first == "--close-all" || args.first == "--close-app" {
     exit(0)
 }
 
-// `watch --actions`: each lab banner's subrole and the names of its actions, which
-// macOS translates into Notification Center's language.
+// Report Lab action names in Notification Center's language.
 if args.first == "--actions" {
     for w in (attr(ncApp, kAXWindowsAttribute) as? [AXUIElement] ?? []) {
         for b in banners(in: w) where label(b).hasPrefix("Lab ") {
@@ -215,13 +193,11 @@ struct Item { let kind: String; let name: String; let frame: CGRect }
 
 var offscreen: [String] = []
 var overlaps: [String] = []
-// Seconds each problem has persisted. Transitions are animated, so a banner
-// mid-slide pokes out for a few samples; only what stays wrong counts.
+// Require persistent errors; samples during native entrance animations can temporarily overlap or
+// leave the screen.
 var outFor: [String: Double] = [:], overlapFor: [String: Double] = [:]
 let persist = 0.6
-// macOS slides every new banner in from past the screen edge, and under load
-// the samples are further apart than 50 ms, so that slide alone can measure
-// 0.6 s. Real placement failures last seconds.
+// Allow extra settling time for native slides under load before counting an offscreen failure.
 let persistOffscreen = 1.0
 var swallowedFor: Double = 0, worstSwallow: Double = 0
 var hiddenFor: Double = 0, worstHidden: Double = 0, worstHiddenCount = 0
@@ -240,9 +216,7 @@ while Date().timeIntervalSince(start) < seconds {
             if let f = rect(b) { present.append(Item(kind: "native", name: label(b), frame: f)) }
         }
     }
-    // Overlay panels: NotificationNanny windows above normal level. The panel
-    // carries a transparent margin for the close button, so shrink it to the
-    // banner it draws.
+    // Measure overlay cards without the transparent close button margin.
     var overlays: [Item] = []
     let info = CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID) as? [[String: Any]] ?? []
     for w in info where (w[kCGWindowOwnerName as String] as? String) == "NotificationNanny"
@@ -257,8 +231,7 @@ while Date().timeIntervalSince(start) < seconds {
     let visible = present.filter { onAnyScreen($0.frame) } + overlays
     if !present.isEmpty && visible.isEmpty { swallowedFor += dt } else { swallowedFor = 0 }
     worstSwallow = max(worstSwallow, swallowedFor)
-    // Banners with no visible counterpart: parked natively with no overlay
-    // standing in for them, e.g. a custom pile showing only its newest.
+    // Count native banners with no visible native or custom counterpart.
     let missing = present.count - visible.count
     if missing > 0 { hiddenFor += dt } else { hiddenFor = 0 }
     if hiddenFor > worstHidden { worstHidden = hiddenFor; worstHiddenCount = missing }

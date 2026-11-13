@@ -16,8 +16,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # The same checks as on a pull request, here in the deploy's own run: on their own,
-  # a push straight to main deployed even while they failed.
+  # Validate this deployment's exact checkout, including direct pushes to main.
   validate:
     uses: ./.github/workflows/site.yml
 
@@ -30,7 +29,6 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      # Only what the page serves: not its sources, packages or lockfile.
       - name: Collect the site
         run: |
           mkdir -p _site

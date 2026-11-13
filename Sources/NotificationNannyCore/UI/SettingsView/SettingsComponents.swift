@@ -1,8 +1,6 @@
 import AppKit
 import SwiftUI
 
-// The pieces the Settings tabs are built from, so every tab draws its cards, rows and
-// choices the same way.
 
 /// A card: one setting, its title on top, a note under it.
 struct SettingsCard<Content: View>: View {
@@ -80,7 +78,6 @@ struct CardActionButton: View {
 }
 
 extension CardActionButton {
-    /// Replay, beside the Animation title.
     static func replay(_ action: @escaping () -> Void) -> CardActionButton {
         CardActionButton(titleKey: "Replay", systemImage: "arrow.clockwise", action: action)
     }
@@ -132,10 +129,8 @@ struct SettingsScaleSlider: View {
     var body: some View {
         HStack(spacing: 8) {
             Text("A").font(.caption2).foregroundStyle(.secondary)
-            // Settles on exactly 100%: without it the slider stops at 0.99 or so, and
-            // Reset stays lit for a size that looks like the default.
-            // Only when moved: a value that is exactly 1 already is left alone, so showing
-            // a group that follows All apps never writes a scale of its own for it.
+            // Snap edits near 100% to exactly 1; do not save an inherited group value merely by
+            // showing the slider.
             Slider(value: $value, in: range)
                 .onChange(of: value) { _, v in if v != 1, abs(v - 1) < 0.02 { value = 1 } }
                 .controlSize(.mini)
@@ -146,9 +141,8 @@ struct SettingsScaleSlider: View {
     }
 }
 
-// MARK: - Choices
+// MARK: Choices
 
-/// One of the animations, as a chip in a grid of them.
 struct AnimationChip: View {
     let animation: BannerAnimation
     let selected: Bool
@@ -186,8 +180,7 @@ struct ChoiceChip<Icon: View>: View {
 }
 
 extension ChoiceChip where Icon == EmptyView {
-    /// For choices whose names say it all, where one icon repeated on every chip would
-    /// only be noise.
+    /// Choices without a distinguishing icon.
     init(title: String, selected: Bool, action: @escaping () -> Void) {
         self.init(title: title, selected: selected, action: action) { EmptyView() }
     }
@@ -214,8 +207,7 @@ struct AnimationChipGrid: View {
     }
 }
 
-/// Following another setting rather than having one's own: "Same as banners",
-/// "Same as All apps". Comes first among the choices it stands beside.
+/// Inherited value chip, placed before explicit choices.
 struct FollowChip: View {
     let titleKey: String
     let selected: Bool
@@ -234,9 +226,7 @@ struct FollowChip: View {
     }
 }
 
-/// A choice of a few, side by side: flat graphite, the chosen one raised with its icon
-/// in amber. In place of the system's segmented control, whose amber bar next to a grey
-/// one shouted over everything else on the card.
+/// Custom segmented choices with the selected icon raised in amber.
 struct NannySegmentedPicker<Value: Hashable>: View {
     struct Option {
         let value: Value
@@ -289,9 +279,8 @@ struct NannySegmentedPicker<Value: Hashable>: View {
     }
 }
 
-// MARK: - Colours
+// MARK: Colours
 
-/// The colours shared by the Banner and Notification Center tabs.
 enum SettingsColors {
     static let presets: [(String, Color)] = [
         ("Red",    Color(red: 1.0,  green: 0.23, blue: 0.19)),
@@ -319,7 +308,6 @@ enum SettingsColors {
     }
 }
 
-/// A round swatch, ringed when it is the one in use.
 struct ColorSwatch<Fill: View>: View {
     let selected: Bool
     let help: String
@@ -338,8 +326,7 @@ struct ColorSwatch<Fill: View>: View {
     }
 }
 
-/// The swatch for no colour of one's own: hollow, struck through, as "none" is drawn in
-/// colour wells everywhere. Picking it is what Clear and Reset used to do.
+/// A hollow swatch selects the system default without a separate reset action.
 struct DefaultColorSwatch: View {
     let selected: Bool
     var helpKey = "Default"
@@ -359,15 +346,12 @@ struct DefaultColorSwatch: View {
     }
 }
 
-/// A colour setting as a row of swatches: the default first, then the presets, then any
-/// colour from the picker. `leading` goes before the default, for a choice that comes
-/// ahead of it, such as following the banners.
+/// Default, preset, and custom swatches; `leading` supplies an optional inherited choice.
 struct ColorSwatchRow<Leading: View>: View {
     /// No colour of one's own is in use: the default swatch is ringed.
     let isDefault: Bool
-    /// The colour of one's own in use: rings a preset that matches, and is shown in the
-    /// picker's well. nil while the default or a followed colour is in use, and the well
-    /// is grey, so a colour that only would apply never looks picked.
+    /// Only the explicit active color; nil for defaults or inheritance so unused picker colors do
+    /// not appear selected.
     let current: Color?
     /// Off for a group, whose only alternative to a colour is following All apps.
     var showsDefault = true
@@ -413,16 +397,10 @@ extension ColorSwatchRow where Leading == EmptyView {
     }
 }
 
-// MARK: - Displays
+// MARK: Displays
 
-/// A choice of display, with 0 for the one picked for you.
-///
-/// Display IDs can change when a display is reconnected or the Mac restarts. A saved ID
-/// that no longer matches any display left the menu blank, though the setting itself
-/// still worked: it is found again by the display's stable key, or falls back to the
-/// default. The menu shows that display under its current ID instead, or, when it isn't
-/// connected, says so. The saved value is left alone until another is picked, so the
-/// display is used again when it comes back.
+/// Resolve saved displays by stable key without rewriting the saved choice.
+/// Show disconnected displays explicitly; zero means automatic selection.
 struct DisplayPicker: View {
     @Binding var selection: CGDirectDisplayID
     /// The display the saved choice comes to now, if any.
@@ -444,8 +422,7 @@ struct DisplayPicker: View {
     }
 }
 
-/// A pop-up menu as a small flat pill, as wide as its choice: in place of the system's,
-/// which stretched across the row in a bezel of its own.
+/// Compact menu pill sized to its selected label.
 struct NannyMenuPicker<Value: Hashable>: View {
     struct Option {
         let value: Value
@@ -494,11 +471,9 @@ struct NannyMenuPicker<Value: Hashable>: View {
     }
 }
 
-// MARK: - Buttons and switches
+// MARK: Buttons and switches
 
-/// The filled accent button. The system's turns grey whenever the window isn't focused,
-/// which on a Settings window left open beside other apps is most of the time; this
-/// keeps its colour.
+/// Keep the accent fill when Settings is unfocused.
 struct NannyProminentButtonStyle: ButtonStyle {
     var fill: Color = .nannyProminent
 
@@ -573,13 +548,11 @@ extension ToggleStyle where Self == NannySwitchStyle {
     static var nannySwitch: NannySwitchStyle { NannySwitchStyle() }
 }
 
-// MARK: - Position
+// MARK: Position
 
-/// Where banners go: a display, and the place on it, dragged on a preview of it. The
-/// Position tab's for all apps and an exception group's are the same card.
+/// Shared display and placement card for global and exception settings.
 struct PositionCard: View {
     let titleKey: String
-    /// The display the preview draws.
     let screen: NSScreen
     @Binding var display: CGDirectDisplayID
     /// The display the saved choice comes to now, if any.
@@ -589,8 +562,7 @@ struct PositionCard: View {
     var previewHeight: CGFloat = 260
     let noteKey: String
 
-    /// The card's inner width, measured: the preview is drawn to fit it rather than to a
-    /// fixed size that overflowed a narrow window.
+    /// Fit the preview to the measured inner width so narrow windows do not overflow.
     @State private var width: CGFloat = 400
 
     var body: some View {

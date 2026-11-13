@@ -1,12 +1,6 @@
 #!/usr/bin/env bash
-# Screenshots for lab runs from a terminal without Screen Recording (an editor's).
-#
-#   scripts/panel-lab/shot.sh screencapture <args…>
-#   scripts/panel-lab/shot.sh window <windowID> <out.png>
-#
-# The first run builds build/panel-lab/Shot.app and macOS asks to allow it Screen
-# Recording; allow it once. It is never rebuilt, so the grant stays (delete the app to
-# build it again, and allow it again).
+# Build a screenshot helper with its own Screen Recording grant once, then reuse it. See
+# docs/LABS.md.
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 APP=build/panel-lab/Shot.app

@@ -3,10 +3,7 @@ import Foundation
 import Testing
 @testable import NotificationNannyCore
 
-/// A custom banner only knows the app name Notification Center shows. These build
-/// fake app bundles in a temporary folder and check that the name finds the icon in
-/// the cases that used to fall back to the bell: a display name that differs from
-/// the file name, an app in a subfolder, and an app installed after a failed lookup.
+/// Use fake installed apps so icon lookup tests do not depend on this Mac's applications.
 @Suite("AppIconCache")
 @MainActor
 struct AppIconCacheTests {
@@ -41,7 +38,7 @@ struct AppIconCacheTests {
     }
 
     @Test func findsAppByDisplayNameThatDiffersFromFileName() throws {
-        // "Find My" is FindMy.app: the old `<name>.app` guess could never find it.
+        // Display name differs from the bundle file name.
         try makeApp("ProbeFindMy", displayName: "Probe Find My")
         #expect(cache().icon(for: "Probe Find My") != nil)
     }
@@ -73,7 +70,6 @@ struct AppIconCacheTests {
         let c = cache(retry: 30, now: { clock })
         #expect(c.icon(for: "Probe Late") == nil)
 
-        // Installed after the first lookup failed.
         try makeApp("Probe Late")
         clock += 10
         #expect(c.icon(for: "Probe Late") == nil, "a fresh miss is not retried straight away")
@@ -95,8 +91,7 @@ struct AppIconCacheTests {
     }
 }
 
-/// Notification Center names apps in the system's language, which is often not one
-/// NotificationNanny ships: on a Korean Mac a banner says "카카오톡", not "KakaoTalk".
+/// Notification Center uses system translations even for languages NotificationNanny does not ship.
 @Suite("InstalledAppIndex localized names")
 struct InstalledAppIndexLocalizedNameTests {
     let root: URL
@@ -152,8 +147,7 @@ struct InstalledAppIndexLocalizedNameTests {
     }
 }
 
-/// A banner's description is "App, Title, Body", except a Persistent banner on
-/// macOS 27, which leaves out the comma after the app: "App Title, Body".
+/// macOS 27 Persistent descriptions omit the comma between app name and title.
 @Suite("App name from a banner's description")
 struct AppNameFromDescriptionTests {
     @Test func usualBanner() {

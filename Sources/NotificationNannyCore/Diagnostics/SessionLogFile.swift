@@ -1,9 +1,6 @@
 import Foundation
 
-/// The session log on disk, so the lines leading up to a crash survive the restart that
-/// follows. The in-memory log dies with the process, and a bug report filed after the
-/// restart only ever showed the new session. Each launch moves the last session's file
-/// aside and starts a fresh one, so there are never more than two.
+/// Keeps the current and previous session logs so crash context survives a restart.
 final class SessionLogFile {
     static var defaultDirectory: URL {
         FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
@@ -30,8 +27,7 @@ final class SessionLogFile {
 
     deinit { try? handle?.close() }
 
-    /// Written straight through, unbuffered: a crash can come at any moment, and a line
-    /// handed to the kernel survives the process.
+    /// Write without user space buffering so a process crash does not lose pending lines.
     func append(_ text: String) {
         guard let handle else { return }
         let data = Data((text + "\n").utf8)

@@ -2,8 +2,6 @@ import Foundation
 import Testing
 @testable import NotificationNannyCore
 
-/// Snooze ("pause for N minutes") and the `isActive` master gate that the
-/// repositioner consults before touching any banner.
 @Suite("Snooze") @MainActor
 struct SnoozeTests {
 
@@ -48,7 +46,6 @@ struct SnoozeTests {
     }
 
     @Test func init_ignoresExpiredSnooze() {
-        // A snooze whose deadline already passed must not survive a relaunch.
         let past = Date().addingTimeInterval(-60)
         let s = makeSettings { $0.set(past, forKey: "snoozedUntil") }
         #expect(s.isSnoozed == false)

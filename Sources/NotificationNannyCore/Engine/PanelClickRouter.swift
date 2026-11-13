@@ -1,27 +1,16 @@
 import AppKit
 
-/// Delivers clicks on our Notification Center panel without Notification Center seeing them.
-///
-/// Notification Center closes its panel on any click outside it, including a click on a
-/// non-activating panel of ours, so a plain window on top would close the very panel it is
-/// standing in for at the first click. An event tap at the head of the session takes the
-/// mouse events that start inside our panel out of the stream and hands them straight to
-/// the window, so nothing else hears them and Notification Center's panel stays open.
-/// Clicks anywhere else pass untouched, and Notification Center closes its panel as usual.
-/// Measured on 27.0 with scripts/panel-lab (`run.sh tap`).
-///
-/// Only enabled while our panel is on screen. Creating the tap needs Accessibility, which
-/// the app has whenever it can read the panel at all.
+/// Routes clicks directly to our panel so Notification Center does not treat them as outside
+/// clicks.
+/// The Accessibility event tap is active only while the panel is visible.
 @MainActor
 final class PanelClickRouter {
     private var tap: CFMachPort?
     private var source: CFRunLoopSource?
     private weak var window: NSWindow?
-    /// More windows of ours whose clicks Notification Center mustn't see either while the
-    /// panel is up: Settings, so its panel stays open while its place is dragged there.
+    /// Also intercept Settings clicks so dragging placement does not close Notification Center.
     var otherWindows: () -> [NSWindow] = { [] }
-    /// The window a click that started in one of ours goes to, from mouse down to mouse
-    /// up: its drag and release go there too, wherever they happen.
+    /// Keep a drag and its release with the window where the press began.
     private weak var target: NSWindow?
     /// For a window other than our panel, the view the click went to.
     private weak var targetView: NSView?
@@ -34,8 +23,8 @@ final class PanelClickRouter {
         .otherMouseDown, .otherMouseUp, .otherMouseDragged,
     ]
 
-    /// Starts routing clicks inside `window`. Returns false if the tap can't be created,
-    /// in which case the caller must not take over: the first click would close the panel.
+    /// Returns false if the event tap cannot be created; the caller must then leave the native
+    /// panel visible.
     @discardableResult
     func start(for window: NSWindow) -> Bool {
         self.window = window
@@ -70,8 +59,8 @@ final class PanelClickRouter {
 
     /// Whether to swallow `event`; if so it has been handed to our window.
     fileprivate func route(_ type: CGEventType, _ event: CGEvent) -> Bool {
-        if type == .leftMouseDown, ProcessInfo.processInfo.environment["NN_TIMING"] == "1" { // DEBUG-CLICK
-            // How long the click waited for the main thread, from the event's own time.
+        if type == .leftMouseDown, ProcessInfo.processInfo.environment["NN_TIMING"] == "1" { // Measure the main thread wait from the
+                                                                                             // event timestamp.
             let waited = Int((ProcessInfo.processInfo.systemUptime - Double(event.timestamp) / 1e9) * 1000)
             FileHandle.standardError.write(Data("[router] down seen \(waited) ms after the click, panel visible=\(window?.isVisible ?? false) pass=\(passThrough) uptime \(ProcessInfo.processInfo.systemUptime)\n".utf8))
         }
@@ -91,17 +80,15 @@ final class PanelClickRouter {
                 eventNumber: 0, clickCount: Int(event.getIntegerValueField(.mouseEventClickState)),
                 pressure: isUp ? 0 : 1)
         else { return false }
-        // Not from inside the tap callback: a slow handler there would get the tap disabled.
+        // Dispatch outside the tap callback; a slow handler would disable the tap.
         if window === panel {
-            if ProcessInfo.processInfo.environment["NN_TIMING"] == "1" { // DEBUG-CLICK
+            if ProcessInfo.processInfo.environment["NN_TIMING"] == "1" {
                 FileHandle.standardError.write(Data("[router] \(ns.type.rawValue) to panel at \(ns.locationInWindow) uptime \(ProcessInfo.processInfo.systemUptime)\n".utf8))
             }
             DispatchQueue.main.async { [weak window] in window?.sendEvent(ns) }
         } else {
-            // Settings isn't the key window while Notification Center's panel is open, and
-            // a window that isn't key spends a click on becoming key, which it can't then:
-            // dragging the panel's place there did nothing. The view under the pointer gets
-            // the events directly instead, as a key window would hand them on.
+            // Send events directly to the Settings view because the inactive window cannot take a
+            // keying click.
             DispatchQueue.main.async { [weak self, weak window] in
                 guard let self, let window else { return }
                 if isDown {
@@ -131,14 +118,13 @@ final class PanelClickRouter {
         if let tap { CGEvent.tapEnable(tap: tap, enable: true) }
     }
 
-    /// The one of `windows` that is frontmost at `point`, if it is the frontmost window of
-    /// any app there: a click on another app's window over ours is that app's.
+    /// Only route to ours if it is frontmost across all apps at the click position.
     private static func window(at point: NSPoint, among windows: [NSWindow]) -> NSWindow? {
         let front = NSWindow.windowNumber(at: point, belowWindowWithWindowNumber: 0)
         return windows.first { $0.isVisible && $0.windowNumber == front && $0.frame.contains(point) }
     }
 
-    /// Event taps use the global top-left origin of the main display, AppKit the bottom-left.
+    /// Convert the event tap's top left origin to AppKit's bottom left origin on the main display.
     private static func appKitPoint(_ p: CGPoint) -> NSPoint {
         let top = NSScreen.screens.first?.frame.maxY ?? 0
         return NSPoint(x: p.x, y: top - p.y)

@@ -1,34 +1,6 @@
-// Measures what a custom Notification Center panel would have to build on.
-//
-// The custom banner works because Notification Center keeps owning the banner:
-// we read it through Accessibility, park its window off screen, draw our own,
-// and send clicks back to the real one. This probe checks whether the open
-// panel can be treated the same way, and answers one question per section:
-//
-//   1 open     how soon an open panel can be detected after the clock press
-//   2 shape    the panel's tree: which attributes and actions each kind of
-//              element has, and what the app element offers
-//   3 list     whether every row is in the tree or only those in view, and
-//              whether the list can be scrolled from outside
-//   4 events   which AX notifications fire on open, expand, arrival, close
-//   5 arrive   what a notification arriving while the panel is open does
-//   6 park     whether the panel stays open with its window parked off
-//              screen, whether actions still work there, and whether a
-//              click on a non-activating panel of ours closes it
-//   7 alpha    whether WindowServer accepts an alpha change on NC's window
-//   8 toggle   whether AXExpanded can open and close the panel
-//
-// It posts its own rows from the notify-lab apps (build them first with
-// scripts/notify-lab/build.sh), opens the panel with the menu bar clock for
-// about half a minute, and only ever acts on Lab rows. Text of any other
-// notification or widget is replaced by its length in the dump. At the end it
-// closes the panel, puts NC's window back where it was, and clears the Lab
-// apps' notifications.
-//
-//   scripts/panel-probe.sh [--rows N]     N rows per Lab app, default 12
-//
-// Output: build/panel-probe/report.txt and tree.txt. Needs Accessibility for
-// the app running it. Quit NotificationNanny first: it would move the window.
+// Probe native panel detection, AX structure, events, parking, actions, and compositor support.
+// Act on Lab rows only, redact other text, and restore the host and panel state.
+// Requires Accessibility; quit NotificationNanny first. See docs/LABS.md for commands.
 
 import AppKit
 import ApplicationServices
@@ -151,8 +123,7 @@ AXUIElementSetMessagingTimeout(ncApp, 2)
 
 func expanded() -> Bool? { attr(ncApp, "AXExpanded") as? Bool }
 func windows() -> [AXUIElement] { attr(ncApp, kAXWindowsAttribute) as? [AXUIElement] ?? [] }
-/// The fullscreen window the panel opens in; never a desktop widget, which is a
-/// Notification Center window too.
+/// Select the fullscreen host, never a desktop widget owned by the same process.
 func host() -> AXUIElement? {
     windows().filter { str($0, kAXSubroleAttribute) == "AXSystemDialog" }
         .max { (frame($0)?.width ?? 0) * (frame($0)?.height ?? 0) < (frame($1)?.width ?? 0) * (frame($1)?.height ?? 0) }
@@ -288,8 +259,7 @@ for w in windows() {
     say("  window \(str(w, kAXSubroleAttribute) ?? "?") \(r(frame(w))) posSettable=\(settable(w, kAXPositionAttribute)) sizeSettable=\(settable(w, kAXSizeAttribute))")
 }
 
-// The tree goes to tree.txt. Only Lab rows and short button labels keep their
-// text; anything else is a real notification or widget and shows its length.
+// Keep only Lab text and native button labels in tree output; replace other text with its length.
 var tree: [String] = []
 var kinds: [String: String] = [:]
 var kindOrder: [String] = []
@@ -386,7 +356,7 @@ let arrival = labRows().filter { label($0).contains("Probe arrival") }
 say("  Lab rows \(rowsBefore) → \(labRows().count); arrival found \(arrival.count)× \(arrival.map { "\(str($0, kAXSubroleAttribute) ?? "?") \(r(frame($0)))" })")
 say(eventSummary("arrive"))
 
-// MARK: 7 alpha (before parking, while the window is on screen)
+// MARK: Compositor alpha before parking
 
 @_silgen_name("_AXUIElementGetWindow")
 func _AXUIElementGetWindow(_ element: AXUIElement, _ windowID: UnsafeMutablePointer<CGWindowID>) -> AXError
@@ -440,7 +410,7 @@ if let h = host(), let home = hostHome {
         }
     }
 
-    // A click on a non-activating panel of ours, the way the custom panel would be used.
+    // Test a click on our nonactivating panel.
     if expanded() == true {
         let screen = NSScreen.screens[0].frame
         let rect = NSRect(x: screen.midX - 160, y: screen.midY - 50, width: 320, height: 100)
@@ -454,8 +424,8 @@ if let h = host(), let home = hostHome {
         panel.orderFrontRegardless()
         spin(0.4)
         let click = CGPoint(x: rect.midX, y: screen.maxY - rect.midY)
-        // Only click if the frontmost window under the point is ours; anything else is the
-        // user's. Asked of WindowServer: AX can't answer for our own process while we wait.
+        // Check ownership through WindowServer before clicking; AX cannot query this waiting
+        // process.
         let onScreen = CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID) as? [[String: Any]] ?? []
         let front = onScreen.first { info in
             guard let b = info[kCGWindowBounds as String] as? NSDictionary,

@@ -1,12 +1,7 @@
 import AppKit
 import Foundation
 
-/// Runs `brew upgrade --cask notificationnanny` in-process and streams
-/// its output back to the UI.
-///
-/// Lifecycle: created once as a `@StateObject` on `SettingsView`. The
-/// underlying `Process` survives independently — it will run to completion
-/// even if the settings window is closed mid-update.
+/// Runs a Homebrew cask upgrade and streams output; the process can finish after Settings closes.
 @MainActor
 final class HomebrewUpdater: ObservableObject {
 
@@ -22,7 +17,7 @@ final class HomebrewUpdater: ObservableObject {
 
     private var process: Process?
 
-    // MARK: - Actions
+    // MARK: Actions
 
     func start() {
         guard case .idle = state else { return }
@@ -38,14 +33,13 @@ final class HomebrewUpdater: ObservableObject {
         p.executableURL = URL(fileURLWithPath: brew)
         p.arguments = ["upgrade", "--cask", "notificationnanny"]
 
-        // Inherit the user environment so brew finds its own Ruby/git,
-        // then override a few variables for clean machine-readable output.
+        // Inherit Homebrew's environment, suppress colors, and disable interactive behavior.
         var env = ProcessInfo.processInfo.environment
         env["PATH"] = "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
         env["HOMEBREW_NO_ENV_HINTS"] = "1"
-        env["HOMEBREW_NO_COLOR"] = "1"   // correct Homebrew variable (not HOMEBREW_COLOR)
-        env["NO_COLOR"] = "1"            // respected by many CLI tools as a standard
-        env["TERM"] = "dumb"             // last-resort fallback for anything that checks TERM
+        env["HOMEBREW_NO_COLOR"] = "1"
+        env["NO_COLOR"] = "1"
+        env["TERM"] = "dumb"
         p.environment = env
 
         let pipe = Pipe()
@@ -72,8 +66,6 @@ final class HomebrewUpdater: ObservableObject {
                 if proc.terminationStatus == 0 {
                     state = .succeeded
                 } else {
-                    // Surface the most informative line: prefer lines that
-                    // mention "error", otherwise fall back to the last line.
                     let hint = outputLines.last(where: { $0.localizedCaseInsensitiveContains("error") })
                         ?? outputLines.last
                         ?? "Exited with code \(proc.terminationStatus)"
@@ -90,21 +82,18 @@ final class HomebrewUpdater: ObservableObject {
         }
     }
 
-    /// Launches the already-updated app bundle and terminates the current process.
-    /// A short sleep gives the current process time to exit cleanly before `open`
-    /// fires — without it, macOS may bring the still-running instance to front
-    /// instead of launching the new binary.
+    /// Delay reopening the updated bundle until this process exits so macOS launches the new
+    /// binary.
     func relaunch() {
         let path = Bundle.main.bundlePath
         let helper = Process()
         helper.executableURL = URL(fileURLWithPath: "/bin/sh")
-        // The path as an argument, never as part of the script: in it, a path with $ or `
-        // was run as shell code.
+        // Pass the path as an argument so shell metacharacters remain literal.
         helper.arguments = ["-c", "sleep 1 && open \"$1\"", "relaunch", path]
         do {
             try helper.run()
         } catch {
-            // Nothing would open it again: better to stay running.
+            // Keep running if the relaunch helper cannot start.
             NannyLogger.shared.log("Couldn't relaunch after updating (\(error.localizedDescription)) — quit and reopen NotificationNanny",
                                    level: .error, tag: "Update")
             return
@@ -112,8 +101,7 @@ final class HomebrewUpdater: ObservableObject {
         NSApplication.shared.terminate(nil)
     }
 
-    /// Resets the updater back to `.idle` so the banner can be dismissed or
-    /// a new attempt made. No-op while an update is in progress.
+    /// Reset when idle or finished; ignore resets during an update.
     func reset() {
         guard case .running = state else {
             state = .idle
@@ -122,10 +110,9 @@ final class HomebrewUpdater: ObservableObject {
         }
     }
 
-    // MARK: - Helpers
+    // MARK: Helpers
 
-    /// Strips ANSI escape sequences (e.g. `\u{1B}[31m`) from a string.
-    /// Belt-and-suspenders fallback for tools that ignore NO_COLOR / TERM=dumb.
+    /// Strip ANSI escapes from tools that ignore color suppression variables.
     private nonisolated static func stripANSI(_ text: String) -> String {
         guard text.contains("\u{1B}") else { return text }
         return text.replacingOccurrences(

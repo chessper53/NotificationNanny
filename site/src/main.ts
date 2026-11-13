@@ -1,5 +1,3 @@
-// NotificationNanny landing page. No framework, no bundler: plain `tsc`
-// compiles this into ../main.js, which index.html loads with defer.
 
 const REPO = "chessper53/NotificationNanny";
 const CACHE_KEY = "nn-site-stats-v3";
@@ -13,9 +11,7 @@ interface Stats {
   fetchedAt: number;
 }
 
-// Downloads, stars and the latest version under the hero. The row stays
-// hidden if GitHub can't be reached and nothing is cached, rather than
-// showing placeholders.
+// Keep stats hidden without a cached or fetched result.
 
 function readCache(): Stats | null {
   try {
@@ -83,7 +79,6 @@ async function loadStats(): Promise<void> {
   }
 }
 
-// Copy buttons: data-copy names the element whose text is copied.
 
 function setupCopy(): void {
   document.querySelectorAll<HTMLButtonElement>("[data-copy]").forEach((button) => {

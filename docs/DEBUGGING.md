@@ -26,18 +26,15 @@ this is intentional: it mirrors a fresh install and surfaces permission bugs ear
 ## Manual equivalents
 
 ```sh
-# Kill
 pkill -x NotificationNanny
 
-# Build + bundle (release-grade, host arch)
-./scripts/build-app.sh            # build only
-./scripts/build-app.sh --run      # build, reset TCC, launch
-./scripts/build-app.sh --install  # build, copy to /Applications
+# Build a release bundle for the host architecture.
+./scripts/build-app.sh
+./scripts/build-app.sh --run      # Build, reset Accessibility, and launch.
+./scripts/build-app.sh --install
 
-# Clear Accessibility permission for the app
 tccutil reset Accessibility com.notificationnanny.app
 
-# Launch a built bundle
 open build/NotificationNanny.app
 ```
 
@@ -53,7 +50,7 @@ If permission still won't stick:
 
 ```sh
 tccutil reset Accessibility com.notificationnanny.app
-# then re-launch and re-grant via System Settings → Privacy & Security → Accessibility
+# Relaunch and grant access in System Settings > Privacy & Security > Accessibility.
 ```
 
 ## Logs
@@ -84,8 +81,7 @@ tccutil reset Accessibility com.notificationnanny.app
 ## Running tests
 
 ```sh
-make test     # handles CLT-only Testing.framework wiring
-# or, with full Xcode:
+make test     # Adds the Testing framework paths for Command Line Tools.
 swift test
 ```
 

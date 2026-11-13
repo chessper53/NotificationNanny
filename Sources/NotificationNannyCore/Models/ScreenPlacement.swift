@@ -1,7 +1,7 @@
 import AppKit
 import CoreGraphics
 
-/// Per-screen notification placement: which corner + a fine-tune nudge.
+/// Notification anchor and offsets for one screen.
 package struct ScreenPlacement: Codable, Equatable {
     package var position: NotificationPosition
     package var xOffset: Double
@@ -11,20 +11,15 @@ package struct ScreenPlacement: Codable, Equatable {
 }
 
 extension NSScreen {
-    /// Stable identifier for a physical display. Survives sleep/wake; if you
-    /// disconnect & reconnect the same monitor you usually get the same ID
-    /// back (depends on the GPU driver).
+    /// Current numeric display ID; it can change after sleep or reconnection.
     var displayID: CGDirectDisplayID {
         let key = NSDeviceDescriptionKey("NSScreenNumber")
         guard let value = deviceDescription[key] as? NSNumber else { return 0 }
         return CGDirectDisplayID(value.uint32Value)
     }
 
-    /// Persistent per-monitor identifier, stable across the `displayID` reassignments
-    /// that can happen on sleep/wake or a dock reconnect (same physical panel, new
-    /// CGDirectDisplayID). Use this — not `displayID` — as a dictionary/UserDefaults key
-    /// for anything that must survive those reassignments. Falls back to a numeric key
-    /// derived from `displayID` on the rare display that doesn't vend a UUID.
+    /// Persistent display key for saved placement, surviving numeric ID reassignment.
+    /// Falls back to a numeric key when the display provides no UUID.
     var stableDisplayKey: String {
         if let uuid = CGDisplayCreateUUIDFromDisplayID(displayID)?.takeRetainedValue() {
             return CFUUIDCreateString(nil, uuid) as String
@@ -32,10 +27,7 @@ extension NSScreen {
         return "id:\(displayID)"
     }
 
-    /// Short one-line descriptor for the activity log: name, raw displayID, and a short
-    /// prefix of the stable key. Comparing these across two consecutive "screen changed"
-    /// events reveals a displayID reassignment (same stable key, different displayID) —
-    /// the exact signature of the "position reverted to default" bug.
+    /// Log the name, numeric ID, and stable key prefix to reveal numeric ID reassignment.
     var nannyLogDescriptor: String {
         let key = stableDisplayKey
         let shortKey = key.hasPrefix("id:") ? key : "uuid:\(key.prefix(8))"
@@ -43,7 +35,7 @@ extension NSScreen {
         return "\(nannyDisplayName) id=\(displayID) \(shortKey) \(Int(f.width))x\(Int(f.height))"
     }
 
-    /// Human-readable name to show in the picker.
+    /// Display name for the screen picker.
     var nannyDisplayName: String {
         if #available(macOS 14, *), !localizedName.isEmpty {
             return localizedName

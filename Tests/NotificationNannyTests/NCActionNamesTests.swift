@@ -2,8 +2,7 @@ import Foundation
 import Testing
 @testable import NotificationNannyCore
 
-/// Banners are closed through their Close or Clear All action, whose names macOS
-/// translates. A banner on French macOS offers Fermer, not Close.
+/// Native close action names are localized by macOS.
 @Suite("NCActionNames")
 struct NCActionNamesTests {
 
@@ -31,7 +30,6 @@ struct NCActionNamesTests {
         #expect(NCActionNames.translations(of: "Close", in: [:]) == ["Close"])
     }
 
-    /// Reads the real table of this Mac's Notification Center.
     @MainActor @Test func systemTable_hasFrench() {
         #expect(NCActionNames.close.isSuperset(of: ["Close", "Fermer"]))
         #expect(NCActionNames.clearAll.isSuperset(of: ["Clear All", "Tout effacer"]))

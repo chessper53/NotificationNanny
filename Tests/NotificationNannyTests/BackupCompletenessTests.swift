@@ -2,10 +2,8 @@ import AppKit
 import Testing
 @testable import NotificationNannyCore
 
-/// A backup restores the configuration it was made from, all of it: every setting off its
-/// default, exported, imported into a fresh install, and then every stored value compared.
-/// Left out on purpose: a snooze running, a countdown stale by any restore, and the app's
-/// own bookkeeping.
+/// Compare all stored values after importing into a fresh install.
+/// Exclude transient snooze state and internal bookkeeping.
 @Suite("Backup completeness") @MainActor
 struct BackupCompletenessTests {
     private static let notInBackups: Set<String> = ["snoozedUntil", "lastBinaryMtime"]
@@ -53,7 +51,6 @@ struct BackupCompletenessTests {
         s.newestBannerAtBottom = true
         s.allAppsSound = "Glass"
         s.allAppsSoundVolume = 0.4
-        // An exception group with its apps: matching goes by the group's own app names.
         let group = s.addGroup(name: "Work")
         s.addApp("Microsoft Teams", toGroup: group)
         s.addApp("Microsoft Outlook", toGroup: group)
@@ -71,8 +68,7 @@ struct BackupCompletenessTests {
 
         let source = sourceDefaults.persistentDomain(forName: sourceName) ?? [:]
         let result = restoredDefaults.persistentDomain(forName: restoredName) ?? [:]
-        // Collections and colours are stored as JSON, whose key order varies from one
-        // encoding to the next: compared by what they hold, not byte for byte.
+        // Compare decoded content because JSON key order is not stable.
         func content(_ value: Any?) -> NSObject? {
             if let data = value as? Data, let json = try? JSONSerialization.jsonObject(with: data) as? NSObject { return json }
             return value as? NSObject
@@ -80,7 +76,6 @@ struct BackupCompletenessTests {
         for (key, value) in source where !Self.notInBackups.contains(key) {
             #expect(content(result[key])?.isEqual(content(value)) == true, "\(key) didn't come back from the backup")
         }
-        // The apps seen come along, and both group apps' banners still go by the group.
         #expect(restored.knownAppNames == ["Microsoft Teams", "Slack"])
         #expect(restored.isEnabled == false)
         #expect(restored.hideMenuBarIcon == true)
@@ -92,7 +87,6 @@ struct BackupCompletenessTests {
         #expect(restoredDefaults.string(forKey: "targetDisplayUUID") == "SCREEN-UUID-B")
     }
 
-    /// A backup from before version 2 imports the settings it never had as their defaults.
     @Test func versionOneBackup_importsTheNewSettingsAsDefaults() throws {
         let backup = """
         {"schemaVersion": 1, "placements": {}, "targetDisplayID": 0, "autoDismissSeconds": 0, "bannerScale": 1.0,
@@ -109,7 +103,6 @@ struct BackupCompletenessTests {
     }
 }
 
-/// Importing into an install that has seen other apps adds the backup's to them.
 @Suite("Backup known apps") @MainActor
 struct BackupKnownAppsTests {
     @Test func importMergesTheAppsSeen() throws {
@@ -126,7 +119,6 @@ struct BackupKnownAppsTests {
         #expect(here.knownAppNames == ["Mail", "Slack"])
     }
 
-    /// A backup from before version 3 leaves them as they are.
     @Test func olderBackupKeepsWhatIsHere() throws {
         let name = "NotificationNannyTests_\(UUID().uuidString)"
         let s = AppSettings(defaults: UserDefaults(suiteName: name)!,
@@ -143,8 +135,6 @@ struct BackupKnownAppsTests {
     }
 }
 
-/// A backup is checked whole before any of it applies; one that can't be imported leaves
-/// every setting as it was.
 @Suite("Backup validation") @MainActor
 struct BackupValidationTests {
     private func make() -> AppSettings {
@@ -188,7 +178,6 @@ struct BackupValidationTests {
     }
 }
 
-/// Reset All Settings: every setting as a fresh install has it.
 @Suite("Reset all settings") @MainActor
 struct ResetAllSettingsTests {
     @Test func resetMatchesAFreshInstall() throws {
@@ -215,7 +204,7 @@ struct ResetAllSettingsTests {
         }
         #expect(try backup(s)?.isEqual(try backup(fresh)) == true)
         #expect(s.isSnoozed == false)
-        // Learned, not set: kept.
+        // Preserve learned app names when resetting settings.
         #expect(s.knownAppNames == ["Slack"])
     }
 }

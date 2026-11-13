@@ -1,9 +1,7 @@
 name: Release
 
-# The one place a release is built and published. scripts/release.sh only pushes the
-# tag. Built once, checked, uploaded to a draft, checked again as downloaded, and only
-# then published; the cask follows on main. A local script used to publish too, and
-# its archive and this one raced for the same release and the same cask line.
+# Sole release publisher: build once, verify the downloaded draft archive, then publish and update
+# the cask.
 on:
   push:
     tags: ['v*']
@@ -42,10 +40,7 @@ jobs:
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
           echo "ZIP=NotificationNanny-$VERSION.zip" >> "$GITHUB_ENV"
 
-      # Every release signed with the same certificate, so macOS keeps a user's
-      # Accessibility and Screen Recording across updates (ad-hoc, each update was a
-      # new app to allow again). A release without it fails rather than going out
-      # ad-hoc: those who had allowed the last one would have to again.
+      # Require the stable signing certificate so users retain macOS permissions across updates.
       - name: Import signing certificate
         env:
           SIGNING_P12: ${{ secrets.SIGNING_P12 }}
@@ -69,7 +64,6 @@ jobs:
           echo "SIGN_KEYCHAIN=$keychain" >> "$GITHUB_ENV"
           echo "SIGN_IDENTITY=$identity" >> "$GITHUB_ENV"
 
-      # VERSION comes from the environment set above.
       - name: Build
         run: UNIVERSAL=1 ./scripts/build-app.sh
 
@@ -90,13 +84,12 @@ jobs:
           echo "$requirement"
           [[ "$requirement" == *"certificate leaf"* ]] || { echo "error: release is not signed with the certificate" >&2; exit 1; }
 
-      # ditto, as release.sh did and the CI bundle does: zip can drop what the signature
-      # covers, and the archive would install a broken app.
+      # Use ditto to preserve attributes required by the signature.
       - name: Package
         run: ditto -c -k --sequesterRsrc --keepParent build/NotificationNanny.app "$ZIP"
 
-      # What users get is the archive, so the archive is what is checked: unpacked, its
-      # version, both architectures and the signature.
+      # Verify the actual archive users receive, including both architectures, version, and
+      # signature.
       - name: Verify the archive
         run: |
           rm -rf "$RUNNER_TEMP/unpacked" && mkdir -p "$RUNNER_TEMP/unpacked"
@@ -110,8 +103,7 @@ jobs:
           [[ "$(codesign -dr - "$app" 2>&1)" == *"certificate leaf"* ]] || { echo "error: archive app is not signed with the certificate" >&2; exit 1; }
           echo "SHA256=$(shasum -a 256 "$ZIP" | awk '{print $1}')" >> "$GITHUB_ENV"
 
-      # A draft first: nobody sees it until it is checked. A run started again finds its
-      # draft and replaces the archive; a release already published is left alone.
+      # Retry draft uploads safely; leave an already published release untouched.
       - name: Upload to a draft release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -140,9 +132,8 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: gh release edit "$TAG" --draft=false --latest
 
-      # On main as it is now, not the tag's checkout: pushing that onto main failed
-      # whenever main had moved on, as it did for every release from 7.3.1 to 7.7.0.
-      # Tried again on a race; nothing to commit when the cask already says this.
+      # Update current main rather than the tag checkout; retry concurrent pushes and tolerate an
+      # unchanged cask.
       - name: Update the cask on main
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

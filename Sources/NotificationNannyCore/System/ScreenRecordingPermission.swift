@@ -1,9 +1,7 @@
 import AppKit
 import CoreGraphics
 
-/// Screen Recording, which the custom Notification Center needs only to show widgets:
-/// they are drawn by their own apps, and a picture of the real one is all there is to show.
-/// Asked for only when widgets are turned on.
+/// Request Screen Recording only when native widget captures are enabled.
 @MainActor
 package final class ScreenRecordingPermission: ObservableObject {
     package static let shared = ScreenRecordingPermission()
@@ -15,8 +13,7 @@ package final class ScreenRecordingPermission: ObservableObject {
         if granted != isGranted { isGranted = granted }
     }
 
-    /// Shows the system's prompt the first time; after that macOS only lists the app in
-    /// System Settings, so the tab also offers the way there.
+    /// macOS prompts only on the first request; later attempts need a System Settings link.
     package func request() {
         CGRequestScreenCaptureAccess()
         refresh()

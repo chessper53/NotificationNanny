@@ -1,14 +1,5 @@
-// A screenshot helper with a Screen Recording grant of its own, for lab runs started from
-// an editor's terminal, which has none to lend. Built once into build/panel-lab/Shot.app
-// by shot.sh and never rebuilt, so the grant, which an ad-hoc signature ties to this exact
-// build, stays.
-//
-//   Shot screencapture <args…>          runs /usr/sbin/screencapture with them
-//   Shot window <windowID> <out.png>    the window as ScreenCaptureKit sees it, the way
-//                                       WidgetCapture captures Notification Center's
-//
-// Writes what happened to <out>.txt (or build/panel-lab/shot.txt), as open -W can't
-// hand back an exit status.
+// Screenshot helper with a stable Screen Recording grant; built once and reused.
+// Write results to a sidecar because the app launcher cannot return exit status. See docs/LABS.md.
 import AppKit
 @preconcurrency import ScreenCaptureKit
 

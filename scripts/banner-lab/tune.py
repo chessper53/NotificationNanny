@@ -1,13 +1,6 @@
-"""Tries values for the replica's look against the real banner, in one appearance.
-
-    python3 scripts/banner-lab/tune.py light 'LIGHT_WASH=0.05' 'LIGHT_WASH=0.15 RIM=0.2' ...
-
-Each candidate is a set of NN_LOOK_ overrides (see BannerLook in CustomOverlay.swift),
-rendered by the lab build of the app's own view (run.sh builds it) on white, black and
-gray, and compared with the real banner captured on the same backdrops by run.sh.
-Prints, per candidate, how far the inside and the edge are off; lower is closer.
-Switches the system to the given appearance for the run and back afterwards.
-"""
+"""Compare NN_LOOK_ candidates over white, black, and gray backdrops, then restore system
+appearance.
+Lower interior and edge errors are closer. See docs/LABS.md for commands."""
 import os, subprocess, sys, time
 import numpy as np
 from PIL import Image

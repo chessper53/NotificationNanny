@@ -41,12 +41,10 @@ package struct MenuBarContent: View {
             if repositioner.hasAccessibilityPermission, !repositioner.isObserving {
                 repositioner.startObserving()
             }
-            // Auto-update check disabled for now.
-            // Task { newerVersion = await UpdateChecker.fetchNewerVersion() }
         }
     }
 
-    // MARK: - Header
+    // MARK: Header
 
     private var header: some View {
         HStack {
@@ -89,7 +87,7 @@ package struct MenuBarContent: View {
         }
     }
 
-    // MARK: - Snooze
+    // MARK: Snooze
 
     @ViewBuilder
     private var snoozeSection: some View {
@@ -128,7 +126,7 @@ package struct MenuBarContent: View {
         return f
     }()
 
-    // MARK: - Screen picker
+    // MARK: Screen picker
 
     private var screenPickerSection: some View {
         HStack(spacing: 8) {
@@ -142,7 +140,7 @@ package struct MenuBarContent: View {
         }
     }
 
-    // MARK: - Default position tile
+    // MARK: Default position tile
 
     private var positionSection: some View {
         let visible = selectedScreen.visibleFrame
@@ -163,7 +161,7 @@ package struct MenuBarContent: View {
         }
     }
 
-    // MARK: - Actions
+    // MARK: Actions
 
     private var actionSection: some View {
         VStack(spacing: 6) {

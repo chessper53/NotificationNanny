@@ -61,9 +61,8 @@
 "Test" = "Test";
 "px" = "px";
 
-/* Custom banner overlay chrome */
 
-/* Exceptions tab */
+/* Exception groups */
 "Create groups of apps and give each group its own rules: position, screen, banner type, and scale. Apps not in any group use the defaults." = "Create groups of apps and give each group its own rules: position, screen, banner type, and scale. Apps not in any group use the defaults.";
 "No exceptions yet." = "No exceptions yet.";
 "Name" = "Name";
@@ -85,7 +84,7 @@
 "App-wide settings for startup, timing, and notification behaviour. These apply globally and are not affected by presets or per-app rules." = "App-wide settings for startup, timing, and notification behaviour. These apply globally and are not affected by presets or per-app rules.";
 "Language" = "Language";
 
-/* Appearance (General tab, also the group appearance row in Exceptions) */
+/* Appearance */
 "Appearance" = "Appearance";
 "Settings window" = "Settings window";
 "System" = "System";
@@ -117,7 +116,7 @@
 "Reset all settings?" = "Reset all settings?";
 "This will clear all positions, exceptions, presets and restore defaults. This cannot be undone." = "This will clear all positions, exceptions, presets and restore defaults. This cannot be undone.";
 
-/* Backup tab */
+/* Backup controls */
 "Export your settings to a file or import a previously saved backup. Everything is included: positions, scale, per-app rules, presets, and general toggles." = "Export your settings to a file or import a previously saved backup. Everything is included: positions, scale, per-app rules, presets, and general toggles.";
 "Export Settings…" = "Export Settings…";
 "Save a backup to a JSON file" = "Save a backup to a JSON file";
@@ -166,7 +165,7 @@
 "Edge-case notifications" = "Edge-case notifications";
 "Send a tricky notification through the real path to test extraction, wrapping, and unicode. Renders custom only when custom mode is active for the sender." = "Send a tricky notification through the real path to test extraction, wrapping, and unicode. Renders custom only when custom mode is active for the sender.";
 
-/* Menu bar right-click quick actions (AppKit, NSLocalizedString) */
+/* Menu bar quick actions */
 "Resume (paused until %@)" = "Resume (paused until %@)";
 "15 minutes" = "15 minutes";
 "30 minutes" = "30 minutes";

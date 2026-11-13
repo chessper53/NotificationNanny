@@ -3,13 +3,13 @@ import Foundation
 import SwiftUI
 
 package enum BannerMode: String, Codable {
-    /// Always use the macOS system banner — ignores any scale setting.
+    /// Forces the native banner, ignoring custom scale.
     case native
-    /// Always use the custom overlay — even at scale 1.0.
+    /// Forces the custom overlay even at scale 1.
     case custom
 }
 
-/// An RGB color value that can be stored as a single optional rather than three separate Double?.
+/// An optional RGB color stored as one value.
 package struct BannerTint: Codable, Equatable {
     package var r: Double
     package var g: Double
@@ -28,10 +28,8 @@ struct AppGroup: Identifiable, Codable, Equatable {
     var appNames: [String]
     var placement: ScreenPlacement
     var targetDisplayID: CGDirectDisplayID
-    /// Stable per-monitor key (see `NSScreen.stableDisplayKey`) for `targetDisplayID`,
-    /// mirrored via `AppSettings.setGroupTargetDisplay` so the override survives a
-    /// displayID reassignment (sleep/wake, dock reconnect). nil means either "auto"
-    /// (targetDisplayID == 0) or data written before this field existed.
+    /// Stable display key paired with targetDisplayID so overrides survive numeric ID reassignment.
+    /// Nil means automatic selection or legacy data.
     var targetDisplayUUID: String?
     /// nil means inherit the global banner scale from AppSettings.
     var bannerScale: Double?
@@ -64,7 +62,7 @@ struct AppGroup: Identifiable, Codable, Equatable {
     private enum CodingKeys: String, CodingKey {
         case id, name, appNames, placement, targetDisplayID, targetDisplayUUID
         case bannerScale, bannerMode, bannerTint, bannerAnimation
-        // Legacy keys — read-only, for migrating data written by older versions
+        // Decode only: migrate legacy RGB keys.
         case bannerColorR, bannerColorG, bannerColorB
     }
 
@@ -79,7 +77,6 @@ struct AppGroup: Identifiable, Codable, Equatable {
         bannerScale     = try c.decodeIfPresent(Double.self, forKey: .bannerScale)
         bannerMode      = try c.decodeIfPresent(BannerMode.self, forKey: .bannerMode)
         bannerAnimation = try c.decodeIfPresent(BannerAnimation.self, forKey: .bannerAnimation)
-        // Prefer new bannerTint key; fall back to legacy separate R/G/B keys.
         if let tint = try c.decodeIfPresent(BannerTint.self, forKey: .bannerTint) {
             bannerTint = tint
         } else if let r = try c.decodeIfPresent(Double.self, forKey: .bannerColorR),

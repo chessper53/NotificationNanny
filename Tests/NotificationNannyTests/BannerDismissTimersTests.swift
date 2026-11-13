@@ -2,10 +2,7 @@ import Foundation
 import Testing
 @testable import NotificationNannyCore
 
-/// Per banner auto-dismiss bookkeeping. Since macOS 26 every banner shares one
-/// long-lived host window, and a timer kept per window fired on whichever banner
-/// was up by then; these pin that each banner gets its own timer and its own
-/// full delay, and that a banner leaving early takes its timer with it.
+/// Shared hosts must not cause one banner to inherit another banner's timer.
 @Suite("Banner dismiss timers") @MainActor
 struct BannerDismissTimersTests {
 
@@ -45,8 +42,6 @@ struct BannerDismissTimersTests {
         #expect(timers.armedIDs.isEmpty)
     }
 
-    /// Sweeps re-arm on every pass. A banner that already has a timer keeps it,
-    /// which is what gives it its full delay rather than restarting forever.
     @Test func arm_isIdempotentPerBanner() {
         let clock = FakeClock()
         let timers = BannerDismissTimers(schedule: clock.schedule)
@@ -59,8 +54,6 @@ struct BannerDismissTimersTests {
         #expect(timers.armedIDs == ["a", "b"])
     }
 
-    /// The bug this replaces: a new banner arriving in the same host must not
-    /// inherit the old banner's timer.
     @Test func newBannerInSameHost_getsItsOwnTimer() {
         let clock = FakeClock()
         let timers = BannerDismissTimers(schedule: clock.schedule)
@@ -109,8 +102,7 @@ struct BannerDismissTimersTests {
         #expect(timers.armedIDs.isEmpty)
     }
 
-    /// Once a timer fires its banner is forgotten, so if the same banner is
-    /// somehow still up (the close failed) a later sweep can arm it again.
+    /// A fired identifier is forgotten and can be armed again if it is still present.
     @Test func firedBanner_canBeArmedAgain() {
         let clock = FakeClock()
         let timers = BannerDismissTimers(schedule: clock.schedule)

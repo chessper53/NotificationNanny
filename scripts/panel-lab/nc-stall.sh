@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# scripts/panel-lab/nc-stall.sh [seconds] [delay]: pauses Notification Center for $1 seconds (default 3) right after a banner arrives,
-# so sweeps meet a Notification Center that doesn't answer. Always resumed.
+# Temporarily pause Notification Center after a banner arrives; always resume it. See docs/LABS.md.
 NC=$(pgrep -x NotificationCenter); [[ -n "$NC" ]] || exit 1
 ( sleep $(( ${1:-3} + 3 )); kill -CONT "$NC" 2>/dev/null ) &
 trap 'kill -CONT "$NC" 2>/dev/null' EXIT

@@ -1,16 +1,6 @@
 #!/usr/bin/env bash
-# Build NotificationNanny.app from the SwiftPM sources.
-#
-# Needs full Xcode. This used to work with just the Command Line Tools, but the
-# CLT 27.0 release (2026-09-15) ships no libSwiftUIMacros.dylib, so every @State
-# in the UI layer fails to expand. UNIVERSAL=1 has always needed full Xcode.
-#
-# Output: ./build/NotificationNanny.app
-#
-# Usage:
-#   ./scripts/build-app.sh           # build only
-#   ./scripts/build-app.sh --run     # build, then open the app
-#   ./scripts/build-app.sh --install # build, then copy to /Applications
+# Build a release app bundle with full Xcode. Commands are in docs/DEBUGGING.md.
+# The current Command Line Tools lack the required SwiftUI macro plugin.
 
 set -euo pipefail
 
@@ -22,9 +12,7 @@ VERSION="${VERSION:-$(cat VERSION 2>/dev/null | tr -d '[:space:]' || echo dev)}"
 BUILD_DIR="build"
 APP_DIR="${BUILD_DIR}/${APP_NAME}.app"
 
-# Defaults to the host arch. Set UNIVERSAL=1 for a release: without it, Intel
-# Macs cannot launch the result at all. The default is a leftover from when a
-# host-arch build was the only thing the Command Line Tools could manage.
+# UNIVERSAL=1 includes Intel support; otherwise build for the host architecture.
 SWIFT_BUILD_ARGS=(-c release)
 if [[ "${UNIVERSAL:-0}" == "1" ]]; then
     SWIFT_BUILD_ARGS+=(--arch arm64 --arch x86_64)
@@ -35,8 +23,6 @@ swift build "${SWIFT_BUILD_ARGS[@]}"
 
 BINARY_PATH="$(swift build "${SWIFT_BUILD_ARGS[@]}" --show-bin-path)/${APP_NAME}"
 
-# Shared with dev.sh so a dev bundle and a release bundle differ only in how the
-# binary was compiled — never in what ends up inside the .app.
 echo "==> Assembling + signing .app bundle…"
 scripts/assemble-bundle.sh "${BINARY_PATH}" "${APP_DIR}" "${VERSION}"
 

@@ -3,10 +3,7 @@ import Foundation
 import Testing
 @testable import NotificationNannyCore
 
-// Verifies that each persisted field survives a fresh AppSettings init from
-// the same backing storage. Mutations go to instance A; reads come from
-// instance B constructed afterwards from the identical UserDefaults suite
-// and file URL — so any bug in didSet serialisation or init deserialisation fails here.
+// Reload through a separate instance to check persisted values rather than live memory.
 @Suite("AppSettings persistence") @MainActor
 struct AppSettingsPersistenceTests {
 
@@ -44,8 +41,6 @@ struct AppSettingsPersistenceTests {
         #expect(store.make().newestBannerAtBottom == true)
     }
 
-    /// A Notification Center placed before it could move across keeps its side and height,
-    /// and opens with no offset across: where it always did.
     @Test func ncPanelXOffset_missingKey_keepsSavedPlace() {
         let store = Store(); defer { store.cleanup() }
         let defaults = UserDefaults(suiteName: store.suiteName)!
@@ -75,10 +70,7 @@ struct AppSettingsPersistenceTests {
         #expect(store.make().targetDisplayID == 99)
     }
 
-    // placements and appGroups are written through a debounce (dragging the
-    // position tile would otherwise re-encode JSON on every frame), so these two
-    // flush the way the app does when it deactivates or quits. Without the flush
-    // the write is still sitting on the main queue when instance B reads.
+    // Flush debounced collections before constructing the reader instance.
     @Test func placements_persistAcrossInit() {
         guard let screen = NSScreen.main else { return }
         let store = Store(); defer { store.cleanup() }
@@ -92,9 +84,7 @@ struct AppSettingsPersistenceTests {
         #expect(read.yOffset == -3)
     }
 
-    // Reproduces the "position reverts to default" bug: a placement saved under the
-    // old raw-CGDirectDisplayID key (pre-migration installs, or a displayID that got
-    // reassigned by macOS) must still be found and self-heal onto the new stable key.
+    // Legacy numeric display keys must migrate on first lookup.
     @Test func placements_migrateFromLegacyDisplayIDKey() throws {
         guard let screen = NSScreen.main else { return }
         let store = Store(); defer { store.cleanup() }
@@ -106,8 +96,7 @@ struct AppSettingsPersistenceTests {
         let settings = AppSettings(defaults: defaults, knownAppsFileURL: store.fileURL)
         #expect(settings.placement(for: screen) == legacy)
 
-        // The lookup above should have migrated the entry onto the stable key, so a
-        // fresh instance backed by the same store finds it without the legacy key.
+        // Reload to check that the migration was persisted.
         let reloaded = AppSettings(defaults: defaults, knownAppsFileURL: store.fileURL)
         #expect(reloaded.placement(for: screen) == legacy)
     }
@@ -127,22 +116,19 @@ struct AppSettingsPersistenceTests {
         #expect(settings.resolvedTargetScreen() == nil)
     }
 
-    // Reproduces the upgrade path for an existing user: a targetDisplayID written by a
-    // version predating the stable key must get one backfilled at load time, not just the
-    // next time the user re-picks the display — otherwise the global override stays exactly
-    // as fragile as before the fix until they touch it again.
+    // Backfill stable display keys at load time without requiring the user to select the screen
+    // again.
     @Test func targetDisplayID_backfillsStableKeyOnInit() {
         guard let screen = NSScreen.main else { return }
         let store = Store(); defer { store.cleanup() }
         let defaults = UserDefaults(suiteName: store.suiteName)!
-        defaults.set(Int(screen.displayID), forKey: "targetDisplayID")   // pre-fix: no UUID key written
+        defaults.set(Int(screen.displayID), forKey: "targetDisplayID")   // Legacy data has no UUID key.
 
         let settings = AppSettings(defaults: defaults, knownAppsFileURL: store.fileURL)
         #expect(settings.resolvedTargetScreen() === screen)
         #expect(defaults.string(forKey: "targetDisplayUUID") == screen.stableDisplayKey)
     }
 
-    // Same as above, for a per-exception-group override written before AppGroup.targetDisplayUUID existed.
     @Test func appGroup_backfillsStableKeyOnInit() throws {
         guard let screen = NSScreen.main else { return }
         let store = Store(); defer { store.cleanup() }
@@ -210,23 +196,15 @@ struct AppSettingsPersistenceTests {
 
     @Test func knownApps_fileURLTakesPrecedenceOverUserDefaults() {
         let store = Store(); defer { store.cleanup() }
-        // Write names through the normal path (goes to both UserDefaults and file).
         let a = store.make()
         a.recordAppName("Mail")
-        // Now write different data directly into UserDefaults (simulating stale data).
+        // Simulate stale defaults alongside the newer file.
         UserDefaults(suiteName: store.suiteName)!.set(["Stale"], forKey: "knownAppNames")
-        // The next init should prefer the file over UserDefaults.
         let b = store.make()
         #expect(b.knownAppNames == ["Mail"])
     }
 
-    // MARK: - Write coalescing
-    //
-    // Dragging the position tile drives setPlacement at screen refresh rate. Each
-    // write re-encodes the whole placements dictionary to JSON, so it has to be
-    // debounced rather than hitting UserDefaults per frame. These pin that down:
-    // without the coalescer the suite below shows an intermediate value, and the
-    // drag lag this was fixing comes straight back.
+    // MARK: Write coalescing
 
     @Test func placements_rapidWrites_coalesceIntoOneStore() {
         guard let screen = NSScreen.main else { return }
@@ -237,7 +215,7 @@ struct AppSettingsPersistenceTests {
             a.setPlacement(ScreenPlacement(position: .topLeft, xOffset: Double(i), yOffset: 0),
                            for: screen)
         }
-        // Nothing on disk yet — all 60 frames collapsed into one pending write.
+        // All 60 edits should still be pending in memory.
         #expect(UserDefaults(suiteName: store.suiteName)!
             .data(forKey: "placementsByDisplayID") == nil)
 
@@ -249,8 +227,7 @@ struct AppSettingsPersistenceTests {
         guard let screen = NSScreen.main else { return }
         let store = Store(); defer { store.cleanup() }
         let a = store.make()
-        // Only the disk write is deferred; the live value must update at once or
-        // the banner would visibly lag the pointer during a drag.
+        // Only persistence is deferred; live placement must update immediately for dragging.
         a.setPlacement(ScreenPlacement(position: .bottomRight, xOffset: 7, yOffset: 9), for: screen)
         #expect(a.placement(for: screen).xOffset == 7)
         #expect(a.placement(for: screen).position == .bottomRight)
@@ -276,7 +253,6 @@ struct AppSettingsPersistenceTests {
     }
 
     @Test func settingsAppearance_systemFollowsMacOS() {
-        // nil on the window is what makes it follow macOS; anything else pins it.
         #expect(SettingsAppearance.system.nsAppearance == nil)
         #expect(SettingsAppearance.light.nsAppearance?.name == .aqua)
         #expect(SettingsAppearance.dark.nsAppearance?.name == .darkAqua)

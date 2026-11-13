@@ -1,13 +1,7 @@
 import AppKit
 import SwiftUI
 
-/// Hover that works in windows of an app that isn't active.
-///
-/// NotificationNanny's banners and panel never activate the app: that would take the
-/// focus from whatever you are working in, and from Notification Center, whose panel then
-/// closes. SwiftUI's `onHover` doesn't report then, and neither does an AppKit tracking
-/// area, even one that is always active (measured on 27.0, scripts/panel-lab
-/// `hover-test`). Where the pointer is can always be read, so this reads it.
+/// Poll pointer position for hover in inactive windows; native hover callbacks do not fire there.
 private struct ActiveHoverArea: NSViewRepresentable {
     let onChange: (Bool) -> Void
 
@@ -45,10 +39,7 @@ final class HoverView: NSView {
     }
 }
 
-/// One timer for every hover area on screen, running only while one is: hover areas stay
-/// in windows put away (the panel's rows while it is closed), and with them the timer ran
-/// 30 times a second with nothing on screen, waking the Mac for nothing (`top`, idle).
-/// It wakes again when one of their windows shows.
+/// Share one hover timer, running only while an observed window is visible.
 @MainActor
 private final class PointerWatcher {
     static let shared = PointerWatcher()

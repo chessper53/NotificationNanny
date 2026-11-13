@@ -25,8 +25,7 @@ package final class NannyLogger: ObservableObject {
     @Published package private(set) var entries: [LogEntry] = []
 
     private let cap = 1000
-    /// NN_LOG_STDERR=1 mirrors the session log to stderr, for scripted runs
-    /// (scripts/notify-lab) that can't open the in-app log.
+    /// NN_LOG_STDERR=1 mirrors the session log for scripted runs.
     private let mirrorToStderr = ProcessInfo.processInfo.environment["NN_LOG_STDERR"] == "1"
     private var file: SessionLogFile?
     private let lineFormatter: DateFormatter = {
@@ -36,9 +35,8 @@ package final class NannyLogger: ObservableObject {
     }()
     init() {}
 
-    /// Mirrors the log to disk from here on, starting with what is already logged. Only the
-    /// app calls this, once it knows it is the only instance: tests, and a second copy that
-    /// is about to quit, must not push the running app's log aside.
+    /// Starts disk logging after the instance check; tests and duplicate instances must not rotate
+    /// it.
     package func startWritingToDisk(in directory: URL = SessionLogFile.defaultDirectory) {
         guard file == nil else { return }
         let file = SessionLogFile(directory: directory)
@@ -55,8 +53,7 @@ package final class NannyLogger: ObservableObject {
             .suffix(maxLines).joined(separator: "\n")
     }
 
-    /// The last line kept and how many times it came again since, word for word: lines that
-    /// differ only in a number (a position, an attempt) stay apart, as they tell apart.
+    /// Coalesce identical lines only; changing numbers can distinguish separate events.
     private var lastKey: String?
     private var lastAt = Date.distantPast
     private var repeats = 0
@@ -114,8 +111,7 @@ package final class NannyLogger: ObservableObject {
         }
     }
 
-    /// What goes to the file, a saved log and a bug report: no debug detail, and repeats
-    /// still being counted told as one line.
+    /// Exports without debug detail and includes a summary of pending repeats.
     package func exportText() -> String {
         var lines = entries.filter { $0.level != .debug }.map(line(for:))
         if repeats > 0 { lines.append("… the line above \(repeats) more time\(repeats == 1 ? "" : "s") so far") }

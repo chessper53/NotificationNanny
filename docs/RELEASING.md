@@ -7,11 +7,10 @@ update the Homebrew cask, and push.
 ## TL;DR
 
 ```sh
-# 1. Bump the version (single source of truth)
 echo "7.6.0" > VERSION
 git commit -am "chore: bump version to 7.6.0"
 
-# 2. Cut the release (builds, zips, publishes, bumps cask, pushes)
+# Tag the version for the release workflow.
 UNIVERSAL=1 ./scripts/release.sh 7.6.0
 ```
 
@@ -125,20 +124,20 @@ If `release.sh` fails partway, the equivalent steps are:
 ```sh
 VERSION=7.6.0 bash scripts/build-app.sh
 ditto -c -k --sequesterRsrc --keepParent build/NotificationNanny.app build/NotificationNanny-7.6.0.zip
-shasum -a 256 build/NotificationNanny-7.6.0.zip          # note the hash
+shasum -a 256 build/NotificationNanny-7.6.0.zip
 
 gh release create v7.6.0 build/NotificationNanny-7.6.0.zip --title "NotificationNanny 7.6.0" --generate-notes --latest
-# (or, if the release already exists:)
+# Replace an existing asset when recovering a release.
 gh release upload v7.6.0 build/NotificationNanny-7.6.0.zip --clobber
 
-# Update version + sha256 in Casks/notificationnanny.rb, then:
+# Update the cask version and checksum before committing.
 git commit -am "cask: bump to v7.6.0" && git push
 ```
 
 ## Verify a release
 
 ```sh
-# The cask sha256 must match the published asset, or brew install fails.
+# The cask checksum must match the published archive.
 curl -sL -o /tmp/nn.zip "https://github.com/chessper53/NotificationNanny/releases/download/v7.6.0/NotificationNanny-7.6.0.zip"
 shasum -a 256 /tmp/nn.zip
 grep sha256 Casks/notificationnanny.rb

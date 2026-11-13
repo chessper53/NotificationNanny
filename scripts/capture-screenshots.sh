@@ -1,21 +1,6 @@
 #!/usr/bin/env bash
-# Renders every settings tab, in dark and in light, for the landing page:
-# site/assets/screenshots/<tab>.webp and <tab>-light.webp, at 2x, without the
-# sidebar (the site draws its own tab list beside them).
-#
-# The drawing happens in an opt-in snapshot test,
-# Tests/NotificationNannyTests/SettingsSnapshotTests.swift, which renders each
-# tab's content view offscreen with demo data. It never launches, quits, or
-# reads the settings of an installed NotificationNanny, never draws on screen,
-# and needs no Automation or Screen Recording permission. CFFIXED_USER_HOME
-# below keeps anything the render touches inside build/ instead of ~/Library.
-#
-# Usage: ./scripts/capture-screenshots.sh [extra scripts/test.sh args]
-#
-# On a Mac with only the Command Line Tools, pass what the test suite needs there:
-#   SDKROOT=/Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk \
-#     ./scripts/capture-screenshots.sh -Xswiftc -plugin-path \
-#     -Xswiftc /Library/Developer/CommandLineTools/usr/lib/swift/host/plugins/testing
+# Render Settings tabs with demo data, off screen and without accessing installed app preferences.
+# See docs/DEBUGGING.md for commands and toolchain setup.
 
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -42,8 +27,7 @@ if [[ ${#pngs[@]} -eq 0 ]]; then
     exit 1
 fi
 
-# Lossless: flat UI compresses smaller this way than at any lossy quality that
-# keeps small text sharp, and nothing gets the soft edges lossy WebP adds to it.
+# Lossless WebP preserves small text and compresses flat UI efficiently.
 echo "==> Converting to WebP..."
 for png in "${pngs[@]}"; do
     cwebp -quiet -lossless -z 9 "$png" -o "$SITE_DIR/$(basename "$png" .png).webp"

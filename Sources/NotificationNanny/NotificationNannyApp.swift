@@ -26,8 +26,7 @@ final class AppCoordinator: NSObject, ObservableObject, NSApplicationDelegate, N
 
     override init() {
         AppCoordinator.terminateIfAlreadyRunning()
-        // An unbundled swift run can run next to the installed app and would push its log
-        // aside. notify-lab runs the bundle, so it points the log at its own folder.
+        // Only a bundled app may rotate the session log; lab runs use a separate folder.
         if Bundle.main.bundleIdentifier != nil {
             if let dir = ProcessInfo.processInfo.environment["NN_LOG_DIR"] {
                 NannyLogger.shared.startWritingToDisk(in: URL(fileURLWithPath: dir, isDirectory: true))
@@ -58,10 +57,7 @@ final class AppCoordinator: NSObject, ObservableObject, NSApplicationDelegate, N
         repositioner.bind(to: settings)
         if Bundle.main.bundleIdentifier != nil, ProcessInfo.processInfo.environment["NN_E2E_DIRECTORY"] == nil {
             UNUserNotificationCenter.current().delegate = NotificationDisplayDelegate.shared
-            // Requested once, silently, well before a test notification could ever be
-            // needed — lets TestNotification skip the osascript subprocess for users
-            // who grant it. Denial just means TestNotification keeps its existing
-            // osascript fallback; no retry, no nagging.
+            // Request once so test notifications can avoid the osascript fallback when allowed.
             UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { _, _ in }
         }
         Task { @MainActor [weak self] in self?.autoEnableLoginItemIfNeeded() }
@@ -85,8 +81,7 @@ final class AppCoordinator: NSObject, ObservableObject, NSApplicationDelegate, N
     }
 
     private func observePermission() {
-        // The slashed bell covers "can't work" and "won't work" alike, so the icon
-        // has to follow the enabled/snooze state too, not just the permission.
+        // The slashed bell also reflects disabled and snoozed states.
         Publishers.CombineLatest3(
             repositioner.$hasAccessibilityPermission,
             settings.$isEnabled,
@@ -121,19 +116,12 @@ final class AppCoordinator: NSObject, ObservableObject, NSApplicationDelegate, N
         }
     }
 
-    /// Right-click quick actions, separate from the left-click Settings window. Built fresh
-    /// each time so the "Pause"/"Resume" state is never stale. `statusItem.menu` is cleared
-    /// immediately after (see `menuDidClose`) — leaving it set would make left-clicks pop this
-    /// menu too, since AppKit prefers `NSStatusItem.menu` over `button.action` when both exist.
+    /// Rebuild quick actions on each open and clear the menu on close to restore button actions.
     private func showQuickActionsMenu() {
         let menu = NSMenu()
         menu.delegate = self
 
-        // Looked up via LocalizationManager rather than NSLocalizedString: this menu rebuilds
-        // fresh on every open, but NSLocalizedString resolves through Bundle.main, which is
-        // fixed at process launch — it wouldn't hot-reload when the user picks a new language
-        // from the General tab without an actual relaunch. LocalizationManager's bundle swaps
-        // live, so this menu picks up the current language on its very next open.
+        // Use the current localization bundle so language changes apply without relaunching.
         let loc = LocalizationManager.shared
 
         if settings.isSnoozed, let until = settings.snoozedUntil {
@@ -201,7 +189,7 @@ final class AppCoordinator: NSObject, ObservableObject, NSApplicationDelegate, N
     }
 
     func menuDidClose(_ menu: NSMenu) {
-        // See showQuickActionsMenu: clearing this restores button.action for left-clicks.
+        // Clearing the menu restores button actions for left clicks.
         DispatchQueue.main.async { [weak self] in self?.statusItem?.menu = nil }
     }
 
@@ -223,43 +211,22 @@ final class AppCoordinator: NSObject, ObservableObject, NSApplicationDelegate, N
             .environmentObject(repositioner)
             .environmentObject(launchAtLogin)
         let hosting = NSViewController()
-        // Takes the first click: while Notification Center's panel is open Settings isn't
-        // the key window, and dragging the custom panel's place would only make it key.
+        // Accept the first drag while Settings is inactive behind Notification Center.
         let hostingView = FirstClickHostingView(rootView: rootView)
         hosting.view = hostingView
-        // The window's size is AppKit's: the default below, minSize, and whatever
-        // the user saved. Left to its default, the hosting controller resizes the
-        // window to the SwiftUI content's preferred size, which for a scrolling tab
-        // is its full height, so the window opened as tall as the screen or taller.
-        //
-        // Only the minimum is passed on. With none, the window ignored its own minSize:
-        // the content reported it could shrink to nothing, every tab being flexible or
-        // scrolling, and the window could be dragged so small the sidebar and the tab
-        // were cut off.
+        // Pass on the content minimum while AppKit controls the saved and default window size.
         hostingView.sizingOptions = [.minSize]
         let window = NSWindow(contentViewController: hosting)
         window.title = "NotificationNanny Settings"
-        // Resizable, with only a floor. It was pinned to exactly 660x640 by
-        // setting min and max to the same size, which meant every tab paid for
-        // the tallest one: Position uses about half that height and the rest was
-        // dead space nobody could reclaim. The content pane is already inside a
-        // ScrollView, so shrinking scrolls rather than clips.
         window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
-        // A compact default; every tab scrolls, so it never needs to open tall.
         window.setContentSize(Self.settingsDefaultSize)
         window.contentMinSize = SettingsView.minimumContentSize
         window.isReleasedWhenClosed = false
         window.center()
-        // Keeps whatever size the user settles on across launches. Set after
-        // center() so a stored frame wins and a first run stays centred.
-        //
-        // Renamed from "NotificationNannySettingsWindow": frames stored under the
-        // old name were often far taller than any tab needs, saved on a tall
-        // display while a leftover size lock in SettingsView fought the resizing.
-        // A new name gives everyone the compact default once.
+        // Restore after centering so a saved frame wins. The new name discards obsolete oversized
+        // frames.
         window.setFrameAutosaveName("NotificationNannySettings")
-        // A stored frame is restored as is, below the minimum too, and a window once
-        // dragged too small came back cut off on every launch.
+        // Restored frames can be smaller than minSize, so clamp them explicitly.
         let content = window.contentLayoutRect.size
         let minimum = SettingsView.minimumContentSize
         if content.width < minimum.width || content.height < minimum.height {
@@ -307,11 +274,8 @@ final class AppCoordinator: NSObject, ObservableObject, NSApplicationDelegate, N
         exit(0)
     }
 
-    /// After an update to a build signed differently, the grant macOS has is for the old
-    /// signature: System Settings still shows NotificationNanny on, and it doesn't work.
-    /// Reset, macOS asks again cleanly. Only then: releases are signed with the same
-    /// certificate every time, so an update is still allowed, and a reset threw that away
-    /// at every update.
+    /// Reset stale Accessibility grants only when the binary changed and the current grant is
+    /// invalid.
     private static func resetTCCIfBinaryChanged() {
         guard let execURL = Bundle.main.executableURL,
               let attrs = try? FileManager.default.attributesOfItem(atPath: execURL.path),
@@ -346,10 +310,7 @@ final class AppCoordinator: NSObject, ObservableObject, NSApplicationDelegate, N
         return true
     }
 
-    /// Settings writes are debounced so dragging doesn't hammer UserDefaults, which
-    /// leaves a sub-second window where a crash or force-quit would lose the last
-    /// edit. Deactivating is the natural end of an editing session and costs one
-    /// write, so close that window here rather than relying on a clean terminate.
+    /// Flush pending settings when editing ends, without relying on a clean termination.
     func applicationDidResignActive(_ notification: Notification) {
         settings.flushPendingSaves()
     }

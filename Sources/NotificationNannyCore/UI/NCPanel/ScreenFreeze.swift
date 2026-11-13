@@ -2,40 +2,31 @@ import AppKit
 import QuartzCore
 @preconcurrency import ScreenCaptureKit
 
-/// A picture of part of a screen, without this app's windows, held over it for a moment.
-///
-/// A widget's menu can only be had from Notification Center's own, which it opens on a
-/// screen wherever its panel is, with the widget lifted beside it: a quarter of a second
-/// of both on screen each time (filmed on 27.0). Above them, at the level just over menus,
-/// this shows what was there before, and our panel goes one higher, so it stays live on
-/// top of it. Needs Screen Recording, which widgets need anyway.
+/// Masks the native widget menu with a screen capture excluding this app.
+/// Keep our panel above the mask so it remains interactive. Requires Screen Recording.
 @MainActor
 final class ScreenFreeze {
     private var window: NSPanel?
-    /// The shareable display and this app, found once: listing them took most of a capture.
+    /// Cache display and app discovery to avoid listing shareable content for every capture.
     private var cached: (display: SCDisplay, us: [SCRunningApplication])?
 
     /// Menus' level and the two above it: the picture, then our panel.
     static let pictureLevel = NSWindow.Level(rawValue: Int(CGWindowLevelForKey(.popUpMenuWindow)) + 1)
     static let panelLevel = NSWindow.Level(rawValue: Int(CGWindowLevelForKey(.popUpMenuWindow)) + 2)
 
-    /// A picture of `rect` (AppKit coordinates, within `screen`) as it is now, without this
-    /// app's windows; nil when there is none to be had.
+    /// Capture an AppKit screen rectangle excluding this app; nil if unavailable.
     func take(_ rect: NSRect, on screen: NSScreen) async -> CGImage? {
         await capture(rect, on: screen)
     }
 
-    /// Puts `image` over `rect` and waits until it is on screen. Raise what has to stay on
-    /// top first: the picture covers everything below its level.
+    /// Wait until the mask is on screen; raise any content that must remain above it first.
     func show(_ image: CGImage, over rect: NSRect) async {
         let panel = window ?? Self.makeWindow()
         window = panel
         panel.setFrame(rect, display: false)
         (panel.contentView as? NSImageView)?.image = NSImage(cgImage: image, size: rect.size)
         panel.orderFrontRegardless()
-        // On screen only once drawn and composited: the real menu, opened straight after,
-        // came up first, some 50 ms before the picture (sampled from the window list). Drawn
-        // now, and two frames given to the window server.
+        // Draw now and allow two compositor frames before opening the native menu.
         panel.displayIfNeeded()
         CATransaction.flush()
         try? await Task.sleep(nanoseconds: 40_000_000)
@@ -75,9 +66,8 @@ final class ScreenFreeze {
         panel.ignoresMouseEvents = true
         panel.isReleasedWhenClosed = false
         panel.hidesOnDeactivate = false
-        // A panel fades and zooms in and out by default: in, it was a fifth of a second
-        // small and see-through with the real menu already up; out, it shrank away over
-        // our panel, back at its own level by then.
+        // Disable default panel animations so the mask appears and disappears without exposing
+        // native content.
         panel.animationBehavior = .none
         panel.collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle, .fullScreenAuxiliary]
         let view = NSImageView()

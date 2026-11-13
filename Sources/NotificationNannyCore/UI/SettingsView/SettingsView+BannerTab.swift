@@ -100,7 +100,6 @@ struct BannerTabView: View {
 }
 
 extension AnimationPreviewPane {
-    /// The recessed well the sample plays in; a click plays it again.
     func animationPreviewWell(replay: @escaping () -> Void) -> some View {
         frame(height: 64)
             .frame(maxWidth: .infinity)
@@ -116,8 +115,7 @@ struct AnimationPreviewPane: View {
     let animation: BannerAnimation
     let replay: Int
     var tint: Color = .clear
-    /// `.primary` unless the user picked a text colour, so the sample reads like the
-    /// real banner: dark lines on a light banner in Light Mode, light lines in Dark Mode.
+    /// Follow native text contrast unless the user selects a color.
     var textColor: Color = .primary
 
     @State private var animX: CGFloat = 0
@@ -151,7 +149,6 @@ struct AnimationPreviewPane: View {
         .frame(width: 220)
         .background {
             ZStack {
-                // The system banner is dark glass in Dark Mode and light glass in Light Mode.
                 Color.nannyAdaptive(light: .white.withAlphaComponent(0.85), dark: .black.withAlphaComponent(0.5))
                 if tint != .clear { tint.opacity(0.45) }
             }

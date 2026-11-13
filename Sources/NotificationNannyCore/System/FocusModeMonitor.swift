@@ -3,27 +3,14 @@ import os
 
 private let log = Logger(subsystem: "com.notificationnanny", category: "focus")
 
-/// Detects whether a macOS Focus / Do Not Disturb mode is currently active.
-///
-/// macOS exposes no public API for Focus state, and the storage location has
-/// moved between releases. This monitor reads the user's own Focus database
-/// (the app is non-sandboxed, so this is permitted) on a detached background
-/// task every `cacheTTL`, so `isActive` — read from the repositioner's hot AX
-/// path, potentially 60×/sec — is a plain property read with no disk I/O ever
-/// on the main actor.
-///
-/// Detection is intentionally isolated here: if Apple moves the store again,
-/// only `readActiveState()` needs updating.
+/// Poll the private Focus store off the main actor; placement reads only the cached state.
 @MainActor
 final class FocusModeMonitor: ObservableObject {
     static let shared = FocusModeMonitor()
 
     private(set) var isActive = false
-    /// Whether the Focus store could be read on the last check: nil before the first one.
-    /// False most often means macOS denied access (it sits behind Full Disk Access on
-    /// recent releases), and then `isActive` is always false whatever the real Focus is.
-    /// Published for Settings, which says when Pause during Focus can't work: set only when
-    /// it changes, as it is read every second.
+    /// Nil until checked, then whether the Focus store was readable.
+    /// Unreadable stores report no active Focus so Settings can explain why pausing is unavailable.
     @Published private(set) var storeReadable: Bool?
     private let cacheTTL: TimeInterval = 1.0
     private var refreshTask: Task<Void, Never>?
@@ -45,11 +32,9 @@ final class FocusModeMonitor: ObservableObject {
 
     deinit { refreshTask?.cancel() }
 
-    // MARK: - Detection
+    // MARK: Detection
 
-    /// Candidate Focus-assertion database locations, newest layout first. The
-    /// first file that exists and parses determines the answer. NN_FOCUS_ASSERTIONS=<path>
-    /// replaces them with one file, so a scripted run can switch a Focus on and off.
+    /// Try known Focus stores in order; NN_FOCUS_ASSERTIONS overrides them for isolated lab runs.
     private nonisolated static var assertionFileCandidates: [URL] {
         if let path = ProcessInfo.processInfo.environment["NN_FOCUS_ASSERTIONS"] {
             return [URL(filePath: path)]
@@ -66,8 +51,7 @@ final class FocusModeMonitor: ObservableObject {
         for url in assertionFileCandidates {
             guard let data = try? Data(contentsOf: url),
                   let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { continue }
-            // Layout: { "data": [ { "storeAssertionRecords": [ … ] } ] }
-            // A non-empty storeAssertionRecords array means a Focus is asserted.
+            // A nonempty storeAssertionRecords array means Focus is active.
             if let dataArr = root["data"] as? [[String: Any]] {
                 for entry in dataArr {
                     if let records = entry["storeAssertionRecords"] as? [Any], !records.isEmpty {
@@ -77,8 +61,7 @@ final class FocusModeMonitor: ObservableObject {
             }
             return (false, true)
         }
-        // No known store found (e.g. macOS Tahoe relocated it). Fail open: treat
-        // as "no Focus" so repositioning keeps working rather than silently pausing.
+        // An unknown or unreadable store leaves repositioning enabled.
         return (false, false)
     }
 }

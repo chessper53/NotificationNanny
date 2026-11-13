@@ -14,8 +14,6 @@ struct HelpTabView: View {
             LocalizedText("Need help or have an idea?").font(.subheadline.weight(.semibold))
 
             VStack(spacing: 0) {
-                // Report a bug — auto-attaches diagnostics + recent logs to the prefilled issue,
-                // and copies the full report to the clipboard as a fallback for long logs.
                 helpRow(title: "Report a bug",
                         description: bugReportPrepared
                             ? "Diagnostics attached · full log copied to clipboard"
@@ -42,8 +40,6 @@ struct HelpTabView: View {
             .settingsCardBackground()
 
             HStack(alignment: .top, spacing: 8) {
-                // Matches the Diagnostics tab's own icon, since that's what this
-                // note is pointing at.
                 Image(systemName: "stethoscope").font(.caption).foregroundStyle(.secondary).padding(.top, 1)
                 LocalizedMarkdownText("Diagnostics and activity logs now live in the **Diagnostics** tab. Handy if you want to inspect them before filing a report.")
                     .font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
@@ -70,7 +66,7 @@ struct HelpTabView: View {
         }
     }
 
-    // MARK: - Actions
+    // MARK: Actions
 
     private func reportBug() {
         let items = Diagnostics.collect(settings: settings, repositioner: repositioner, launchAtLogin: launchAtLogin)
@@ -88,7 +84,7 @@ struct HelpTabView: View {
         if let u = URL(string: url) { NSWorkspace.shared.open(u) }
     }
 
-    // MARK: - Rows
+    // MARK: Rows
 
     private func helpRow(title: String, description: String, systemImage: String,
                          accent: Color = Color.nannyAccent, action: @escaping () -> Void) -> some View {

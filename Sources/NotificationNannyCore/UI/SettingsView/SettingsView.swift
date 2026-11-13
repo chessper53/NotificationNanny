@@ -18,8 +18,7 @@ package struct SettingsView: View {
 
     package init() {}
 
-    /// The smallest the window's content may get. Below this the sidebar labels and the
-    /// tab content were cut off rather than scrolled. The window takes it from here.
+    /// Minimum content size that keeps the sidebar and scrolling tabs usable.
     package static let minimumContentSize = CGSize(width: 620, height: 412)
     /// The widest a tab's content gets, padding included.
     static let contentMaxWidth: CGFloat = 600
@@ -49,18 +48,8 @@ package struct SettingsView: View {
 
             HStack(spacing: 0) {
                 VStack(alignment: .leading, spacing: 2) {
-                    // Each icon depicts what the tab does, rather than gesturing at
-                    // the general area: a banner in a screen corner for Position, a
-                    // configured app for Exceptions, appearance for Banner, a stack
-                    // of saved configurations for Presets, a drive for Backup (which
-                    // imports as well as exports, so a tray-and-up-arrow read wrong).
-                    // All are SF Symbols 4 or earlier, so they resolve on macOS 14.
-                    // Ordered the way the settings build on each other: set where
-                    // banners go, then what they look like, then per-app overrides
-                    // of those two, then presets that save the combination. App
-                    // preferences come last, with import/export inside General.
-                    // Exceptions, the per-app groups, were a tab of their own here;
-                    // they are now edited in Banner, beside the settings they change.
+                    // Use symbols available on macOS 14; order placement, appearance, saved setups,
+                    // then app preferences.
                     sidebarItem("Position",   systemImage: "rectangle.inset.topright.filled", tab: .position)
                     sidebarItem("Banner",     systemImage: "paintpalette",            tab: .banner)
                     sidebarItem("Notification Center", systemImage: "rectangle.rightthird.inset.filled", tab: .notificationCenter)
@@ -149,8 +138,7 @@ package struct SettingsView: View {
                         }
                     }
                     .padding(16)
-                    // A readable column on a wide window: past this, cards, menus and
-                    // buttons only stretched while the previews kept their size.
+                    // Limit stretching on wide windows.
                     .frame(maxWidth: Self.contentMaxWidth)
                     .frame(maxWidth: .infinity)
                 }
@@ -167,8 +155,6 @@ package struct SettingsView: View {
             if repositioner.hasAccessibilityPermission, !repositioner.isObserving {
                 repositioner.startObserving()
             }
-            // Auto-update check disabled for now.
-            // Task { newerVersion = await UpdateChecker.fetchNewerVersion() }
         }
     }
 
@@ -229,7 +215,6 @@ package struct SettingsView: View {
 
     private func updateBanner(version: String) -> some View {
         HStack(spacing: 10) {
-            // Leading icon
             Group {
                 switch brewUpdater.state {
                 case .idle:
@@ -247,7 +232,6 @@ package struct SettingsView: View {
             }
             .frame(width: 18, alignment: .center)
 
-            // Description
             VStack(alignment: .leading, spacing: 1) {
                 switch brewUpdater.state {
                 case .idle:
@@ -278,7 +262,6 @@ package struct SettingsView: View {
 
             Spacer()
 
-            // Action button
             switch brewUpdater.state {
             case .idle:
                 if InstallSource.current == .homebrew {
@@ -302,7 +285,6 @@ package struct SettingsView: View {
                 .buttonStyle(.nannyProminent).controlSize(.small)
             }
 
-            // Dismiss — hidden while update is in progress
             if brewUpdater.state != .running {
                 Button {
                     withAnimation(.easeInOut(duration: 0.35)) { isBannerDismissed = true }
@@ -322,14 +304,7 @@ package struct SettingsView: View {
     }
 }
 
-// Bypasses SwiftUI's content-driven window sizing by reaching into the NSWindow directly.
-/// Puts the Settings window in the chosen appearance. On the window rather than via
-/// `.preferredColorScheme`, which does not reliably go back to following macOS once
-/// it has been set, and which would leave AppKit drawn parts (title bar, menus) behind.
-///
-/// This replaces a `WindowSizeLock` that pinned min and max size to 660x640 every
-/// time the view appeared. 8.0.0 made the window resizable in AppCoordinator but
-/// left that lock here, so the two fought over the window's size.
+/// Set appearance on NSWindow to update AppKit chrome and reliably restore system appearance.
 private struct WindowAppearance: NSViewRepresentable {
     let appearance: NSAppearance?
 

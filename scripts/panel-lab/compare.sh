@@ -1,13 +1,6 @@
 #!/usr/bin/env bash
-# The real Notification Center panel and ours side by side, in Dark and Light Mode.
-#
-#   scripts/panel-lab/compare.sh
-#
-# Posts Lab notifications (a single one, a stack of three, one with buttons), then
-# captures the real panel and ours, each collapsed and with the stack expanded, over the
-# same gray backdrop, in both appearances (the system's is put back). Only the area of the
-# Lab rows is captured: they are alerts, at the top, and the user's own history is below.
-# Writes build/panel-lab/compare-<appearance>.png and compare.png.
+# Compare Lab rows from native and custom panels over the same gray backdrop in both appearances.
+# Restore system appearance and settings; see docs/LABS.md for output locations.
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 
@@ -63,8 +56,7 @@ real() {
 ours() {
     local look=$1
     post
-    # Without the user's banner colour, to compare with the system's own look; app.sh
-    # puts it back.
+    # Temporarily clear the user tint for a native appearance comparison; app.sh restores it.
     NN_SET="hasBannerColor=NO" scripts/panel-lab/app.sh open wait:1.5 "sshot:cmp-ours-collapsed-$look" click:"Bravo 3" wait:1.3 \
         "sshot:cmp-ours-expanded-$look" shut | grep -E 'png|failed|settings' || true
 }
