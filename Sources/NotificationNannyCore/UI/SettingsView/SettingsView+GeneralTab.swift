@@ -5,6 +5,7 @@ struct GeneralTabView: View {
     @EnvironmentObject var settings: AppSettings
     @EnvironmentObject var launchAtLogin: LaunchAtLogin
     @ObservedObject private var loc = LocalizationManager.shared
+    @ObservedObject private var focus = FocusModeMonitor.shared
 
     @State private var showResetConfirmation = false
     @State private var showHideIconConfirmation = false
@@ -77,6 +78,9 @@ struct GeneralTabView: View {
                 toggleRow("Pause while screen sharing", isOn: $settings.pauseWhileStreaming)
                 Divider().padding(.leading, 14)
                 toggleRow("Pause during Focus / Do Not Disturb", isOn: $settings.pauseDuringFocus)
+                if settings.pauseDuringFocus, focus.storeReadable == false {
+                    focusAccessRow.padding(.horizontal, 14).padding(.bottom, 10)
+                }
                 Divider().padding(.leading, 14)
                 toggleRow("Blur banner text (privacy)", isOn: $settings.redactBannerContent)
             }
@@ -138,6 +142,23 @@ struct GeneralTabView: View {
                 .padding(.leading, 4)
             VStack(spacing: 0) { content() }
                 .settingsCardBackground()
+        }
+    }
+
+    /// Pause during Focus reads the Focus state from a file macOS keeps behind Full Disk
+    /// Access. Without it the state always reads as off and the switch does nothing, which
+    /// only the log said.
+    private var focusAccessRow: some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: "exclamationmark.circle").foregroundStyle(.secondary)
+            SettingsNote("Pause during Focus needs Full Disk Access. Without it, NotificationNanny can't tell when a Focus is on, so it never pauses. After allowing it, quit and reopen NotificationNanny.")
+            Spacer()
+            Button(loc.string("Open System Settings")) {
+                if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles") {
+                    NSWorkspace.shared.open(url)
+                }
+            }
+            .controlSize(.small)
         }
     }
 

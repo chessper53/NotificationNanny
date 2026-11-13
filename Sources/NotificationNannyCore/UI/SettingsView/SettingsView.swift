@@ -118,7 +118,7 @@ package struct SettingsView: View {
                                 .foregroundStyle(.secondary)
                             }
                             .buttonStyle(.plain)
-                            .help("v\(newer) available — click to update")
+                            .help("v\(newer) available. Click to update.")
                         } else {
                             Text("v\(appVersion)")
                                 .font(.caption2)
