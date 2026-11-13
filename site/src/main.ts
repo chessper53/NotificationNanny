@@ -7,8 +7,8 @@ function setupPreview(): void {
   const status = document.getElementById("preview-status");
   if (!desktop || !notification || !scale) return;
 
-  const positions = [...document.querySelectorAll<HTMLButtonElement>(".position-picker button")];
-  const colours = [...document.querySelectorAll<HTMLButtonElement>(".colour-picker button")];
+  const positions = Array.from(document.querySelectorAll<HTMLButtonElement>(".position-picker button"));
+  const colours = Array.from(document.querySelectorAll<HTMLButtonElement>(".colour-picker button"));
 
   function announce(): void {
     const position = positions.find(button => button.getAttribute("aria-pressed") === "true");
@@ -52,7 +52,7 @@ function setupPreview(): void {
     if (output) output.textContent = `${scale.value}%`;
     announce();
   });
-  // The controls are an in-page preview, so Enter must never submit or reload the page.
+  // Keep preview submission on this page without reloading it.
   document.querySelector(".preview-controls")?.addEventListener("submit", event => event.preventDefault());
 }
 

@@ -2,9 +2,6 @@ import Foundation
 import Testing
 @testable import NotificationNannyCore
 
-/// Backup export/import: schema versioning and forward/backward compatibility of
-/// the optional toggles added over time (`protectDesktopWidgets`,
-/// `pauseDuringFocus`, `followActiveScreen`).
 @Suite("Export schema") @MainActor
 struct ExportSchemaTests {
 
@@ -22,7 +19,6 @@ struct ExportSchemaTests {
         #expect(decoded.schemaVersion == AppSettings.currentExportSchemaVersion)
     }
 
-    /// "Don't move Notification Center" survives a backup, off included.
     @Test func roundTrip_preservesPanelToggle() throws {
         let s = makeSettings()
         s.avoidNCPanel = false
@@ -31,7 +27,6 @@ struct ExportSchemaTests {
         #expect(restored.avoidNCPanel == false)
     }
 
-    /// A backup that doesn't carry the toggle imports it as on, the default.
     @Test func import_withoutPanelToggle_defaultsOn() throws {
         let backup = """
         {"placements": {}, "targetDisplayID": 0, "autoDismissSeconds": 0, "bannerScale": 1.0,
@@ -43,8 +38,6 @@ struct ExportSchemaTests {
         #expect(s.avoidNCPanel == true)
     }
 
-    /// The Notification Center's offset across survives a backup, and one made before it
-    /// existed imports as none, leaving the panel at its side's place.
     @Test func ncPanelXOffset_roundTrips_andDefaultsToZero() throws {
         let s = makeSettings()
         s.customNotificationCenterXOffset = 85
@@ -63,8 +56,7 @@ struct ExportSchemaTests {
         #expect(restored.customNotificationCenterXOffset == 0)
     }
 
-    /// Backups from when the custom Notification Center noted times of its own still carry
-    /// that switch; macOS's times are shown now, and the rest of the backup applies.
+    /// Ignore the retired times switch while importing the rest of a legacy backup.
     @Test func import_withOldTimesSwitch_appliesTheRest() throws {
         let backup = """
         {"placements": {}, "targetDisplayID": 0, "autoDismissSeconds": 0, "bannerScale": 1.0,
@@ -77,8 +69,7 @@ struct ExportSchemaTests {
         #expect(s.customNotificationCenterAppFilter)
     }
 
-    /// Groups saved before they moved from the Exceptions tab into the Banner tab read
-    /// back unchanged: apps, screen, place, and which settings are their own.
+    /// The tab move must not alter persisted exception group data.
     @Test func groupsSavedForExceptionsTab_readBackUnchanged() throws {
         let backup = """
         {"placements": {}, "targetDisplayID": 0, "autoDismissSeconds": 0, "bannerScale": 1.0,
@@ -137,8 +128,6 @@ struct ExportSchemaTests {
         #expect(restored.newestBannerAtBottom == true)
     }
 
-    /// A backup written before these toggles (and before schema versioning) must
-    /// import cleanly, restoring the documented defaults for the absent fields.
     @Test func import_legacyBackup_appliesDefaults() throws {
         let legacy = """
         {
@@ -154,19 +143,17 @@ struct ExportSchemaTests {
         """.data(using: .utf8)!
 
         let s = makeSettings()
-        s.protectDesktopWidgets = false   // ensure import resets it, not leaves stale
+        s.protectDesktopWidgets = false
         s.pauseDuringFocus = true
         s.newestBannerAtBottom = true
         try s.importData(legacy)
 
-        #expect(s.protectDesktopWidgets == true)   // default when absent
-        #expect(s.pauseDuringFocus == false)       // default when absent
-        #expect(s.followActiveScreen == false)     // default when absent
-        #expect(s.newestBannerAtBottom == false)   // default when absent
+        #expect(s.protectDesktopWidgets == true)
+        #expect(s.pauseDuringFocus == false)
+        #expect(s.followActiveScreen == false)
+        #expect(s.newestBannerAtBottom == false)
     }
 
-    /// A backup from a newer schema is refused whole, with nothing changed: half applied,
-    /// it restored only part of what it meant, without a word.
     @Test func import_newerSchema_isRefused() throws {
         let future = """
         {"schemaVersion": 999, "placements": {}, "targetDisplayID": 3, "autoDismissSeconds": 5,

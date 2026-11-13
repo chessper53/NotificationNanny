@@ -7,7 +7,7 @@ struct BackupTabView: View {
 
     @State private var showImportConfirmation = false
     @State private var pendingImportData: Data? = nil
-    /// What went wrong, a key of Localizable.strings, for the alert; nil while nothing did.
+    /// Localized alert error key, nil when no failure is pending.
     @State private var failureKey: String? = nil
     @State private var failureTitleKey = "Import failed"
 
@@ -69,7 +69,6 @@ struct BackupTabView: View {
         }
     }
 
-    /// Shows what went wrong: a failed import or export used to do nothing at all.
     private func fail(_ titleKey: String, _ error: Error) {
         failureTitleKey = titleKey
         failureKey = (error as? AppSettings.BackupError)?.messageKey
@@ -95,8 +94,8 @@ struct BackupTabView: View {
         panel.allowsMultipleSelection = false
         panel.begin { response in
             guard response == .OK, let url = panel.url else { return }
-            // Checked before asking to replace everything: a file that can't be imported
-            // says so now, rather than after the question.
+            // Validate before requesting replacement so unreadable backups fail before
+            // confirmation.
             do {
                 let data = try Data(contentsOf: url)
                 _ = try settings.validatedBackup(data)

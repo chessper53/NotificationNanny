@@ -1,9 +1,4 @@
-"""Side by side: the real banner in each state (left) and ours (right).
-
-    python3 scripts/banner-lab/states_sheet.py [appearance] [backdrop]
-
-Reads the captures of lab real-states and prod-states; writes states-sheet.png.
-"""
+"""Combine native and custom banner state captures into a comparison sheet. See docs/LABS.md."""
 import sys
 from PIL import Image
 

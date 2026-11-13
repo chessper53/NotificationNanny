@@ -61,9 +61,8 @@
 "Test" = "Tester";
 "px" = "px";
 
-/* Custom banner overlay chrome */
 
-/* Exceptions tab */
+/* Exception groups */
 "Create groups of apps and give each group its own rules: position, screen, banner type, and scale. Apps not in any group use the defaults." = "Créez des groupes d'apps et donnez à chacun ses propres règles : position, écran, type de bannière et échelle. Les apps hors groupe utilisent les réglages par défaut.";
 "No exceptions yet." = "Aucune exception pour l'instant.";
 "Name" = "Nom";
@@ -85,7 +84,7 @@
 "App-wide settings for startup, timing, and notification behaviour. These apply globally and are not affected by presets or per-app rules." = "Réglages généraux du démarrage, de la synchronisation et du comportement des notifications. Ils s'appliquent globalement et ne sont pas affectés par les préréglages ou les règles par app.";
 "Language" = "Langue";
 
-/* Appearance (General tab, also the group appearance row in Exceptions) */
+/* Appearance */
 "Appearance" = "Apparence";
 "Settings window" = "Fenêtre des réglages";
 "System" = "Système";
@@ -117,7 +116,7 @@
 "Reset all settings?" = "Réinitialiser tous les réglages ?";
 "This will clear all positions, exceptions, presets and restore defaults. This cannot be undone." = "Cela effacera toutes les positions, exceptions, préréglages et restaurera les valeurs par défaut. Cette action est irréversible.";
 
-/* Backup tab */
+/* Backup controls */
 "Export your settings to a file or import a previously saved backup. Everything is included: positions, scale, per-app rules, presets, and general toggles." = "Exportez vos réglages vers un fichier ou importez une sauvegarde précédente. Tout est inclus : positions, échelle, règles par app, préréglages et options générales.";
 "Export Settings…" = "Exporter les réglages…";
 "Save a backup to a JSON file" = "Enregistrer une sauvegarde dans un fichier JSON";
@@ -166,7 +165,7 @@
 "Edge-case notifications" = "Notifications de cas limites";
 "Send a tricky notification through the real path to test extraction, wrapping, and unicode. Renders custom only when custom mode is active for the sender." = "Envoie une notification délicate par le chemin réel pour tester l'extraction, le retour à la ligne et l'unicode. Le rendu personnalisé ne s'applique que si le mode personnalisé est actif pour l'expéditeur.";
 
-/* Menu bar right-click quick actions (AppKit, NSLocalizedString) */
+/* Menu bar quick actions */
 "Resume (paused until %@)" = "Reprendre (en pause jusqu'à %@)";
 "15 minutes" = "15 minutes";
 "30 minutes" = "30 minutes";

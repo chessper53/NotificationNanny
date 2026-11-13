@@ -1,15 +1,11 @@
 import SwiftUI
 
-/// The language override this app understands, on top of whatever macOS itself provides.
-/// `.system` means "no override" — follow the OS/per-app language exactly as Foundation
-/// would resolve it on its own.
+/// Supported language overrides; `.system` follows Foundation's normal resolution.
 package enum AppLanguage: String, CaseIterable, Identifiable {
     case system, en, fr, es, de, it
     package var id: String { rawValue }
 
-    /// Language names are shown in their own language, not translated — the standard
-    /// convention for language pickers (a French speaker still recognizes "Français").
-    /// `displayName` as a string, for menus that take one.
+    /// Show language names in their own language so users can recognize them.
     @MainActor package var title: String {
         switch self {
         case .system: return LocalizationManager.shared.string("System Default")
@@ -33,23 +29,12 @@ package enum AppLanguage: String, CaseIterable, Identifiable {
     }
 }
 
-/// Drives hot-reloadable localization. UI text looks its string up through this manager's
-/// `string(_:)` instead of relying on SwiftUI's automatic `Text(LocalizedStringKey)` →
-/// `Bundle.main` resolution — which is fixed for the process's lifetime and can't hot-swap.
-/// Changing `language` publishes immediately, so every `LocalizedText` (and anything else
-/// reading `.shared`) re-renders in the new language without a relaunch.
-///
-/// AppKit call sites (the right-click menu) rebuild fresh on every open, so querying
-/// `string(_:)` there picks up the current language automatically without any observation
-/// plumbing at all.
+/// Publishes language changes and resolves strings from the selected bundle without relaunching.
 @MainActor
 package final class LocalizationManager: ObservableObject {
     package static let shared = LocalizationManager()
 
-    /// Reuses Apple's own `AppleLanguages` defaults key so a relaunch (or any native,
-    /// OS-rendered chrome we don't control, like Save/Open panel buttons) also starts in the
-    /// right language — this manager's live hot-reload is additive on top of that, not a
-    /// replacement for it.
+    /// Also set AppleLanguages so native dialogs and future launches use the selected language.
     private static let defaultsKey = "AppleLanguages"
 
     @Published package private(set) var language: AppLanguage
@@ -77,8 +62,7 @@ package final class LocalizationManager: ObservableObject {
         language == .system ? .current : Locale(identifier: language.rawValue)
     }
 
-    /// Looks up `key` in the active language's `Localizable.strings`, falling back to the
-    /// key itself if not found — matching `NSLocalizedString`'s own missing-key behavior.
+    /// Resolve from the selected bundle, returning the key when missing.
     package func string(_ key: String) -> String {
         bundle.localizedString(forKey: key, value: nil, table: nil)
     }
@@ -102,9 +86,7 @@ package final class LocalizationManager: ObservableObject {
     }
 }
 
-/// Text that looks its string up through `LocalizationManager` instead of the automatic
-/// `Bundle.main` resolution `Text(LocalizedStringKey)` uses, so it hot-reloads when the user
-/// picks a different language instead of needing a relaunch.
+/// Text that observes the active localization bundle for immediate language changes.
 package struct LocalizedText: View {
     @ObservedObject private var loc = LocalizationManager.shared
     private let key: String
@@ -116,8 +98,7 @@ package struct LocalizedText: View {
     }
 }
 
-/// Like `LocalizedText`, but parses simple Markdown in the resolved string (bold/italic) —
-/// for the handful of strings that use `**...**` emphasis.
+/// Localized text with Markdown emphasis.
 package struct LocalizedMarkdownText: View {
     @ObservedObject private var loc = LocalizationManager.shared
     private let key: String

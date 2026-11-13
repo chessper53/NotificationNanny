@@ -6,13 +6,19 @@ on:
   pull_request:
     branches: [main]
 
-# Cancel superseded runs on the same branch/PR.
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  # Each check on its own line in a pull request, so a failure says what failed.
+  comments:
+    name: Comment convention
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 -m unittest discover -s scripts -p 'test_comments.py' -v
+      - run: python3 scripts/check-comments.py
+
   version-consistency:
     name: Cask and Info.plist macOS version
     runs-on: ubuntu-latest
@@ -65,8 +71,7 @@ jobs:
       - name: Build app and tests
         run: swift build --build-tests
 
-  # The unit tests in groups, one check each; after Build, from its cache. A failing
-  # group doesn't stop the others. scripts/test-ci-groups.sh keeps every suite in one.
+  # Reuse the build cache across independent test groups; the suite check prevents unassigned tests.
   test:
     name: Tests, ${{ matrix.name }}
     needs: build
@@ -102,8 +107,7 @@ jobs:
       - name: Test
         run: swift test --filter '${{ matrix.filter }}'
 
-  # Every test once more with coverage, for the summary in the log. Informational: the
-  # groups above are the checks that pass or fail.
+  # Coverage is informational; the independent test groups determine success.
   coverage:
     name: Coverage (informational)
     needs: build
@@ -131,9 +135,8 @@ jobs:
       - name: Coverage summary
         run: |
           PROF=$(find .build -name '*.profdata' | head -1)
-          # Skip the .dSYM bundle: it contains a DWARF file with the same name as
-          # the test binary, and find hits it first. llvm-cov then rejects it with
-          # "unsupported coverage format version".
+          # Exclude dSYM files with the same name as the test binary; they are not coverage
+          # executables.
           BIN=$(find .build -name 'NotificationNannyPackageTests' -type f \
                   -not -path '*.dSYM*' | head -1)
           if [ -n "$PROF" ] && [ -n "$BIN" ]; then
@@ -164,8 +167,7 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-spm-release-
 
-      # Assembles and ad-hoc signs NotificationNanny.app: catches packaging /
-      # Info.plist / entitlements breakage that `swift build` alone won't.
+      # Check assembled resources and signing as well as compilation.
       - name: Build .app bundle
         run: ./scripts/build-app.sh
 
@@ -174,10 +176,7 @@ jobs:
           test -d build/NotificationNanny.app
           codesign --verify --verbose build/NotificationNanny.app
 
-      # The bundle was already being built and then discarded. Keeping it lets a
-      # testable .app come off a runner when no local toolchain can produce one.
-      # ditto rather than zip, to preserve the code-signing xattrs the way
-      # release.sh does; a plain zip can strip them and break the signature.
+      # Use ditto to preserve signing attributes in the downloadable app.
       - name: Package for download
         run: |
           ditto -c -k --sequesterRsrc --keepParent \

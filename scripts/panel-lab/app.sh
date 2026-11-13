@@ -1,54 +1,6 @@
 #!/usr/bin/env bash
-# Runs a debug build of NotificationNanny with the custom Notification Center on, and
-# drives it step by step.
-#
-#   scripts/panel-lab/app.sh step...
-#
-# Steps, run in order:
-#   post:App:Title        a Lab notification (App is Alpha, Bravo or Charlie)
-#   open | clock          press the menu bar clock (opens or closes the panel)
-#   clock2                a real click on the second screen's clock
-#   shut                  close the panel if it is open (a clock press would reopen it)
-#   scroll[:gap]          scroll the wheel over our panel, or over the gap between two rows
-#   state                 what our panel and Notification Center's show
-#   frames                where each text is in our rows and in Notification Center's
-#   count                 the same as numbers only, for PANEL_FILTER= runs
-#   shot:name             capture our panel into build/panel-lab/name.png
-#   sshot:name            the same, as it is on screen, desktop and all
-#   click:Text            click the text in our panel (a row's title, say)
-#   close:Title           click the ✕ of the row with that title
-#   button:Label          click a button in our panel ("Show less", "Clear All", a menu item)
-#   rclick:Text           right click the text in our panel (a row's title): its menu
-#   postreply:App:Title   a Lab notification with Reply as its only button
-#   postlong:App:Title    one with buttons and a body of several lines
-#   widget                click the middle of the first widget picture in our panel
-#   wrclick               right click it: the widget's menu
-#   apps:Name             whether a process of that name is running
-#   postact:App:Title     a Lab notification with buttons: Reply, Archive, Snooze
-#   hover:Text            rest the pointer on the text in our panel
-#   type:Text             type into Notification Center's open reply field, real keys,
-#                         only if that field has the keyboard focus
-#   responses:N           the last N responses the Lab apps received
-#   bhover, bbutton, bstate   hover, button and state in custom banner overlays
-#   brclick:Text          right click the text in a custom banner overlay
-#   menu[:Item]           the menu NotificationNanny has open, and press Item in it
-#   clicktop              click our panel's first row the moment the panel shows
-#   pframe                where our panel's window is
-#   pref:key              a setting's value now
-#   settings              open Settings on the Notification Center tab
-#   sdrag:dx,dy           drag the panel's place on that tab's preview (default 0,40)
-#   film:seconds          start filming our panel's place, over a gray backdrop under
-#                         Notification Center's window, so the real panel shows if drawn
-#   filmend               wait for the film, print how it settles (settle.py), delete it
-#   wait:seconds
-#
-# PANEL_FILTER= (empty) lists every app, the user's own too; use count, not state or shot.
-# PANEL_APPEARANCE=light draws our panel in Light Mode without touching the system's.
-#
-# Only the Lab apps are listed in the panel during a run (NN_LAB_PANEL_FILTER), so
-# captures never show your own notifications. The only setting written is
-# customNotificationCenter; it is put back and checked on exit, along with
-# lastBinaryMtime, which the app stamps itself. Lab notifications are cleared.
+# Drive a custom panel with Lab notifications only and restore touched settings on exit.
+# Commands and environment options are in docs/LABS.md.
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 
@@ -59,9 +11,8 @@ APP=build/NotificationNanny.app
 NN_MATCH="\.app/Contents/MacOS/NotificationNanny"
 mkdir -p "$OUT"
 
-# NN_ATTACH=pid drives a NotificationNanny already running instead: one opened on its own,
-# with Screen Recording of its own, which a build started from here can't have (it borrows
-# the terminal's). Its settings are its runner's to set and put back.
+# NN_ATTACH drives an existing app with its own Screen Recording grant; its caller owns settings
+# restoration.
 ATTACH=${NN_ATTACH:-}
 if [[ -z "$ATTACH" ]] && pgrep -f "$NN_MATCH" >/dev/null; then
     echo "NotificationNanny is already running; quit it first." >&2
@@ -77,8 +28,7 @@ fi
 swiftc -O -swift-version 5 -o "$OUT/lab" scripts/panel-lab/lab.swift
 
 BACKUP=$OUT/defaults-backup.plist
-# NN_SET="key=YES key2=0.9 key3=left" sets more settings for the run (bool, number or
-# text); restored the same way.
+# NN_SET supplies additional settings that are backed up and restored.
 EXTRA=(${NN_SET:-})
 KEYS=(customNotificationCenter lastBinaryMtime)
 for kv in ${EXTRA[@]+"${EXTRA[@]}"}; do KEYS+=("${kv%%=*}"); done
@@ -87,13 +37,12 @@ NN_PID=""
 restore() {
     set +e
     if [[ -n "$NN_PID" && -z "$ATTACH" ]]; then kill "$NN_PID" 2>/dev/null; wait "$NN_PID" 2>/dev/null; fi
-    # A run can end with Notification Center's panel open; put back on screen, it would
-    # be left open in front of the user.
+    # Close the native panel before restoring its window so it does not remain visible after the
+    # run.
     "$OUT/lab" shut >/dev/null
-    # The app parks Notification Center's window for custom banners; stopped like this it
-    # can't put it back, and banners would arrive off screen until something did.
+    # Restore the parked host before stopping the app so later banners stay visible.
     "$OUT/lab" unpark
-    # KEEP_LAB=1 leaves them for the next run, which then needn't post them all again.
+    # KEEP_LAB retains Lab notifications for a subsequent run.
     if [[ -z "${KEEP_LAB:-}" ]]; then
         "$OUT/lab" host >/dev/null && "$NOTIFY/watch" --close-all >/dev/null 2>&1
         for a in Alpha Bravo Charlie; do "$NOTIFY/Lab $a.app/Contents/MacOS/notifier" --clear >/dev/null 2>&1; done
@@ -129,7 +78,7 @@ print("settings restored and checked")
 PY
 }
 trap restore EXIT
-# Stopped from outside, the EXIT trap only runs if the signal ends the script through exit.
+# Convert signals to exit so the restoration trap always runs.
 trap 'exit 130' INT TERM
 
 if [[ -n "$ATTACH" ]]; then
@@ -177,16 +126,14 @@ for step in "$@"; do
         frames) "$OUT/lab" ui-frames "$NN_PID" ;;
         count)  "$OUT/lab" ui-count "$NN_PID" ;;
         shot)   id=$("$OUT/lab" ui-winid "$NN_PID") && scripts/panel-lab/shot.sh screencapture -x -o -l "$id" "$OUT/$arg.png" >/dev/null && echo "   $OUT/$arg.png" ;;
-        # The same area as it is on screen, with the desktop behind: our panel is transparent.
-        # Over a gray backdrop, so nothing of the user's screen behind it is captured.
-        # Waits for the backdrop only: a bare wait would wait for the app, forever.
+        # Mask the user's desktop with gray for transparent captures. Wait only for the backdrop
+        # process, not the app.
         sshot)  r=$("$OUT/lab" ui-rect "$NN_PID") && { "$OUT/lab" backdrop "$r" 2 & bd=$!; sleep 0.8
                 scripts/panel-lab/shot.sh screencapture -x -R"$r" "$OUT/$arg.png" >/dev/null; wait "$bd"; echo "   $OUT/$arg.png"; } ;;
         click)  "$OUT/lab" ui-click "$NN_PID" "$arg" || echo "   click failed" ;;
         rclick) "$OUT/lab" ui-rclick "$NN_PID" "$arg" || echo "   right click failed" ;;
         close)  "$OUT/lab" ui-close "$NN_PID" "$arg" || echo "   close failed" ;;
         button) "$OUT/lab" ui-button "$NN_PID" "$arg" || echo "   button failed" ;;
-        # The same, in a custom banner overlay instead of the panel.
         bhover)  NN_LAB_TARGET=banners "$OUT/lab" ui-hover "$NN_PID" "$arg" ;;
         bbutton) NN_LAB_TARGET=banners "$OUT/lab" ui-button "$NN_PID" "$arg" || echo "   button failed" ;;
         bstate)  NN_LAB_TARGET=banners "$OUT/lab" ui-state "$NN_PID" ;;

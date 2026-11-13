@@ -1,14 +1,6 @@
 #!/usr/bin/env bash
-# Runs the test suite.
-#
-# Plain `swift test` fails on machines with only the Command Line Tools
-# installed (no Xcode.app): swift-testing ships inside CLT, but SwiftPM doesn't
-# add its framework search path or the rpath for lib_TestingInterop.dylib, so
-# every test file's `import Testing` fails to resolve and the bundle won't
-# dlopen. CI selects a full Xcode and doesn't need any of this, which is why
-# the suite is green there while `swift test` is broken locally.
-#
-# Usage: scripts/test.sh [extra swift test args...]
+# Add Testing framework and runtime paths for Command Line Tools installations.
+# Forward arguments to swift test; full Xcode needs no extra paths.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."

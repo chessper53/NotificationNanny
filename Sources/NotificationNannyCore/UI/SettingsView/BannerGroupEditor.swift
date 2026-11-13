@@ -1,11 +1,7 @@
 import SwiftUI
 import AppKit
 
-/// The row at the top of the Banner tab: All apps, then each group, then a new one.
-///
-/// Groups were a tab of their own, Exceptions, but a group is the Banner tab's settings
-/// for a few apps plus where those apps go, so it is edited here with the same cards.
-/// Nothing about how groups are stored changed with the move.
+/// Banner scope selection: All apps, exception groups, and a new group action.
 struct BannerScopeBar: View {
     /// nil for All apps.
     @Binding var groupID: UUID?
@@ -23,9 +19,7 @@ struct BannerScopeBar: View {
     }
 }
 
-/// One group's settings, as the Banner tab's cards: its apps and where they go, then
-/// what it may set apart from All apps. Each of those starts on "Same as All apps",
-/// which is the group having none of its own, as it is stored.
+/// Group placement and appearance cards; nil overrides follow All apps.
 struct BannerGroupEditor: View {
     let groupID: UUID
 
@@ -58,7 +52,7 @@ struct BannerGroupEditor: View {
         }
     }
 
-    // MARK: - Where
+    // MARK: Where
 
     private func positionCard(_ group: AppGroup) -> some View {
         let screen = settings.resolvedTargetScreen(forGroupID: group.id)
@@ -75,7 +69,7 @@ struct BannerGroupEditor: View {
                             noteKey: "This exception group's own place, on the screen picked above. Default is the screen All apps use.")
     }
 
-    // MARK: - Looks
+    // MARK: Looks
 
     private func scaleCard(_ group: AppGroup) -> some View {
         SettingsCard {
@@ -126,8 +120,7 @@ struct BannerGroupEditor: View {
         }
     }
 
-    /// One assignment to `appGroups` per edit, so observers never see a
-    /// half-applied group.
+    /// Assign the edited group once so observers never see partially applied changes.
     private func update(_ mutate: (inout AppGroup) -> Void) {
         guard let i = settings.appGroups.firstIndex(where: { $0.id == groupID }) else { return }
         var updated = settings.appGroups
@@ -135,7 +128,7 @@ struct BannerGroupEditor: View {
         settings.appGroups = updated
     }
 
-    // MARK: - Apps
+    // MARK: Apps
 
     private func appsCard(_ group: AppGroup) -> some View {
         GroupAppPicker(assigned: group.appNames, knownApps: settings.knownAppNames,

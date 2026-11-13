@@ -8,8 +8,8 @@ function setupPreview() {
     const status = document.getElementById("preview-status");
     if (!desktop || !notification || !scale)
         return;
-    const positions = [...document.querySelectorAll(".position-picker button")];
-    const colours = [...document.querySelectorAll(".colour-picker button")];
+    const positions = Array.from(document.querySelectorAll(".position-picker button"));
+    const colours = Array.from(document.querySelectorAll(".colour-picker button"));
     function announce() {
         const position = positions.find(button => button.getAttribute("aria-pressed") === "true");
         const colour = colours.find(button => button.getAttribute("aria-pressed") === "true");
@@ -56,7 +56,7 @@ function setupPreview() {
             output.textContent = `${scale.value}%`;
         announce();
     });
-    // The controls are an in-page preview, so Enter must never submit or reload the page.
+    // Keep preview submission on this page without reloading it.
     document.querySelector(".preview-controls")?.addEventListener("submit", event => event.preventDefault());
 }
 function setupCopy() {

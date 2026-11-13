@@ -3,10 +3,7 @@ import Foundation
 import Testing
 @testable import NotificationNannyCore
 
-// Tests the axOrigin coordinate maths. AX coordinates have y=0 at the top-left
-// of the primary screen, y increasing downward — the opposite of NSScreen's
-// flipped-y convention. These tests pin the transformation so a sign flip or
-// off-by-one is immediately visible.
+// AX uses the main display's top left origin and y increasing downward, unlike AppKit.
 @Suite("NotificationPosition geometry") @MainActor
 struct NotificationPositionGeometryTests {
 
@@ -19,7 +16,7 @@ struct NotificationPositionGeometryTests {
         pos.axOrigin(forWindowSize: size, screen: screen, xOffset: x, yOffset: y)
     }
 
-    // MARK: - Ordering
+    // MARK: Ordering
 
     @Test func leftColumn_hasSmallestX_rightColumn_hasLargestX() throws {
         let screen = try #require(NSScreen.main)
@@ -47,7 +44,7 @@ struct NotificationPositionGeometryTests {
         }
     }
 
-    // MARK: - Same row / column alignment
+    // MARK: Same row / column alignment
 
     @Test func sameColumn_samexCoordinate() throws {
         let screen = try #require(NSScreen.main)
@@ -75,7 +72,7 @@ struct NotificationPositionGeometryTests {
         }
     }
 
-    // MARK: - Offset linearity
+    // MARK: Offset linearity
 
     @Test func xOffset_shiftsXByExactAmount() throws {
         let screen = try #require(NSScreen.main)
@@ -101,10 +98,7 @@ struct NotificationPositionGeometryTests {
         #expect(shifted.y == base.y - 5)
     }
 
-    // MARK: - Exact coordinate formula
-    //
-    // These hardcode the expected values derived from the formula so that any
-    // refactor that silently changes the coordinate mapping fails immediately.
+    // MARK: Coordinate formula
 
     @Test func topRight_matchesExpectedFormula() throws {
         let screen  = try #require(NSScreen.main)

@@ -1,32 +1,5 @@
-// Banner lab: measures the custom banner against the real Notification Center
-// banner, pixel for pixel. Run it through run.sh, which builds it.
-//
-// It puts a window with a known backdrop (solid colours, stripes, a checker)
-// where the system banner appears, then captures either the real banner or our
-// replica in exactly that spot. score.py diffs the two. Everything is saved per
-// appearance, so Dark and Light Mode are compared separately.
-//
-//   lab real  <backdrop...>                      real banner via osascript
-//   lab prod  <name> [key=value...] -- <backdrop...>
-//                                                the app's own CustomBannerView
-//                                                (only in the build that links
-//                                                CustomOverlay.swift)
-//   lab cand  <name> [key=value...] -- <backdrop...>
-//                                                a bare AppKit mock-up, for
-//                                                trying parameters quickly
-//   lab theme light|dark                         switch system appearance
-//   lab real-states <backdrop>                   a Lab notification with buttons, from
-//                                                notify-lab, in every state: collapsed,
-//                                                hovered, details shown, reply open,
-//                                                reply typed; frames to states.txt
-//   lab prod-states <backdrop>                   the app's BannerCard in the same states,
-//                                                at the real ones' frames
-//
-// Backdrops: black white gray red blue stripes checker wallpaper (no backdrop)
-//
-// Needs Accessibility (to find the banner) and Screen Recording (to capture it)
-// for whichever app runs it. Quit NotificationNanny first, or at least keep its
-// banner animation on Default, so the real banner is not replaced by ours.
+// Compare native and custom banners on identical backdrops in both appearances.
+// Requires Accessibility and Screen Recording; see docs/LABS.md for commands.
 import AppKit
 import ApplicationServices
 
@@ -34,7 +7,7 @@ let outDir = ProcessInfo.processInfo.environment["BANNER_LAB_OUT"] ?? "build/ban
 let margin: CGFloat = 30
 let backdropPad: CGFloat = 90
 
-// MARK: helpers
+// MARK: Helpers
 
 func attr(_ e: AXUIElement, _ k: String) -> CFTypeRef? {
     var v: CFTypeRef?
@@ -88,7 +61,7 @@ func capture(_ ax: CGRect, _ name: String) {
          "\(outDir)/cap/\(appearanceName)/\(name).png"])
 }
 
-/// `key=value` pairs up to `--`, then the backdrops after it.
+/// Parse options before the argument separator and backdrops after it.
 func parse(_ args: ArraySlice<String>) -> ([String: String], [String]) {
     let sep = args.firstIndex(of: "--") ?? args.endIndex
     var p: [String: String] = [:]
@@ -108,7 +81,7 @@ func color(_ s: String?) -> NSColor? {
     return NSColor(srgbRed: c[0], green: c[1], blue: c[2], alpha: c.count > 3 ? c[3] : 1)
 }
 
-// MARK: backdrops
+// MARK: Backdrops
 
 final class PatternView: NSView {
     let kind: String
@@ -159,7 +132,7 @@ func showBackdrop(_ kind: String, around ax: CGRect) {
     backdropWindow = w
 }
 
-// MARK: real banner
+// MARK: Real banner
 
 func waitForBanner(present: Bool, timeout: Double) -> AXUIElement? {
     let end = Date().addingTimeInterval(timeout)
@@ -182,7 +155,7 @@ func loadFrame() -> CGRect {
     return CGRect(x: v[0], y: v[1], width: v[2], height: v[3])
 }
 
-// MARK: AppKit mock-up (cand)
+// MARK: AppKit candidate
 
 func roundedMask(_ radius: CGFloat) -> NSImage {
     let edge = radius * 2 + 1
@@ -247,13 +220,13 @@ func mockBanner(_ size: CGSize, _ p: [String: String]) -> NSView {
     g.cornerRadius = radius
     g.style = p["style"] == "clear" ? .clear : .regular
     g.tintColor = color(p["tint"])
-    // Private, for comparison only. None of these beat the public .regular.
+    // Private variants are used only for lab comparisons.
     if let v = p["variant"] { g.setValue(Int(v)!, forKey: "_variant") }
     g.contentView = content
     return g
 }
 
-// MARK: main
+// MARK: Main
 
 let app = NSApplication.shared
 app.setActivationPolicy(.accessory)
@@ -263,8 +236,7 @@ try? FileManager.default.createDirectory(atPath: "\(outDir)/cap/\(appearanceName
 
 switch args.first {
 case "real-states":
-    // Every state of a real banner with buttons, posted by a notify-lab app. Only Lab
-    // notifications are acted on, and typing happens only once the reply field has focus.
+    // Capture Lab notification states only; type only when the native reply field has focus.
     let bd = args.dropFirst().first ?? "gray"
     let notifier = "build/notify-lab/Lab Charlie.app/Contents/MacOS/notifier"
     func labBanner() -> AXUIElement? {
@@ -306,7 +278,7 @@ case "real-states":
     snap("collapsed")
     let back = CGEvent(source: nil)!.location
     let f0 = axFrame(banner)
-    // From the left: a pointer arriving from below was at times not taken as entering it.
+    // Approach from the left because arrival from below can miss hover entry.
     for p in [CGPoint(x: f0.minX - 400, y: f0.minY + 200), CGPoint(x: f0.minX - 20, y: f0.midY), CGPoint(x: f0.midX, y: f0.midY)] {
         CGEvent(mouseEventSource: nil, mouseType: .mouseMoved, mouseCursorPosition: p, mouseButton: .left)!.post(tap: .cghidEventTap)
         pump(0.3)
@@ -325,11 +297,11 @@ case "real-states":
         for k in (attr(e, "AXChildren") as? [AXUIElement] ?? []) { dump(k, d + 1) }
     }
     dump(banner, 0)
-    // At the top left corner, where the frame grows on hover: a close button?
+    // Probe the corner where the hovered frame expands for the close button.
     CGEvent(mouseEventSource: nil, mouseType: .mouseMoved, mouseCursorPosition: CGPoint(x: f0.minX + 6, y: f0.minY + 6), mouseButton: .left)!.post(tap: .cghidEventTap)
     pump(0.8)
     snap("corner")
-    // Away, so the rest is as it looks without the pointer on it.
+    // Restore the pointer before capturing the remaining unhovered states.
     CGEvent(mouseEventSource: nil, mouseType: .mouseMoved, mouseCursorPosition: back, mouseButton: .left)!.post(tap: .cghidEventTap)
     pump(0.6)
     act(banner, "Show Details")
@@ -372,7 +344,6 @@ case "real-states":
 
 #if PROD
 case "prod-states":
-    // The app's own card in each state the real one was captured in, at its frame.
     let bd = args.dropFirst().first ?? "gray"
     guard let text = try? String(contentsOfFile: "\(outDir)/states.txt", encoding: .utf8) else { print("run real-states first"); exit(1) }
     let base = BannerContent(appName: "Script Editor", title: "Probe title", body: "Probe body text", appIcon: probeIcon,
@@ -417,8 +388,7 @@ case "prod-states":
 #endif
 
 case "corner-sweep":
-    // Where must the pointer be for the real banner's close button to show? A Lab
-    // notification, then the pointer at points measured from its top left corner.
+    // Probe close button visibility at positions relative to the native card.
     let notifier = "build/notify-lab/Lab Charlie.app/Contents/MacOS/notifier"
     run(notifier, ["Probe title", "Probe body text"])
     var b: AXUIElement?
@@ -465,7 +435,6 @@ case "corner-sweep":
         }
         return n > 0 ? total / n * 255 : 0
     }
-    // Over time: the middle first, then well away, then the corner.
     for (label, dx, dy) in [("x80", 80, 29), ("x110", 110, 29), ("x140", 140, 29), ("x160", 160, 29),
                             ("x172", 172, 29), ("x200", 200, 29), ("x260", 260, 29), ("x330", 330, 29), ("x172y8", 172, 8), ("x172y52", 172, 52)] {
         move(CGPoint(x: card.minX - 400, y: card.minY + 200)); pump(0.5)
@@ -484,7 +453,7 @@ case "corner-sweep":
     if let a = (ref as? [String] ?? []).first(where: { $0.hasPrefix("Name:Close\n") }) { AXUIElementPerformAction(banner, a as CFString) }
 
 case "theme":
-    // SkyLight rather than System Events, so no Automation permission is needed.
+    // Use SkyLight to avoid requiring Automation permission.
     let sky = dlopen("/System/Library/PrivateFrameworks/SkyLight.framework/SkyLight", RTLD_NOW)
     typealias SetTheme = @convention(c) (Bool) -> Void
     guard let sym = dlsym(sky, "SLSSetAppearanceThemeLegacy") else { print("SkyLight call not found"); exit(1) }
@@ -545,9 +514,7 @@ case "prod":
                                 subtitle: p["subtitle"] ?? "", body: p["body"] ?? "Probe body text",
                                 appIcon: probeIcon)
     let manager = MainActor.assumeIsolated { CustomBannerManager() }
-    // Glass samples what is behind it asynchronously, and the very first one in
-    // a process takes longest. Without a throwaway first render the first
-    // backdrop is captured showing whatever was on screen before it.
+    // Warm the glass with a throwaway render so the first capture samples the current backdrop.
     showBackdrop(backdrops.first ?? "wallpaper", around: ax)
     MainActor.assumeIsolated {
         manager.showBanner(content: content, axTopLeft: ax.origin, width: ax.width, height: ax.height,

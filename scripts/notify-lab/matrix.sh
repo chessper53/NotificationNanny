@@ -1,10 +1,6 @@
 #!/usr/bin/env bash
-# Runs the pile scenarios one after another and prints a summary.
-#
-#   scripts/notify-lab/matrix.sh [--app PATH] [name...]
-#
-# With names, only those scenarios run. Each leaves its timeline in
-# build/notify-lab/matrix/<name>.txt and the app's log next to it.
+# Run named pile scenarios and summarize failures; see docs/LABS.md for commands and output
+# locations.
 set -uo pipefail
 cd "$(dirname "$0")/../.."
 

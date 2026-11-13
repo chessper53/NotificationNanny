@@ -12,8 +12,7 @@ struct CrashSummary: Equatable {
     let frame: String?
 }
 
-/// Reads the crash reports macOS writes to ~/Library/Logs/DiagnosticReports. When the app
-/// just vanishes from the menu bar, these hold the only record of where it went down.
+/// Reads macOS crash reports from ~/Library/Logs/DiagnosticReports.
 enum CrashReports {
     static var directory: URL {
         FileManager.default.homeDirectoryForCurrentUser
@@ -34,7 +33,7 @@ enum CrashReports {
         return parse(text, processName: processName, fallbackDate: modified(newest))
     }
 
-    /// An .ips file is a one-line JSON header followed by a JSON body.
+    /// An .ips file has a JSON header line followed by the report body.
     static func parse(_ text: String, processName: String, fallbackDate: Date) -> CrashSummary? {
         let parts = text.split(separator: "\n", maxSplits: 1)
         guard parts.count == 2,
@@ -42,7 +41,6 @@ enum CrashReports {
               (header["app_name"] as? String ?? header["name"] as? String) == processName,
               let body = json(parts[1]) else { return nil }
 
-        // "2026-10-17 12:45:22.00 +0200"
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.dateFormat = "yyyy-MM-dd HH:mm:ss.SS Z"
@@ -71,7 +69,7 @@ enum CrashReports {
             guard let i = frame["imageIndex"] as? Int, images.indices.contains(i) else { return false }
             return images[i] == processName
         }
-        // Our own frame says where to look; failing that, whatever crashed is better than nothing.
+        // Prefer an app frame; otherwise use the first symbolized frame.
         guard let frame = frames.first(where: isOurs) ?? frames.first(where: { $0["symbol"] != nil })
         else { return nil }
 

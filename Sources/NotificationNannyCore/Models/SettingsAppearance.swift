@@ -1,7 +1,6 @@
 import AppKit
 
-/// Which appearance the Settings window is drawn in. Banners are not affected: a
-/// custom banner always follows macOS, because it stands in for the system one.
+/// Settings window appearance only; custom banners follow macOS.
 package enum SettingsAppearance: String, Codable, CaseIterable, Identifiable {
     case system
     case light
@@ -9,7 +8,6 @@ package enum SettingsAppearance: String, Codable, CaseIterable, Identifiable {
 
     package var id: String { rawValue }
 
-    /// Localization key for the picker segment.
     package var labelKey: String {
         switch self {
         case .system: return "System"

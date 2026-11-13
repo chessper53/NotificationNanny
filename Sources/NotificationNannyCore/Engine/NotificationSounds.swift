@@ -1,27 +1,18 @@
 import AppKit
 
-/// Plays a sound group's sound when a banner from one of its apps first shows.
-///
-/// macOS has no way to give an app another notification sound, and nothing outside
-/// Notification Center can hold its own sound back. So this plays alongside it, and the
-/// Sounds tab asks for the app's own sound to be turned off in System Settings.
-///
-/// A banner's `AXIdentifier` stays the same for the notification's whole life, through
-/// re-layouts and piles, so a new identifier is a new notification.
+/// Plays custom sounds alongside macOS sounds for newly seen banner identifiers.
+/// The user must disable native sounds separately to avoid hearing both.
 @MainActor
 final class NotificationSounds {
     private let logger: NannyLogger
     private let play: @MainActor (_ sound: String, _ volume: Double) -> Void
-    /// Identifiers already sounded or passed over, oldest first. Never dropped for being
-    /// gone from a sweep: a pile caught mid re-layout can read empty for a moment, and
-    /// forgetting then would play everything up again.
+    /// Keep heard identifiers across empty sweeps; AX can temporarily hide a pile during layout.
     private var heard: [String] = []
     private var heardSet: Set<String> = []
     private static let maxHeard = 500
-    /// Sweeps a banner's app couldn't be read in. A banner arriving back to back can show
-    /// before its description is filled in; it's tried again, then passed over.
+    /// Retry incomplete app descriptions before marking a banner as passed over.
     private var unreadable: [String: Int] = [:]
-    /// The banners already up when observing starts came in unheard, and stay so.
+    /// Treat banners present at startup as already heard.
     private var baselineTaken = false
 
     init(logger: NannyLogger,
@@ -30,14 +21,12 @@ final class NotificationSounds {
         self.play = play
     }
 
-    /// Back to taking a baseline, for when observing starts again.
     func reset() {
         baselineTaken = false
         unreadable.removeAll()
     }
 
-    /// Called with the banners up in a sweep, each with a way to read its app, which is only
-    /// asked of new ones. Plays each sound once, however many of its banners arrived together.
+    /// Resolve only new banners and play each sound once per sweep, even for simultaneous arrivals.
     func sweep(_ banners: [(id: String, appName: () -> String?)],
                soundFor: (String) -> (sound: String, volume: Double)?) {
         guard baselineTaken else {
@@ -81,7 +70,7 @@ final class SoundPlayer {
 
     private var cache: [String: NSSound] = [:]
 
-    /// Whether it could be found and played.
+    /// Returns whether the sound could be found and played.
     @discardableResult
     func play(_ sound: String, volume: Double) -> Bool {
         guard let player = resolve(sound) else {
@@ -103,8 +92,7 @@ final class SoundPlayer {
     }
 }
 
-/// The sounds there are to pick from: macOS's alert sounds, then any in the Sounds
-/// folders of the Library, the same places System Settings looks.
+/// Lists macOS alert sounds and sounds in Library folders used by System Settings.
 enum NotificationSoundLibrary {
     static let audioExtensions: Set<String> = ["aiff", "aif", "aifc", "caf", "wav", "mp3", "m4a"]
 

@@ -1,13 +1,6 @@
 #!/usr/bin/env python3
-"""Fail if site/index.html references a local file that is not committed.
-
-pages.yml uploads site/ verbatim, and nothing else looks at what the HTML points
-at, so a typo or an asset that was never added deploys as a silent 404: a broken
-image, or a video player whose play button does nothing.
-
-HTML comments are stripped before scanning, so markup staged behind a comment
-(the demo clip, until the recording exists) is intentionally not required yet.
-"""
+"""Check that local site assets exist, ignoring HTML comments. Deployment serves the directory
+verbatim."""
 
 import re
 import sys

@@ -1,64 +1,6 @@
 #!/usr/bin/env bash
-# Runs one live scenario against a NotificationNanny build and checks where the
-# banners end up.
-#
-#   scripts/notify-lab/scenario.sh [options] <post>...
-#
-#   <post>               delay:App[:title], e.g. 0:Alpha 0.6:Bravo 0.6:Charlie
-#                        (delay in seconds after the previous post; App is one
-#                        of the lab apps: Alpha, Bravo, Charlie)
-#                        delay:Script[:title] posts through osascript instead,
-#                        which macOS shows as a Temporary Script Editor banner
-#                        delay:close:App closes that lab app's banner
-#                        delay:panel presses the menu bar clock, opening or
-#                        closing the Notification Center panel
-#                        delay:clock:N really clicks screen N's clock (the order
-#                        of `watch --screens`), moving the pointer for a moment
-#                        delay:expand:App expands that lab app's stack in the
-#                        open panel
-#                        delay:focus:on|off switches the fake Focus (needs --focus)
-#                        delay:wake makes the app act as if the Mac just woke
-#                        delay:shot:name saves a screenshot to build/notify-lab/name.png
-#   --position P         bottomRight (default), topRight, middleLeft, ...
-#   --x-offset N         placement offset in points (default 0)
-#   --y-offset N
-#   --auto-dismiss S     seconds, 0 = system default (default 0)
-#   --custom             use the custom banner (via a 1.002 scale, which looks
-#                        the same as 1 but switches the custom banner on)
-#   --scale F            custom banner scale (implies the custom banner)
-#   --newest-at-bottom   custom pile order: newest at the bottom
-#   --seconds N          how long to watch (default 10)
-#   --app PATH           the .app to run (default build/NotificationNanny.app)
-#   --oslog              also capture the app's debug log (last-oslog.txt); this
-#                        slows the app down noticeably, so not for timing runs
-#   --nc-follow          turn "Don't move Notification Center" off, so the open
-#                        panel follows the banners to their screen
-#   --display N          send banners to the Nth screen of `watch --screens`
-#                        (default: none, each stays on the screen macOS picks)
-#   --keep-existing      leave banners already on screen instead of closing them
-#                        first, to test a pile that predates the app
-#   --group App:P[:mode] put that lab app in its own exception group at position
-#                        P (repeatable), e.g. --group Alpha:topCenter; mode
-#                        native or custom pins the group's banner mode
-#   --focus              turn Pause during Focus on and start with a fake Focus
-#                        asserted. The app reads a lab file instead of the real
-#                        Focus store (NN_FOCUS_ASSERTIONS), so your own Focus is
-#                        never touched; flip it with focus:on / focus:off posts
-#
-# The app is run straight from this shell, so it shares the shell's
-# Accessibility permission and a rebuild doesn't need a new grant. The settings
-# it touches are backed up before, written back key by key on exit whatever
-# happens, and checked; a mismatch is reported loudly. The lab apps must be
-# built (build.sh) and allowed to notify; set them to Persistent in System
-# Settings > Notifications to get banners that pile up.
-#
-# The app's session log lands in build/notify-lab/last-app.log, its log file in
-# build/notify-lab/logs (never the real one in Application Support), the
-# watcher's timeline in last-run.txt, and its debug log (sweep timings among it)
-# in last-oslog.txt with --oslog. The app's CPU time and memory over the watch
-# are printed last.
-#
-# Exit status: the watcher's failed check count.
+# Run a live banner scenario and return its failed check count. See docs/LABS.md.
+# Restore touched settings individually on exit and isolate session logs from the installed app.
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 
@@ -98,16 +40,13 @@ set_focus() {
     printf '{"data":[{"storeAssertionRecords":%s}]}\n' "$records" > "$FOCUS_FILE.tmp"
     mv "$FOCUS_FILE.tmp" "$FOCUS_FILE"
 }
-# Everything this script writes. Only these are restored, one by one through
-# `defaults write`: `defaults import` bypasses the preferences cache and a
-# cached copy can win afterwards, which once left a test configuration behind.
-# lastBinaryMtime is stamped by the app itself on every launch.
+# Restore keys individually because defaults import bypasses the preferences cache.
+# Include lastBinaryMtime, which the app writes on launch.
 KEYS=(placementsByDisplayID targetDisplayID targetDisplayUUID autoDismissSeconds redactBannerContent bannerScale
       hasBannerColor bannerAnimation followActiveScreen holdWhileAsleep pauseWhileStreaming pauseDuringFocus
       lastBinaryMtime newestBannerAtBottom appGroups avoidNCPanel)
 NN_MATCH="\.app/Contents/MacOS/NotificationNanny"
 NN_PID=""
-# Only the instance this script started is ever stopped.
 quit_nn() {
     [[ -n "$NN_PID" ]] || return 0
     kill "$NN_PID" 2>/dev/null || true
@@ -118,7 +57,6 @@ restore() {
     set +e
     quit_nn
     "$LAB/watch" --close-all >/dev/null 2>&1
-    # And what they left in Notification Center's history.
     for app in "$LAB"/Lab\ *.app; do "$app/Contents/MacOS/notifier" --clear >/dev/null 2>&1; done
     python3 - "$DOMAIN" "$BACKUP" "${KEYS[@]}" <<'PY'
 import datetime, plistlib, subprocess, sys
@@ -127,7 +65,7 @@ saved = plistlib.load(open(backup, "rb"))
 def write(key, value):
     if isinstance(value, bool):    args = ["-bool", "YES" if value else "NO"]
     elif isinstance(value, int):   args = ["-int", str(value)]
-    # -float rounds to 32 bits; a plist fragment keeps every digit of the double.
+    # A plist real preserves double precision that the floating point command option would lose.
     elif isinstance(value, float): args = [f"<real>{value!r}</real>"]
     elif isinstance(value, bytes): args = ["-data", value.hex()]
     elif isinstance(value, datetime.datetime):
@@ -139,7 +77,7 @@ for key in keys:
     else: subprocess.run(["defaults", "delete", domain, key], capture_output=True)
 now = plistlib.loads(subprocess.run(["defaults", "export", domain, "-"], capture_output=True, check=True).stdout)
 def same(a, b):
-    # -date has whole seconds, the app stores microseconds.
+    # Date command writes lose subseconds; the app stores microseconds.
     if isinstance(a, datetime.datetime) and isinstance(b, datetime.datetime):
         return abs((a - b).total_seconds()) < 1
     return a == b
@@ -155,8 +93,7 @@ if "$LAB/watch" --locked; then
     exit 66
 fi
 
-# Another NotificationNanny would fight this one over the banners, and it is
-# not this script's to quit.
+# Refuse competing instances rather than stopping an app the user launched.
 if pgrep -f "$NN_MATCH" >/dev/null; then
     echo "NotificationNanny is already running; quit it first:" >&2
     pgrep -lf "$NN_MATCH" >&2
@@ -214,7 +151,7 @@ env ${FOCUS_ENV[@]+"${FOCUS_ENV[@]}"} NN_LAB=1 NN_LOG_DIR="$PWD/$LAB/logs" NN_LO
 NN_PID=$!
 sleep 3
 
-# CPU seconds from ps's [[dd-]hh:]mm:ss.cc
+# Convert the process CPU time fields to seconds.
 cpu_seconds() { ps -o time= -p "$1" | awk -F: '{ s = 0; for (i = 1; i <= NF; i++) s = s * 60 + $i; printf "%.2f", s }'; }
 rss_mb() { ps -o rss= -p "$1" | awk '{ printf "%.1f", $1 / 1024 }'; }
 LOG_PID=""

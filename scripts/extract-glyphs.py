@@ -1,15 +1,6 @@
 #!/usr/bin/env python3
-"""Turn the flat artwork for the menu-bar bell into template PNGs.
-
-Source art is black-on-white JPEG, so this keys white out to transparency and
-keeps the glyph black — the shape AppKit needs for `isTemplate = true`, where
-only the alpha channel is read and the system recolours it per appearance.
-
-Both states are cropped with one shared box so the bell stays registered
-between them: the slash extends past the bell rather than shrinking it.
-
-Run: python3 scripts/extract-glyphs.py
-"""
+"""Create template PNGs by converting white artwork backgrounds to transparency.
+Use one crop for both glyphs to keep the bell aligned; AppKit recolors the alpha mask."""
 
 from pathlib import Path
 from PIL import Image
@@ -19,11 +10,11 @@ OUT = Path(__file__).resolve().parent.parent / "Resources" / "Glyphs"
 PAIRS = [("hey claude 2.jpeg", "bell-nanny.png"),
          ("hey claude 1.jpeg", "bell-nanny-slash.png")]
 
-CANVAS = 512      # generous; consumers scale down
+CANVAS = 512
 INSET = 0.94      # fraction of canvas the artwork spans
 
-# JPEG leaves noise in the white field, so don't key on pure white: ramp
-# luminance 200->0 alpha and 100->full. Keeps edge antialiasing, drops haze.
+# Fade noisy JPEG whites from transparent at luminance 200 to opaque at 100, preserving
+# antialiasing.
 LUM_CLEAR, LUM_SOLID = 200, 100
 
 

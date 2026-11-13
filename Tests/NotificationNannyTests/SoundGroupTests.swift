@@ -12,7 +12,7 @@ struct SoundGroupTests {
         return (make(), make)
     }
 
-    // MARK: - Model
+    // MARK: Model
 
     @Test func decodes_withoutSoundOrVolume() throws {
         let json = #"{"id":"00000000-0000-0000-0000-000000000001","name":"Chat"}"#.data(using: .utf8)!
@@ -30,7 +30,7 @@ struct SoundGroupTests {
         }
     }
 
-    // MARK: - What plays
+    // MARK: What plays
 
     @Test func nothingSet_playsNothing() {
         let (s, _) = makeSettings()
@@ -63,7 +63,7 @@ struct SoundGroupTests {
         #expect(s.notificationSound(for: "Mail") == nil)
     }
 
-    // MARK: - Settings
+    // MARK: Settings
 
     @Test func membership_isExclusive() {
         let (s, _) = makeSettings()
@@ -131,7 +131,7 @@ struct SoundGroupTests {
         #expect(s.allAppsSound == nil)
     }
 
-    // MARK: - Playing
+    // MARK: Playing
 
     private final class Recorder {
         var played: [(String, Double)] = []
@@ -141,7 +141,6 @@ struct SoundGroupTests {
         NotificationSounds(logger: NannyLogger()) { recorder.played.append(($0, $1)) }
     }
 
-    /// Slack and Teams play Glass; anything else plays nothing of ours.
     private func soundFor(_ app: String) -> (sound: String, volume: Double)? {
         ["Slack", "Teams"].contains(app) ? ("Glass", 0.6) : nil
     }
@@ -164,7 +163,7 @@ struct SoundGroupTests {
         sounds.sweep([], soundFor: soundFor)
         sounds.sweep([banner("2", "Slack")], soundFor: soundFor)
         sounds.sweep([banner("2", "Slack")], soundFor: soundFor)
-        // Gone from one sweep, as mid re-layout, and back: not played again.
+        // An empty sweep during layout must not replay sounds when the pile returns.
         sounds.sweep([], soundFor: soundFor)
         sounds.sweep([banner("2", "Slack")], soundFor: soundFor)
         #expect(rec.played.count == 1)

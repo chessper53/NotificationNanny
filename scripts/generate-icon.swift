@@ -1,22 +1,18 @@
 #!/usr/bin/env swift
-// Generates Resources/AppIcon.icns from scratch.
-// Run: swift scripts/generate-icon.swift
+// Generate the app icon; run this script with swift.
 
 import AppKit
 import CoreGraphics
 
 let accent = NSColor(srgbRed: 0xE8 / 255, green: 0x83 / 255, blue: 0x3A / 255, alpha: 1)
 
-// Computed, not stored: top-level `let`s initialise in source order, and this is
-// read from makeIcon() above where `here` is declared.
+// Compute on access because top level stored values initialize in source order.
 var glyphURL: URL {
     URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
         .appendingPathComponent("Resources/Glyphs/bell-nanny.png")
 }
 
-/// Recolours the black-ink glyph PNG, preserving its alpha. The scratch bitmap
-/// starts fully transparent, so `.sourceAtop` lands only on the glyph's own
-/// pixels rather than flooding the canvas.
+/// Recolor with sourceAtop on a transparent canvas to preserve the glyph's alpha mask.
 func tinted(_ url: URL, color: NSColor, size: CGFloat) -> NSImage? {
     guard let src = NSImage(contentsOf: url) else { return nil }
     let px = Int(size.rounded())
@@ -42,8 +38,7 @@ func tinted(_ url: URL, color: NSColor, size: CGFloat) -> NSImage? {
     return out
 }
 
-/// Tightest rect containing non-transparent pixels, in the image's own coordinate
-/// space (origin bottom-left, matching `NSImage.draw(at:)`). Nil if fully clear.
+/// Tight alpha bounds in image coordinates with a bottom left origin; nil for a clear image.
 func inkBounds(of image: NSImage) -> CGRect? {
     let w = Int(image.size.width.rounded(.up))
     let h = Int(image.size.height.rounded(.up))
@@ -71,14 +66,13 @@ func inkBounds(of image: NSImage) -> CGRect? {
     }
     guard maxX >= minX, maxY >= minY else { return nil }
 
-    // Bitmap rows run top-down; flip into the image's bottom-left origin.
+    // Convert bitmap rows to image coordinates with a bottom left origin.
     return CGRect(x: CGFloat(minX), y: CGFloat(h - 1 - maxY),
                   width: CGFloat(maxX - minX + 1), height: CGFloat(maxY - minY + 1))
 }
 
-/// Draws at exactly `size` *pixels*. Deliberately not `NSImage.lockFocus()`, which
-/// picks up the main display's backing scale and silently emits 2x-size PNGs on a
-/// Retina Mac — that put every iconset slot at double its nominal size.
+/// Draw exactly `size` pixels; lockFocus would inherit the display scale and double Retina output
+/// dimensions.
 func makeIcon(size: CGFloat, glyphScale: CGFloat = 0.62) -> NSBitmapImageRep? {
     let px = Int(size)
     guard let rep = NSBitmapImageRep(
@@ -86,7 +80,7 @@ func makeIcon(size: CGFloat, glyphScale: CGFloat = 0.62) -> NSBitmapImageRep? {
         bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
         colorSpaceName: .deviceRGB, bytesPerRow: px * 4, bitsPerPixel: 32
     ) else { return nil }
-    rep.size = NSSize(width: size, height: size)   // one point == one pixel
+    rep.size = NSSize(width: size, height: size)
 
     NSGraphicsContext.saveGraphicsState()
     defer { NSGraphicsContext.restoreGraphicsState() }
@@ -94,14 +88,13 @@ func makeIcon(size: CGFloat, glyphScale: CGFloat = 0.62) -> NSBitmapImageRep? {
     NSGraphicsContext.current = gctx
     let ctx = gctx.cgContext
 
-    // Rounded-rect clip
     let radius = size * 0.225
     let rect = CGRect(x: 0, y: 0, width: size, height: size)
     let path = CGPath(roundedRect: rect, cornerWidth: radius, cornerHeight: radius, transform: nil)
     ctx.addPath(path)
     ctx.clip()
 
-    // Background gradient — graphite, barely a gradient on purpose
+    // Subtle graphite gradient.
     let colors = [
         CGColor(red: 0.102, green: 0.110, blue: 0.129, alpha: 1),  // #1A1C21
         CGColor(red: 0.165, green: 0.176, blue: 0.204, alpha: 1),  // #2A2D34
@@ -117,7 +110,7 @@ func makeIcon(size: CGFloat, glyphScale: CGFloat = 0.62) -> NSBitmapImageRep? {
         )
     }
 
-    // Subtle inner glow — slightly lighter at top-left
+    // Inner glow strongest at the upper left.
     let glowColors = [
         CGColor(red: 1, green: 1, blue: 1, alpha: 0.10),
         CGColor(red: 1, green: 1, blue: 1, alpha: 0),
@@ -133,12 +126,9 @@ func makeIcon(size: CGFloat, glyphScale: CGFloat = 0.62) -> NSBitmapImageRep? {
         )
     }
 
-    // The nanny bell, in the brand accent. The artwork is one flat shape, so unlike the
-    // old bell.badge.fill there's no separate badge layer to colour, so the glyph
-    // itself carries the accent.
     if let glyph = tinted(glyphURL, color: accent, size: size * glyphScale) {
-        // Centre on the glyph's actual ink: the shared crop box is sized to fit
-        // the slashed variant too, so the plain bell sits inside extra margin.
+        // Center on visible ink because the shared crop also includes space for the slashed
+        // variant.
         let ink = inkBounds(of: glyph) ?? CGRect(origin: .zero, size: glyph.size)
         let ox = (size - ink.width) / 2 - ink.minX
         let oy = (size - ink.height) / 2 - ink.minY
@@ -184,13 +174,11 @@ try task.run()
 task.waitUntilExit()
 print("\nwrote \(icnsURL.path)")
 
-// Website assets, generated from the same source so the GitHub Pages site and
-// the app icon can't drift apart. The favicon gets a zoomed glyph: at 32px the
-// standard inset turns the bonnet's detail into an orange smudge.
+// Generate site icons from the same artwork; enlarge the favicon glyph for clarity at 32 pixels.
 let siteAssets = here.appendingPathComponent("site/assets")
 if FileManager.default.fileExists(atPath: siteAssets.path) {
     let webIcons: [(name: String, px: CGFloat, glyphScale: CGFloat)] = [
-        ("icon-512.png",          512, 0.62),   // OG / Twitter card, hero, nav
+        ("icon-512.png",          512, 0.62),
         ("apple-touch-icon.png",  180, 0.62),
         ("favicon-32.png",         32, 0.82),
     ]

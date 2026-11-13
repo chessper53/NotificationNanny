@@ -1,25 +1,6 @@
 #!/usr/bin/env bash
-# Measures the custom banner against the real Notification Center banner.
-#
-#   scripts/banner-lab/run.sh            capture real + ours in the current
-#                                        appearance, then score
-#   scripts/banner-lab/run.sh --light    the same in Light Mode (switches the
-#                                        system appearance and restores it)
-#   scripts/banner-lab/run.sh --both     both appearances
-#
-# Output lands in build/banner-lab: captures under cap/<appearance>/, and a
-# side by side sheet-<appearance>-ours.png per run. Lower scores are closer; see score.py.
-# For a quick look at a parameter change without touching the app, the lab's
-# `cand` mode renders an AppKit mock-up instead (see lab.swift).
-#
-# The app's CustomOverlay.swift is compiled straight into the lab, so what is
-# measured is the real view. The Command Line Tools ship no SwiftUI macro
-# plugin, so expand_state.py first rewrites its @State properties into the
-# State<T> storage the macro would have produced.
-#
-# Needs Accessibility and Screen Recording for the app running this, and
-# Pillow + NumPy for scoring. Keep NotificationNanny's banner animation on
-# Default while it runs, or quit it, so the real banner stays the real one.
+# Compare the app's actual banner view with native captures. Commands and prerequisites are in
+# docs/LABS.md.
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 
@@ -31,7 +12,6 @@ mkdir -p "$OUT/src"
 echo "==> Building lab"
 python3 "$LAB/expand_state.py" Sources/NotificationNannyCore/UI/Overlay/CustomOverlay.swift "$OUT/src/CustomOverlay.swift"
 cp "$LAB/lab.swift" "$OUT/src/main.swift"
-# What the overlay uses from the rest of the app: hover, its strings, the colour tokens.
 CORE=Sources/NotificationNannyCore
 swiftc -O -D PROD -package-name NotificationNanny -o "$OUT/lab" "$OUT/src/main.swift" "$OUT/src/CustomOverlay.swift" \
     "$CORE/UI/ActiveHover.swift" "$CORE/System/LocalizationManager.swift" "$CORE/UI/NannyColors.swift"

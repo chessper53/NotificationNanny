@@ -1,13 +1,5 @@
-"""How a recording settles: each frame's difference from the last one, which is what is
-left once everything has gone.
-
-    python3 settle.py recording.mov
-
-Prints one number per frame, the share of pixels that still differ from the last frame,
-and the frame rate. A panel leaving cleanly falls to 0 once and stays there; anything
-that shows up after it, such as the real panel drawing its way out, comes back as a
-second bump. Numbers only; no frame is kept.
-"""
+"""Measure frame differences from the final settled frame to reveal panels reappearing during exit.
+Print differences and frame rate only; retain no captured frames."""
 import json, os, subprocess, sys, tempfile
 import numpy as np
 from PIL import Image

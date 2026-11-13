@@ -1,8 +1,7 @@
 import Foundation
 
 extension AppSettings {
-    /// Only the opt-in live test runner uses this store. Normal launches keep their
-    /// usual preferences; malformed test configuration must fail before AX binds.
+    /// Isolate explicitly enabled live tests; reject invalid configuration before attaching AX.
     package static func forAppLaunch(environment: [String: String] = ProcessInfo.processInfo.environment) throws -> AppSettings {
         guard let path = environment["NN_E2E_DIRECTORY"] else { return AppSettings() }
         guard environment["NN_LAB"] == "1" else { throw E2EConfigurationError.labModeRequired }

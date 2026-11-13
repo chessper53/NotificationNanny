@@ -1,20 +1,11 @@
 @preconcurrency import ApplicationServices
 import Foundation
 
-/// An app's own buttons on a notification, such as Reply, Archive or Snooze, used from
-/// the custom banner and the custom Notification Center.
-///
-/// Notification Center lists them as custom actions of the notification's element,
-/// next to its own (Close, Show Details…), and performing one reaches the app exactly as
-/// a click on the button does. A reply is Notification Center's own text field: the
-/// app's reply action shows it, together with a send action that replaces the reply
-/// one, and real keystrokes land in it once it has the focus, even with the real banner
-/// or panel off screen. All measured on 27.0 with scripts/panel-lab (`act`, `type`,
-/// `panel-reply`) against a Lab app that logs what reaches it.
+/// Forwards app actions to native notifications and mirrors native reply fields.
+/// AX actions reach the notifying app even while the native host is parked.
 @MainActor
 final class NotificationActions {
-    /// The app's actions a notification offered before one of them was used, by
-    /// notification ID; the send action of a reply is the one that is new after.
+    /// Actions offered before opening a reply; the newly offered action sends it.
     private var offeredBefore: [String: [String]] = [:]
 
     /// The app's own actions on the notification, in Notification Center's order.
@@ -22,7 +13,7 @@ final class NotificationActions {
         appActions(of: el, builtIn: NCActionNames.builtIn)
     }
 
-    /// The same, off the main thread, with Notification Center's own names given.
+    /// Accepts native built in names explicitly for reads off the main thread.
     nonisolated static func appActions(of el: AXUIElement, builtIn: Set<String>) -> [String] {
         var ref: CFArray?
         guard AXUIElementCopyActionNames(el, &ref) == .success, let actions = ref as? [String] else { return [] }
@@ -30,7 +21,7 @@ final class NotificationActions {
             .filter { !builtIn.contains($0) }
     }
 
-    /// Expanded to show its buttons ("Show Details" was used): it now offers Hide Details.
+    /// Hide Details is offered only while the native action buttons are expanded.
     static func isExpanded(_ el: AXUIElement) -> Bool {
         isExpanded(el, hideDetails: NCActionNames.hideDetails)
     }
@@ -52,14 +43,12 @@ final class NotificationActions {
         return nil
     }
 
-    /// Shows or hides the notification's buttons, as its chevron does.
     func toggleDetails(of el: AXUIElement) {
         let names = Self.isExpanded(el) ? NCActionNames.hideDetails : NCActionNames.showDetails
         el.performCustomAction(namedAnyOf: names)
     }
 
-    /// Uses one of the app's actions. If it opens a reply field, the field gets the focus,
-    /// so typing goes there; `then` runs once that is known.
+    /// Perform an app action, focus any reply field, and report whether it opened to `then`.
     func perform(_ name: String, id: String, on el: AXUIElement, then: @escaping (_ opensReply: Bool) -> Void) {
         offeredBefore[id] = Self.appActions(of: el)
         el.performCustomAction(namedAnyOf: [name])
@@ -70,8 +59,8 @@ final class NotificationActions {
         }
     }
 
-    /// The action that sends the reply: the one offered now that wasn't before the reply
-    /// opened. Unknown, for a reply opened before this ran, it is the last of the app's.
+    /// Finds the new action offered after a reply opens; falls back to the last app action if
+    /// unknown.
     func sendAction(id: String, on el: AXUIElement) -> String? {
         let now = Self.appActions(of: el)
         if let before = offeredBefore[id], let new = now.first(where: { !before.contains($0) }) { return new }

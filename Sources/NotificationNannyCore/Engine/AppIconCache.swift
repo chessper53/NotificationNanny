@@ -1,24 +1,15 @@
 import AppKit
 
-/// Resolves and caches app icons by the app name Notification Center shows, so
-/// `NotificationRepositioner` doesn't hit `NSWorkspace` or the disk for every banner.
-///
-/// The name is all there is to go on: a banner exposes no bundle identifier and no
-/// image over Accessibility. It is the app's display name, which often differs from
-/// its file name ("Find My" is FindMy.app, "Minecraft Launcher" is Minecraft.app) and
-/// the app need not be running or sit at the top of /Applications. Guessing
-/// `<name>.app` in four folders missed about one installed app in eight, and every
-/// miss is a custom banner drawn with a bell instead of the app's icon.
+/// Caches icons by display name because banners expose neither icons nor bundle identifiers over
+/// AX.
 @MainActor
 final class AppIconCache {
-    /// Shared across the repositioner's hot lookup path and the Exceptions tab's app
-    /// picker, so an icon resolved once isn't resolved again for the same name.
+    /// Share cached icons between banner rendering and the app picker.
     static let shared = AppIconCache()
 
     private var cache: [String: NSImage] = [:]
-    /// When each name last failed to resolve. A miss is retried once this is older
-    /// than `missRetryInterval`, which covers an app installed after launch without
-    /// rescanning the disk on every banner from an app that has no icon to find.
+    /// Retry misses after `missRetryInterval` to find newly installed apps without repeated disk
+    /// scans.
     private var misses: [String: Date] = [:]
     private var index: InstalledAppIndex?
     private var indexBuiltAt = Date.distantPast
@@ -55,8 +46,7 @@ final class AppIconCache {
         return icon
     }
 
-    /// Builds the installed app index off the main thread, so the first custom
-    /// banner from an app that isn't running doesn't wait on a disk scan.
+    /// Prewarm the index off the main thread to avoid delaying the first icon lookup.
     func prewarm() {
         guard index == nil else { return }
         let roots = roots
@@ -90,9 +80,7 @@ final class AppIconCache {
         }), let icon = app.icon {
             return icon
         }
-        // The index is built once and rebuilt at most every `missRetryInterval`, and
-        // only when it could not answer, so a newly installed app is found without
-        // rescanning for every notification.
+        // Rebuild on an expired miss so newly installed apps become discoverable.
         if index == nil || (index?.url(for: key) == nil && now().timeIntervalSince(indexBuiltAt) >= missRetryInterval) {
             index = InstalledAppIndex(roots: roots)
             indexBuiltAt = now()
@@ -102,14 +90,11 @@ final class AppIconCache {
     }
 }
 
-/// Installed apps keyed by every name Notification Center might show for them: the
-/// localized display name, `CFBundleDisplayName`, `CFBundleName`, and the file name.
+/// Indexes installed apps by localized display name, bundle names, and file name.
 struct InstalledAppIndex: Sendable {
     struct Root: Sendable {
         let url: URL
-        /// How many folders down to look. Apps nest one or two deep in /Applications
-        /// (Utilities, Setapp, Chrome web apps, vendor folders); CoreServices only has
-        /// agents worth finding at the top, and over a thousand folders below that.
+        /// Bound recursion for app folders; CoreServices agents are indexed only at the top level.
         let depth: Int
     }
 
@@ -123,8 +108,7 @@ struct InstalledAppIndex: Sendable {
     private var byName: [String: URL] = [:]
     private let languages: [String]
 
-    /// - Parameter languages: the user's languages, which Notification Center names
-    ///   apps in. Nil reads them from the system; see `systemLanguages`.
+    /// Uses the supplied languages for app names, or the system languages when nil.
     init(roots: [Root], languages: [String]? = nil) {
         self.languages = languages ?? Self.systemLanguages()
         for root in roots { scan(root.url, depth: 0, maxDepth: root.depth) }
@@ -132,21 +116,16 @@ struct InstalledAppIndex: Sendable {
 
     private static let nameKeys = ["CFBundleDisplayName", "CFBundleName"]
 
-    /// The languages set for the whole system. Not `Locale.preferredLanguages`: that is
-    /// NotificationNanny's own list, which follows its language setting, while
-    /// Notification Center names apps in the system's languages.
+    /// Uses system languages because Notification Center does not follow this app's language
+    /// setting.
     static func systemLanguages() -> [String] {
         let global = CFPreferencesCopyValue("AppleLanguages" as CFString, kCFPreferencesAnyApplication,
                                             kCFPreferencesCurrentUser, kCFPreferencesAnyHost)
         return (global as? [String]) ?? Locale.preferredLanguages
     }
 
-    /// The app's name in the first of `languages` it has a translation for.
-    /// `FileManager.displayName` answers in a language NotificationNanny itself
-    /// ships, so on a Korean system it gives "KakaoTalk" while Notification Center
-    /// shows "카카오톡". System apps keep every translation in one
-    /// `InfoPlist.loctable`; other apps have an `InfoPlist.strings` per `.lproj`.
-    /// Nothing to do for English, which the Info.plist names already are.
+    /// Read the first available system translation directly; FileManager localizes only to
+    /// languages this app ships.
     static func localizedNames(of app: URL, languages: [String]) -> [String] {
         guard let first = languages.first, !first.hasPrefix("en") else { return [] }
         let resources = app.appendingPathComponent("Contents/Resources")
@@ -171,15 +150,13 @@ struct InstalledAppIndex: Sendable {
 
     func url(for key: String) -> URL? { byName[key] }
 
-    /// Case, diacritic and invisible character insensitive, so "WhatsApp" with the
-    /// U+200E that WhatsApp puts in front of its name still matches.
+    /// Normalize case, diacritics, and invisible characters such as WhatsApp's U+200E prefix.
     static func key(_ name: String) -> String {
         cleanAXString(name).folding(options: [.caseInsensitive, .diacriticInsensitive], locale: nil)
     }
 
     private mutating func scan(_ dir: URL, depth: Int, maxDepth: Int) {
-        // Not .skipsHiddenFiles: /Applications/Safari.app is a symlink into the
-        // system cryptex with the hidden flag set, and would be skipped with it.
+        // Include hidden entries: Safari.app is a hidden symlink into the system cryptex.
         guard let items = try? FileManager.default.contentsOfDirectory(
             at: dir, includingPropertiesForKeys: [.isDirectoryKey], options: [])
         else { return }
@@ -193,9 +170,7 @@ struct InstalledAppIndex: Sendable {
     }
 
     private mutating func add(_ app: URL) {
-        // displayName is the localized name Launch Services shows, which is what
-        // Notification Center shows. Reading Info.plist directly rather than through
-        // Bundle is about six times faster, and this runs for every installed app.
+        // Read Info.plist directly to avoid Bundle overhead for every installed app.
         var names = [
             app.deletingPathExtension().lastPathComponent,
             FileManager.default.displayName(atPath: app.path),

@@ -3,16 +3,13 @@ import Foundation
 import Testing
 @testable import NotificationNannyCore
 
-// Placement of a pile of banners. Since macOS 26 banners that are up
-// together share one host, newest on top, and they are placed as one block:
-// growing upward from a bottom corner, and kept on screen as a whole.
 @Suite("Banner pile geometry") @MainActor
 struct BannerPileGeometryTests {
 
     private let frame = CGRect(x: 0, y: 25, width: 1000, height: 700)   // AX coords, below a menu bar
     private let banner = CGSize(width: 344, height: 58)
 
-    // MARK: - clamp
+    // MARK: Clamp
 
     @Test func clamp_leavesARectThatFits() {
         let p = CGPoint(x: 100, y: 200)
@@ -42,7 +39,7 @@ struct BannerPileGeometryTests {
         #expect(p.y == frame.minY)
     }
 
-    // MARK: - axStackOrigin
+    // MARK: axStackOrigin
 
     /// Bottom positions place the pile's bottom where a single banner's bottom
     /// would be, so it grows upward.
@@ -67,8 +64,8 @@ struct BannerPileGeometryTests {
         }
     }
 
-    /// A single banner within the screen lands exactly where it did before piles.
-    /// (Offsets stay inside the 8 pt built-in inset, so nothing needs clamping.)
+    /// Offsets remain within the 8 point inset, so clamping should not change single banner
+    /// placement.
     @Test func singleBanner_unchangedWhenOnScreen() throws {
         let screen = try #require(NSScreen.main)
         for pos in NotificationPosition.allCases {
@@ -79,8 +76,6 @@ struct BannerPileGeometryTests {
         }
     }
 
-    /// The reported setup: bottom right, pushed up by an offset. The pile grows
-    /// up from that spot, and an offset pushing it past an edge is pulled back.
     @Test func offsets_neverPushThePileOffScreen() throws {
         let screen = try #require(NSScreen.main)
         let visible = NotificationPosition.axVisibleFrame(of: screen)

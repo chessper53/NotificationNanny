@@ -2,10 +2,8 @@ import AppKit
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// The sound notifications play: one for All apps, and sound groups of a few apps with
-/// their own. Laid out like the Banner tab, a row of groups on top and the chosen one's
-/// cards under it. Everything starts on Default, each app's own sound as macOS plays it,
-/// and a new group starts on the same as All apps.
+/// Global and group sound cards; new groups inherit All apps, whose default leaves native sounds
+/// unchanged.
 struct SoundsTabView: View {
     @EnvironmentObject var settings: AppSettings
 
@@ -52,9 +50,8 @@ struct SoundsTabView: View {
         }
     }
 
-    /// macOS plays the app's own sound as well, and only the user can turn it off. Its
-    /// way there belongs to this card, so it sits in the card's header; a full width
-    /// button is for a tab's one main action.
+    /// Only the user can disable native app sounds; keep the System Settings link in this card's
+    /// header.
     private var systemSoundCard: some View {
         SettingsCard {
             SettingsCardHeader(titleKey: "macOS sounds") {
@@ -67,7 +64,6 @@ struct SoundsTabView: View {
     }
 }
 
-/// One sound group's cards: its apps, its sound, and how loud.
 struct SoundGroupEditor: View {
     let groupID: UUID
 
@@ -114,8 +110,7 @@ struct SoundGroupEditor: View {
     }
 }
 
-/// The sounds as a grid of chips: Default first, the Mac's sounds, a picked file, and a
-/// chip to pick one. Picking a sound plays it.
+/// Sound choices and a preview on selection; Default leaves native sounds unchanged.
 private struct SoundPickerCard: View {
     /// nil while a group follows All apps.
     let current: NotificationSoundChoice?
@@ -125,20 +120,18 @@ private struct SoundPickerCard: View {
     let playing: String?
     let volume: Double
     let noteKey: String
-    /// What the file picker asks for: a sound for all apps, or for this sound group.
     let chooseMessageKey: String
     let onPick: (NotificationSoundChoice?) -> Void
 
     @ObservedObject private var loc = LocalizationManager.shared
-    /// Read once: the Library's sounds don't change while the tab is open.
     @State private var library = NotificationSoundLibrary.available()
 
     var body: some View {
         SettingsCard {
             SettingsCardHeader(titleKey: "Sound") {
                 HStack(spacing: 12) {
-                    // An action, not one of the sounds, so it sits with Play rather than
-                    // among them, where its name was cut to fit a chip.
+                    // Keep file selection with card actions so it cannot be mistaken for a sound
+                    // choice.
                     CardActionButton(titleKey: "Choose File…", systemImage: "folder") { chooseFile() }
                     if let playing {
                         CardActionButton(titleKey: "Play", systemImage: "play.fill") {
@@ -151,8 +144,7 @@ private struct SoundPickerCard: View {
                 FollowChip(titleKey: "Same as All apps", selected: current == nil) { onPick(nil) }
             }
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 94), spacing: 8)], spacing: 8) {
-                // A bell, the app's own notification sound: the struck-through ring the
-                // colours use for "none" read here as no sound at all.
+                // Use a bell for the native sound; a struck through ring would imply silence.
                 ChoiceChip(title: loc.string("Default"), systemImage: "bell", selected: current == .macOS) {
                     onPick(.macOS)
                 }
@@ -190,7 +182,6 @@ private struct SoundPickerCard: View {
     }
 }
 
-/// How loud a sound plays, heard once the slider is let go.
 private struct SoundVolumeCard: View {
     @Binding var volume: Double
     let sound: String?
@@ -203,7 +194,7 @@ private struct SoundVolumeCard: View {
             HStack(spacing: 8) {
                 Image(systemName: "speaker.fill").font(.caption2).foregroundStyle(.secondary)
                 Slider(value: $volume, in: 0.05...1) { editing in
-                    // Heard once let go, at the new volume, not on every step of the drag.
+                    // Preview once on release, not on every slider step.
                     if !editing, let sound { SoundPlayer.shared.play(sound, volume: volume) }
                 }
                 .controlSize(.mini)

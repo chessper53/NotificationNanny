@@ -1,8 +1,7 @@
 import SwiftUI
 import AppKit
 
-/// Diagnostics & developer tools: health checks, the activity log, and tools for reproducing /
-/// inspecting notification edge cases. The single place to gather everything for a bug report.
+/// Diagnostics, activity logs, and tools for reproducing notification issues.
 struct DebugTabView: View {
     @EnvironmentObject var settings: AppSettings
     @EnvironmentObject var repositioner: NotificationRepositioner
@@ -19,7 +18,6 @@ struct DebugTabView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            // MARK: One-tap report — everything a bug report needs, on the clipboard.
             VStack(alignment: .leading, spacing: 10) {
                 Label {
                     LocalizedText("Diagnostics")
@@ -52,7 +50,6 @@ struct DebugTabView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .settingsCardBackground()
 
-            // MARK: Developer — repro a pasted report, inspect logs, drive edge cases.
             CollapsibleSection(title: "Developer", systemImage: "hammer") {
                 EmptyView()
             } content: {
@@ -170,7 +167,7 @@ struct DebugTabView: View {
         }
     }
 
-    // MARK: Edge-case tools
+    // MARK: Reproduction tools
 
     private var edgeCaseTools: some View {
         CollapsibleSection(title: "Edge-case tools", systemImage: "hammer") {
@@ -227,8 +224,7 @@ struct DebugTabView: View {
     }
 }
 
-/// A titled card whose body collapses/expands. Header shows an icon + title, optional trailing
-/// controls (only while expanded), and a rotating chevron.
+/// Collapsible card with trailing controls visible only while expanded.
 private struct CollapsibleSection<Trailing: View, Content: View>: View {
     let title: String
     let systemImage: String

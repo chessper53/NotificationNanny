@@ -1,13 +1,6 @@
 #!/usr/bin/env bash
-# Starts a NotificationNanny release.
-#
-# Usage: ./scripts/release.sh <version>   e.g.  ./scripts/release.sh 8.1.0
-#
-# Checks that main is clean, up to date and says this version in VERSION, then tags it
-# and pushes the tag. .github/workflows/release.yml does the rest: builds and signs
-# once, checks the archive, publishes the release, updates the cask on main. Nothing is
-# built or uploaded from here: a release built here and the one built there used to
-# race for the same release and the same cask line.
+# Validate main and VERSION, then tag and push for the release workflow.
+# The workflow alone builds and publishes; see docs/RELEASING.md.
 
 set -euo pipefail
 cd "$(dirname "$0")/.."

@@ -4,9 +4,7 @@ import os
 
 private let log = Logger(subsystem: "com.notificationnanny", category: "probe")
 
-/// Diagnostics: enumerate all on-screen windows via CGWindowList and log
-/// candidates that look like notification banners. Used to figure out which
-/// process actually draws notifications on the running macOS version.
+/// Logs candidate banner windows to identify the drawing process on the current macOS version.
 enum NotificationProbe {
     static func dumpOnScreenWindows(tag: String) {
         let opts: CGWindowListOption = [.optionOnScreenOnly, .excludeDesktopElements]
@@ -33,9 +31,7 @@ enum NotificationProbe {
 
             byOwner[owner, default: 0] += 1
 
-            // Banner heuristic: smallish floating window above normal layer
-            // (notification banners typically use layer 8/19/24 and are
-            // 300–500 wide × 70–200 tall).
+            // Heuristic: a small floating window above the normal layer.
             if layer >= 1, width >= 200, width <= 600, height >= 50, height <= 250 {
                 candidates.append(
                     "  candidate: \(owner) pid=\(pid) layer=\(layer) "

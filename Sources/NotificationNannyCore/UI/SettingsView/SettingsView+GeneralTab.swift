@@ -47,9 +47,8 @@ struct GeneralTabView: View {
                     set: { launchAtLogin.setEnabled($0) }
                 ))
                 Divider().padding(.leading, 14)
-                // Hiding the icon removes the only visible way back into Settings,
-                // so turning it on asks first and names the way back. Turning it
-                // off needs no ceremony, hence the asymmetric binding.
+                // Confirm hiding the only visible Settings entry; showing the icon needs no
+                // confirmation.
                 toggleRow("Hide menu bar icon", isOn: Binding(
                     get: { settings.hideMenuBarIcon },
                     set: { shouldHide in
@@ -100,9 +99,6 @@ struct GeneralTabView: View {
                 Text(error).font(.caption2).foregroundStyle(.red)
             }
 
-            // Import/export was its own sidebar tab. It is app-wide data
-            // management that sits naturally beside Reset All Settings, and as a
-            // top-level item its label wrapped onto two lines in the sidebar.
             VStack(alignment: .leading, spacing: 6) {
                 LocalizedText("Import & Export")
                     .textCase(.uppercase)
@@ -145,9 +141,7 @@ struct GeneralTabView: View {
         }
     }
 
-    /// Pause during Focus reads the Focus state from a file macOS keeps behind Full Disk
-    /// Access. Without it the state always reads as off and the switch does nothing, which
-    /// only the log said.
+    /// Explain unreadable Focus state and offer Full Disk Access settings.
     private var focusAccessRow: some View {
         HStack(alignment: .top, spacing: 8) {
             Image(systemName: "exclamationmark.circle").foregroundStyle(.secondary)

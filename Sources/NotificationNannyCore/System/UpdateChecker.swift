@@ -10,7 +10,7 @@ enum UpdateChecker {
     static func fetchNewerVersion() async -> String? {
         guard let url = URL(string: "https://api.github.com/repos/chessper53/NotificationNanny/releases/latest"),
               let current = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String,
-              !current.hasPrefix("$"),  // guard: build script didn't substitute MARKETING_VERSION
+              !current.hasPrefix("$"),  // Ignore an unsubstituted build version.
               !current.isEmpty
         else { return nil }
         do {

@@ -1,7 +1,6 @@
 import Testing
 @testable import NotificationNannyCore
 
-/// A notification's text never goes into the log outside lab runs: only its length.
 @Suite("Log privacy")
 struct LogPrivacyTests {
     @Test func textBecomesItsLength() {

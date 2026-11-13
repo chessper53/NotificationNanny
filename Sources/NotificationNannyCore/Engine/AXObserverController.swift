@@ -1,10 +1,7 @@
 import AppKit
 @preconcurrency import ApplicationServices
 
-/// Owns AXObserver attach/detach lifecycle and NC-process discovery — the "am I watching the
-/// right process, and is the C callback wired up" concern, isolated from
-/// `NotificationRepositioner`'s banner-decision and reposition-state logic. Delivers every raw
-/// AX event to a single `onEvent` closure; the repositioner decides what to do with each one.
+/// Owns the Notification Center observer lifecycle and forwards AX events to `onEvent`.
 @MainActor
 final class AXObserverController {
     private(set) var isObserving = false
@@ -16,20 +13,14 @@ final class AXObserverController {
     /// Why the last start failed, for the log; nil after one that worked.
     private(set) var lastStartFailure: String?
 
-    /// Without these, banners are never seen: layout changes are the only sign one arrived
-    /// (see watchedNotifications), and destroyed elements end overlays and sounds. The rest
-    /// help, and a start goes on without them.
+    /// Layout changes announce arrivals; destroyed elements end overlays and sounds. Both are
+    /// required.
     private static let requiredNotifications: Set<String> = [
         kAXLayoutChangedNotification, kAXUIElementDestroyedNotification,
     ]
 
-    /// `kAXLayoutChangedNotification` matters from macOS 26 on. A banner is no longer its own
-    /// window: it is a SwiftUI view added inside one persistent fullscreen `AXSystemDialog`
-    /// host. Because that host is not torn down between banners, `kAXWindowCreatedNotification`
-    /// never fires for a banner at all — measured as 0 on 27.0, against 3 layout-changed events
-    /// per banner. Layout-changed is the only arrival signal, so without it a banner is only
-    /// ever repositioned by accident, when some *other* element's destroy event happens to
-    /// trigger a sweep.
+    /// From macOS 26, banners share a persistent host, so arrivals need layout events, not new
+    /// windows.
     private static let watchedNotifications: [String] = [
         kAXWindowCreatedNotification, kAXFocusedWindowChangedNotification,
         kAXWindowMovedNotification, kAXMainWindowChangedNotification,
@@ -45,8 +36,8 @@ final class AXObserverController {
         }
     }
 
-    /// Attaches to the NC process and starts delivering AX events to `onEvent`. Returns false
-    /// if the NC process couldn't be found (caller should retry once it launches).
+    /// Starts delivering AX events; returns false if discovery, observer creation, or a required
+    /// subscription fails.
     @discardableResult
     func start(onEvent: @escaping (AXUIElement, String) -> Void) -> Bool {
         stop()
@@ -58,11 +49,8 @@ final class AXObserverController {
             lastStartFailure = "Notification Center isn't running"
             return false
         }
-        // Every call into Notification Center otherwise waits up to the system default of
-        // six seconds. Right after a display wake NC was measured taking about fifteen
-        // seconds to answer; at six seconds per call a sweep stalled the main thread and
-        // banners stayed native meanwhile. Failing fast lets the next sweep catch up the
-        // moment NC answers again. Set on the system-wide element, it covers every element.
+        // Bound waits across all AX elements so an unresponsive Notification Center cannot stall
+        // each call for six seconds.
         AXUIElementSetMessagingTimeout(AXUIElementCreateSystemWide(), Self.messagingTimeout)
         let app = AXUIElementCreateApplication(pid)
 
@@ -73,7 +61,6 @@ final class AXObserverController {
             return false
         }
 
-        // Its answers were ignored, and observing was reported whatever they were.
         let selfPtr = Unmanaged.passUnretained(self).toOpaque()
         var failed: [String] = []
         for name in Self.watchedNotifications {
@@ -108,18 +95,16 @@ final class AXObserverController {
         onEvent = nil
     }
 
-    /// The PID Notification Center runs under right now, or 0 if it isn't running. Differs from
-    /// `ncPid` once NC has been relaunched under us, which macOS does across a long sleep.
+    /// The current Notification Center PID, or 0 if absent; may differ from the observed PID after
+    /// a restart.
     var currentProcessPid: pid_t { Self.findNotificationProcessPid() }
 
     fileprivate func deliver(element: AXUIElement, notification: String) {
         onEvent?(element, notification)
     }
 
-    /// Finds the notification-center process: exact bundle ID match, then any running Apple app
-    /// whose bundle ID contains "notification", then a `CGWindowList` scan for a window owner
-    /// whose name contains "notification". No subprocess spawned. Never this app, whose bundle
-    /// ID and name both contain "notification": attached to itself, it reported observing.
+    /// Finds Notification Center by bundle ID, then Apple app or window owner name. Excludes this
+    /// app.
     private static func findNotificationProcessPid() -> pid_t {
         let ourPid = ProcessInfo.processInfo.processIdentifier
         if let app = NSRunningApplication
