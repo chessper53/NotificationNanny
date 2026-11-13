@@ -937,6 +937,8 @@ final class CustomBannerManager {
         let controller: BannerAnimationController
         var dismissTimer: DispatchSourceTimer?
         let onUnderlyingDismiss: (() -> Void)?
+        /// Its time is up: the overlay goes, the notification stays.
+        let onExpire: (() -> Void)?
         /// Kept so a live scale change can re-render the SwiftUI content instead
         /// of stretching the already-rendered view.
         let hosting: NSHostingView<CustomBannerView>
@@ -962,6 +964,7 @@ final class CustomBannerManager {
         animation: BannerAnimation = .default,
         onOpen: @escaping () -> Void,
         onUnderlyingDismiss: (() -> Void)? = nil,
+        onExpire: (() -> Void)? = nil,
         onAction: @escaping (String) -> Void = { _ in },
         onDetails: @escaping () -> Void = {},
         menuSource: BannerMenuSource? = nil,
@@ -1008,12 +1011,12 @@ final class CustomBannerManager {
         panel.orderFront(nil)
 
         var entry = Entry(panel: panel, controller: controller,
-                          onUnderlyingDismiss: onUnderlyingDismiss,
+                          onUnderlyingDismiss: onUnderlyingDismiss, onExpire: onExpire,
                           hosting: hosting, scale: s)
         if autoDismissSeconds > 0 {
             let timer = DispatchSource.makeTimerSource(queue: .main)
             timer.schedule(deadline: .now() + autoDismissSeconds)
-            timer.setEventHandler { [weak self] in self?.dismissFromUser(key: key) }
+            timer.setEventHandler { [weak self] in self?.expire(key: key) }
             timer.resume()
             entry.dismissTimer = timer
         }
@@ -1022,6 +1025,14 @@ final class CustomBannerManager {
 
     private func dismissFromUser(key: CFHashCode) {
         active[key]?.onUnderlyingDismiss?()
+        dismiss(key: key)
+    }
+
+    /// Auto-dismiss: the overlay goes and the notification is left as it is, so it ends up
+    /// in Notification Center as a banner timing out does. Closing it, as a click on ✕
+    /// does, took it out of Notification Center too.
+    private func expire(key: CFHashCode) {
+        active[key]?.onExpire?()
         dismiss(key: key)
     }
 
@@ -1073,7 +1084,7 @@ final class CustomBannerManager {
             guard autoDismissSeconds > 0 else { continue }
             let timer = DispatchSource.makeTimerSource(queue: .main)
             timer.schedule(deadline: .now() + autoDismissSeconds)
-            timer.setEventHandler { [weak self] in self?.dismiss(key: key) }
+            timer.setEventHandler { [weak self] in self?.expire(key: key) }
             timer.resume()
             active[key]?.dismissTimer = timer
         }
