@@ -19,21 +19,30 @@ final class NotificationActions {
 
     /// The app's own actions on the notification, in Notification Center's order.
     static func appActions(of el: AXUIElement) -> [String] {
+        appActions(of: el, builtIn: NCActionNames.builtIn)
+    }
+
+    /// The same, off the main thread, with Notification Center's own names given.
+    nonisolated static func appActions(of el: AXUIElement, builtIn: Set<String>) -> [String] {
         var ref: CFArray?
         guard AXUIElementCopyActionNames(el, &ref) == .success, let actions = ref as? [String] else { return [] }
         return actions.filter { $0.hasPrefix("Name:") }.map(customActionName)
-            .filter { !NCActionNames.builtIn.contains($0) }
+            .filter { !builtIn.contains($0) }
     }
 
     /// Expanded to show its buttons ("Show Details" was used): it now offers Hide Details.
     static func isExpanded(_ el: AXUIElement) -> Bool {
+        isExpanded(el, hideDetails: NCActionNames.hideDetails)
+    }
+
+    nonisolated static func isExpanded(_ el: AXUIElement, hideDetails: Set<String>) -> Bool {
         var ref: CFArray?
         guard AXUIElementCopyActionNames(el, &ref) == .success, let actions = ref as? [String] else { return false }
-        return actions.contains { NCActionNames.hideDetails.contains(customActionName($0)) }
+        return actions.contains { hideDetails.contains(customActionName($0)) }
     }
 
     /// The reply field Notification Center shows in the notification, if one is open.
-    static func replyField(in el: AXUIElement, depth: Int = 0) -> AXUIElement? {
+    nonisolated static func replyField(in el: AXUIElement, depth: Int = 0) -> AXUIElement? {
         guard depth < 6 else { return nil }
         if let role = el.stringAttribute(kAXRoleAttribute as String),
            role == (kAXTextAreaRole as String) || role == (kAXTextFieldRole as String) { return el }

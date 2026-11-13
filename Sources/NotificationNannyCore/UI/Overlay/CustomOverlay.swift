@@ -114,10 +114,13 @@ struct BannerContent: Equatable {
     /// What is typed in the real banner's open reply field; nil while none is open.
     var reply: String? = nil
     var replyPlaceholder = ""
+    /// Notification Center's time for a panel row ("27m ago"), drawn at the end of the
+    /// title's line; nil on banners.
+    var time: String? = nil
 
     static func == (l: BannerContent, r: BannerContent) -> Bool {
         l.appName == r.appName && l.title == r.title && l.subtitle == r.subtitle && l.body == r.body
-            && l.actions == r.actions && l.expanded == r.expanded && l.reply == r.reply
+            && l.actions == r.actions && l.expanded == r.expanded && l.reply == r.reply && l.time == r.time
     }
 }
 
@@ -491,13 +494,18 @@ struct BannerCard: View {
         /// The more menu (⋯) and the chevron, from the top right corner.
         static let moreFrame = CGRect(x: 299, y: 10, width: 20, height: 13)
         static let chevronFrame = CGRect(x: 318, y: 8, width: 19, height: 17)
+        /// What the title leaves free at its end for them: from the ⋯ to the text's edge
+        /// (344 wide, text 14 in from the right), and a little gap.
+        static let titleClearance: CGFloat = 344 - 14 - moreFrame.minX + 4
     }
 
     var body: some View {
         let shape = RoundedRectangle(cornerRadius: Metrics.cornerRadius * scale, style: .continuous)
         return VStack(spacing: 0) {
             summary
-            if content.expanded { expandedButtons }
+            // The buttons take what they need and the text the rest: a row of several
+            // lines keeps its own height above them rather than one line's.
+            if content.expanded { expandedButtons.fixedSize(horizontal: false, vertical: true) }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .background {
@@ -580,41 +588,68 @@ struct BannerCard: View {
             VStack(alignment: .leading, spacing: Metrics.lineSpacing * scale) {
                 // The system banner shows the app name in the title slot when a
                 // notification has no title, and never shows it anywhere else.
-                Text(content.title.isEmpty ? content.appName : content.title)
-                    .font(.system(size: Metrics.fontSize * scale, weight: .semibold))
-                    .foregroundStyle(titleStyle)
-                    .lineLimit(2)
-                    .blur(radius: redactContent ? 6 * scale : 0)
+                HStack(alignment: .firstTextBaseline, spacing: 6 * scale) {
+                    Text(content.title.isEmpty ? content.appName : content.title)
+                        .font(.system(size: Metrics.fontSize * scale, weight: .semibold))
+                        .foregroundStyle(titleStyle)
+                        .lineLimit(2)
+                        .blur(radius: redactContent ? 6 * scale : 0)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    // A panel row's time ends the title's line, so a long title stops
+                    // before it. Hovered, the chevron takes its place, and the title
+                    // keeps its width.
+                    if let time = content.time, !content.expanded {
+                        Text(time)
+                            .font(.system(size: 11 * scale).monospacedDigit())
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .fixedSize()
+                            .opacity(hovered || BannerLook.forceHover ? 0 : 1)
+                    }
+                }
+                // With its details shown, the ⋯ and chevron sit at the end of the line.
+                .padding(.trailing, content.expanded ? Expanded.titleClearance * scale : 0)
                 if !content.subtitle.isEmpty {
                     Text(content.subtitle)
                         .font(.system(size: Metrics.fontSize * scale, weight: .semibold))
                         .foregroundStyle(titleStyle)
                         .lineLimit(1)
                         .blur(radius: redactContent ? 6 * scale : 0)
+                        .layoutPriority(2)
                 }
                 if !content.body.isEmpty {
                     Text(content.body)
                         .font(.system(size: Metrics.fontSize * scale))
                         .foregroundStyle(bodyStyle)
-                        .lineLimit(3)
+                        .lineLimit(edge == .panelRow ? 4 : 3)
                         .blur(radius: redactContent ? 6 * scale : 0)
+                        // Notification Center fills the body first, up to four lines in its
+                        // panel, and gives the title a second line only with room to spare
+                        // (measured on 27.0, scripts/panel-lab `frames`).
+                        .layoutPriority(1)
                 }
             }
-            .fixedSize(horizontal: false, vertical: true)
+            // A banner is as tall as its text. A panel row has Notification Center's
+            // height, and its text fits in it, the body giving way first: at its full
+            // height it ran into the row below.
+            .fixedSize(horizontal: false, vertical: edge == .banner)
             // Vertical padding belongs to the text alone. The icon frame is taller
             // than a one line banner leaves room for between the paddings, and it
             // is centred in the full height on the system banner anyway.
             .padding(.top, Metrics.textTop * scale)
-            .padding(.bottom, Metrics.textBottom * scale)
+            // Our lines are a point taller than Notification Center's (two in 32, its in
+            // 31): a little slack, or its row of exactly two lines and one takes one less.
+            .padding(.bottom, (edge == .panelRow ? Metrics.textBottom - 2 : Metrics.textBottom) * scale)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .padding(.leading, Metrics.iconLeading * scale)
         .padding(.trailing, Metrics.textTrailing * scale)
-        // Collapsed it fills the banner and stays centred, as before; expanded it keeps
-        // the collapsed height, so the text doesn't move, with the buttons under it.
+        // Collapsed it fills the banner and stays centred, as before; expanded it fills
+        // what the buttons under it leave, at least a one line banner's height, so the
+        // text doesn't move.
         .frame(maxWidth: .infinity)
-        .frame(height: content.expanded ? Expanded.collapsedHeight * scale : nil)
-        .frame(maxHeight: content.expanded ? nil : .infinity)
+        .frame(minHeight: content.expanded ? Expanded.collapsedHeight * scale : nil)
+        .frame(maxHeight: .infinity)
     }
 
     // The system banner draws title, subtitle and body all in the label colour,
@@ -902,6 +937,8 @@ final class CustomBannerManager {
         let controller: BannerAnimationController
         var dismissTimer: DispatchSourceTimer?
         let onUnderlyingDismiss: (() -> Void)?
+        /// Its time is up: the overlay goes, the notification stays.
+        let onExpire: (() -> Void)?
         /// Kept so a live scale change can re-render the SwiftUI content instead
         /// of stretching the already-rendered view.
         let hosting: NSHostingView<CustomBannerView>
@@ -927,6 +964,7 @@ final class CustomBannerManager {
         animation: BannerAnimation = .default,
         onOpen: @escaping () -> Void,
         onUnderlyingDismiss: (() -> Void)? = nil,
+        onExpire: (() -> Void)? = nil,
         onAction: @escaping (String) -> Void = { _ in },
         onDetails: @escaping () -> Void = {},
         menuSource: BannerMenuSource? = nil,
@@ -973,12 +1011,12 @@ final class CustomBannerManager {
         panel.orderFront(nil)
 
         var entry = Entry(panel: panel, controller: controller,
-                          onUnderlyingDismiss: onUnderlyingDismiss,
+                          onUnderlyingDismiss: onUnderlyingDismiss, onExpire: onExpire,
                           hosting: hosting, scale: s)
         if autoDismissSeconds > 0 {
             let timer = DispatchSource.makeTimerSource(queue: .main)
             timer.schedule(deadline: .now() + autoDismissSeconds)
-            timer.setEventHandler { [weak self] in self?.dismissFromUser(key: key) }
+            timer.setEventHandler { [weak self] in self?.expire(key: key) }
             timer.resume()
             entry.dismissTimer = timer
         }
@@ -987,6 +1025,14 @@ final class CustomBannerManager {
 
     private func dismissFromUser(key: CFHashCode) {
         active[key]?.onUnderlyingDismiss?()
+        dismiss(key: key)
+    }
+
+    /// Auto-dismiss: the overlay goes and the notification is left as it is, so it ends up
+    /// in Notification Center as a banner timing out does. Closing it, as a click on ✕
+    /// does, took it out of Notification Center too.
+    private func expire(key: CFHashCode) {
+        active[key]?.onExpire?()
         dismiss(key: key)
     }
 
@@ -1038,7 +1084,7 @@ final class CustomBannerManager {
             guard autoDismissSeconds > 0 else { continue }
             let timer = DispatchSource.makeTimerSource(queue: .main)
             timer.schedule(deadline: .now() + autoDismissSeconds)
-            timer.setEventHandler { [weak self] in self?.dismiss(key: key) }
+            timer.setEventHandler { [weak self] in self?.expire(key: key) }
             timer.resume()
             active[key]?.dismissTimer = timer
         }

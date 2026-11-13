@@ -2,7 +2,7 @@ import AppKit
 
 /// Which appearance the Settings window is drawn in. Banners are not affected: a
 /// custom banner always follows macOS, because it stands in for the system one.
-package enum SettingsAppearance: String, CaseIterable, Identifiable {
+package enum SettingsAppearance: String, Codable, CaseIterable, Identifiable {
     case system
     case light
     case dark

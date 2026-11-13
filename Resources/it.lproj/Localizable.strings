@@ -261,3 +261,12 @@
 "Each app's own sound, as macOS plays it" = "Il suono di ogni app, come lo riproduce macOS";
 "Pick a sound for all apps" = "Scegli un suono per tutte le app";
 "Pick a sound for this sound group" = "Scegli un suono per questo gruppo di suoni";
+"Pause during Focus needs Full Disk Access. Without it, NotificationNanny can't tell when a Focus is on, so it never pauses. After allowing it, quit and reopen NotificationNanny." = "La pausa durante una modalità Full immersion richiede l’accesso completo al disco. Senza, NotificationNanny non sa quando una modalità è attiva e non si mette mai in pausa. Dopo averlo consentito, esci e riapri NotificationNanny.";
+"Import failed" = "Importazione non riuscita";
+"Export failed" = "Esportazione non riuscita";
+"This file isn't a NotificationNanny backup." = "Questo file non è un backup di NotificationNanny.";
+"This backup was made by a newer version of NotificationNanny. Update NotificationNanny, then import it again." = "Questo backup è stato creato da una versione più recente di NotificationNanny. Aggiorna NotificationNanny, poi importalo di nuovo.";
+"This backup has values NotificationNanny doesn't allow, so nothing was imported." = "Questo backup contiene valori che NotificationNanny non consente, quindi non è stato importato nulla.";
+"This file couldn't be read." = "Impossibile leggere questo file.";
+"The backup couldn't be saved." = "Impossibile salvare il backup.";
+"OK" = "OK";
