@@ -265,6 +265,7 @@ package final class NotificationRepositioner: ObservableObject {
         followTimer?.cancel()
         followTimer = nil
         closedBannerIDs.removeAll()
+        expiredBannerIDs.removeAll()
         unreadableBannerSweeps.removeAll()
         loggedSkippedKeys.removeAll()
         resolver.invalidateAll()
@@ -674,12 +675,14 @@ package final class NotificationRepositioner: ObservableObject {
         sweepBanners = [:]
         defer { sweepBanners = nil }
         playSounds(in: windows)
-        if !dismissTimers.armedIDs.isEmpty || !closedBannerIDs.isEmpty || !unreadableBannerSweeps.isEmpty
+        if !dismissTimers.armedIDs.isEmpty || !closedBannerIDs.isEmpty || !expiredBannerIDs.isEmpty
+            || !unreadableBannerSweeps.isEmpty
             || !bannerFirstSeen.isEmpty || !stackPresses.isEmpty {
             let refs = windows.flatMap { banners(in: $0) }
             let present = Set(refs.compactMap(\.id))
             dismissTimers.prune(keeping: present)
             closedBannerIDs.formIntersection(present)
+            expiredBannerIDs.formIntersection(present)
             // A collapsed stack hides the cards behind its top one. They're still
             // up, and forgetting when they came would reorder the pile once the
             // stack is open.
@@ -698,6 +701,10 @@ package final class NotificationRepositioner: ObservableObject {
         log.debug("repositionVisibleWindows: \(baseTargets.count) repositionable target(s)")
         for (i, (window, base)) in baseTargets.enumerated() {
             guard !sweepOverran else { break }
+            if allExpired(window) {
+                hideOffscreen(window, atX: base.windowOrigin.x)
+                continue
+            }
             let idx = baseTargets[..<i].filter { sameAnchor($0.1, base) }.count
             log.debug("repositionVisibleWindows: window[\(i)] stackIndex=\(idx) anchor=\(base.placement.position.rawValue, privacy: .public)")
             // `base` was computed above with stackIndex 0, and snapWindow would
@@ -855,6 +862,9 @@ package final class NotificationRepositioner: ObservableObject {
     /// Banners closed through their Close action. macOS takes a moment to remove
     /// them, and a sweep in that moment must not give them a fresh overlay.
     private var closedBannerIDs: Set<String> = []
+    /// Banners whose auto-dismiss time is up: no overlay and no place on screen any more,
+    /// and never closed, so the notification stays in Notification Center.
+    private var expiredBannerIDs: Set<String> = []
     /// When each banner was first seen (system uptime), for ordering a custom pile.
     private var bannerFirstSeen: [String: Double] = [:]
     /// Sweeps a banner's content could not be read in, so it gets a plain overlay
@@ -1567,6 +1577,10 @@ package final class NotificationRepositioner: ObservableObject {
             overlayContent.removeValue(forKey: CFHash(window))
         }
 
+        if allExpired(window) {
+            hideOffscreen(window, atX: info.windowOrigin.x)
+            return
+        }
         placeNative(window, at: info)
 
         scheduleHolds(window: window, stackIndex: stackIndex, generation: gen)
@@ -1688,9 +1702,24 @@ package final class NotificationRepositioner: ObservableObject {
         let ids = banners(in: window).compactMap(\.id)
         guard !ids.isEmpty else { return false }
         dismissTimers.arm(ids, delay: delay) { [weak self] id in
-            self?.closeBanner(id: id, reason: "Auto-dismiss")
+            self?.expireBanner(id: id)
         }
         return true
+    }
+
+    /// A banner's auto-dismiss time is up: off the screen, left in Notification Center.
+    private func expireBanner(id: String) {
+        guard !expiredBannerIDs.contains(id) else { return }
+        expiredBannerIDs.insert(id)
+        logger.log("Auto-dismiss: banner off screen, kept in Notification Center", tag: "Banner")
+        repositionVisibleWindows()
+    }
+
+    /// Every banner in the window has had its time: the window goes off screen, the
+    /// notifications stay in Notification Center.
+    private func allExpired(_ window: AXUIElement) -> Bool {
+        let ids = banners(in: window).compactMap(\.id)
+        return !ids.isEmpty && ids.allSatisfy { expiredBannerIDs.contains($0) || closedBannerIDs.contains($0) }
     }
 
     /// Closes one banner through its own Close action, the same as clicking its ✕
@@ -1860,7 +1889,7 @@ package final class NotificationRepositioner: ObservableObject {
         }
         let now = ProcessInfo.processInfo.systemUptime
         let items: [Item] = banners(in: window).compactMap { ref in
-            guard let id = ref.id, !closedBannerIDs.contains(id) else { return nil }
+            guard let id = ref.id, !closedBannerIDs.contains(id), !expiredBannerIDs.contains(id) else { return nil }
             let el = ref.element
             let description = el.stringAttribute("AXAttributedDescription") ?? ""
             let isTest = testGroupID != nil && pendingTestTitle.map { description.contains($0) } == true
@@ -2051,6 +2080,7 @@ package final class NotificationRepositioner: ObservableObject {
             animation: animation,
             onOpen: { [weak self] in self?.handleBannerTap(appName: tapName, bannerElement: element) },
             onUnderlyingDismiss: { [weak self] in self?.closeBanner(id: id, reason: "Custom banner dismissed") },
+            onExpire: { [weak self] in self?.expireBanner(id: id) },
             onAction: { [weak self] name in self?.performBannerAction(name, id: id) },
             onDetails: { [weak self] in self?.toggleBannerDetails(id: id) },
             menuSource: bannerMenu(id: id),
