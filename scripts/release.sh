@@ -1,68 +1,48 @@
 #!/usr/bin/env bash
-# Create a NotificationNanny release.
+# Starts a NotificationNanny release.
 #
-# Usage: ./scripts/release.sh <version>   e.g.  ./scripts/release.sh 3.0.0
+# Usage: ./scripts/release.sh <version>   e.g.  ./scripts/release.sh 8.1.0
 #
-# What it does:
-#   1. Builds a release .app with the given version stamped in Info.plist
-#   2. Packages it into a ZIP (using ditto, which preserves code-signing xattrs)
-#   3. Computes sha256
-#   4. Creates a GitHub release + uploads the ZIP
-#   5. Updates Casks/notificationnanny.rb with the new version + sha256
-#   6. Commits and pushes so the Homebrew tap picks up the change immediately
+# Checks that main is clean, up to date and says this version in VERSION, then tags it
+# and pushes the tag. .github/workflows/release.yml does the rest: builds and signs
+# once, checks the archive, publishes the release, updates the cask on main. Nothing is
+# built or uploaded from here: a release built here and the one built there used to
+# race for the same release and the same cask line.
 
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-VERSION="${1:?Usage: ./scripts/release.sh <version>  e.g.  ./scripts/release.sh 3.0.0}"
+VERSION="${1:?Usage: ./scripts/release.sh <version>  e.g.  ./scripts/release.sh 8.1.0}"
 TAG="v${VERSION}"
-ZIP_NAME="NotificationNanny-${VERSION}.zip"
-CASK_FILE="Casks/notificationnanny.rb"
 
-# Guard: require gh CLI
-if ! command -v gh &>/dev/null; then
-    echo "error: 'gh' CLI not found. Install with: brew install gh" >&2
-    exit 1
-fi
-
-# Guard: no uncommitted changes (cask commit needs a clean tree)
 if ! git diff --quiet || ! git diff --cached --quiet; then
-    echo "error: uncommitted changes in working tree. Commit or stash them first." >&2
+    echo "error: uncommitted changes. Commit or stash them first." >&2
     exit 1
 fi
 
-# Guard: tag must not already exist
-if git rev-parse "${TAG}" &>/dev/null; then
-    echo "error: tag ${TAG} already exists locally. Delete it first if you're re-releasing." >&2
+if [[ "$(git branch --show-current)" != "main" ]]; then
+    echo "error: release from main." >&2
     exit 1
 fi
 
-echo "==> Building ${VERSION}…"
-VERSION="${VERSION}" bash scripts/build-app.sh
+git fetch -q origin main --tags
+if [[ "$(git rev-parse HEAD)" != "$(git rev-parse origin/main)" ]]; then
+    echo "error: main isn't the same as origin/main. Pull or push first." >&2
+    exit 1
+fi
 
-echo "==> Packaging ${ZIP_NAME}…"
-rm -f "build/${ZIP_NAME}"
-ditto -c -k --sequesterRsrc --keepParent "build/NotificationNanny.app" "build/${ZIP_NAME}"
+if [[ "$(tr -d '[:space:]' < VERSION)" != "$VERSION" ]]; then
+    echo "error: VERSION says $(tr -d '[:space:]' < VERSION). Bump it to $VERSION in a commit on main first." >&2
+    exit 1
+fi
 
-SHA=$(shasum -a 256 "build/${ZIP_NAME}" | awk '{print $1}')
-echo "    sha256: ${SHA}"
+if git rev-parse -q --verify "refs/tags/${TAG}" >/dev/null; then
+    echo "error: tag ${TAG} already exists. To build it again: gh workflow run release.yml -f tag=${TAG}" >&2
+    exit 1
+fi
 
-echo "==> Publishing GitHub release ${TAG}…"
-gh release create "${TAG}" "build/${ZIP_NAME}" \
-    --title "NotificationNanny ${VERSION}" \
-    --generate-notes \
-    --latest
+git tag -a "${TAG}" -m "NotificationNanny ${VERSION}"
+git push -q origin "${TAG}"
 
-echo "==> Updating ${CASK_FILE}…"
-sed -i '' \
-    -e "s/version \"[^\"]*\"/version \"${VERSION}\"/" \
-    -e "s/sha256 \"[^\"]*\"/sha256 \"${SHA}\"/" \
-    "${CASK_FILE}"
-
-git add "${CASK_FILE}"
-git commit -m "cask: bump to ${TAG}"
-git push
-
-echo ""
-echo "Done! NotificationNanny ${VERSION} is live."
-echo "Users upgrade with:  brew update && brew upgrade --cask notificationnanny"
+echo "Tagged and pushed ${TAG}. The release workflow builds, checks and publishes it."
+echo "Follow it with:  gh run watch \$(gh run list --workflow release.yml --limit 1 --json databaseId -q '.[0].databaseId')"
