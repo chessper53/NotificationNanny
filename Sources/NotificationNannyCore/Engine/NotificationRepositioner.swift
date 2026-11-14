@@ -40,7 +40,7 @@ package final class NotificationRepositioner: ObservableObject {
 
     private lazy var sounds = NotificationSounds(logger: logger)
 
-    /// Experimental custom Notification Center; see NCPanelTakeover.
+    /// Custom Notification Center; see NCPanelTakeover.
     private lazy var panelTakeover: NCPanelTakeover = {
         let takeover = NCPanelTakeover(logger: logger)
         // A display chosen in Settings; otherwise the one whose clock was clicked.

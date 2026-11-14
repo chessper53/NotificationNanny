@@ -49,7 +49,7 @@ struct NotificationCenterTabView: View {
 
     private var mainCard: some View {
         SettingsCard {
-            SettingsToggleRow("Use NotificationNanny's Notification Center (experimental)",
+            SettingsToggleRow("Use NotificationNanny's Notification Center",
                               isOn: $settings.customNotificationCenter)
             SettingsNote("NotificationNanny can show its own list when you click the clock, in place of the Notification Center panel. Your notifications stay in Notification Center: this is another view of them, and everything you do in it goes back there.")
 

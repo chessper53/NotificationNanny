@@ -189,7 +189,7 @@
 "Notification Center doesn't share its times, so NotificationNanny notes when each banner appears. Notifications that came in while it wasn't running have no time." = "El Centro de notificaciones no comparte sus horas, así que NotificationNanny anota cuándo aparece cada aviso. Las notificaciones que llegaron mientras no se ejecutaba no tienen hora.";
 "NotificationNanny can show its own list when you click the clock, in place of the Notification Center panel. Your notifications stay in Notification Center: this is another view of them, and everything you do in it goes back there." = "NotificationNanny puede mostrar su propia lista al hacer clic en el reloj, en lugar del Centro de notificaciones. Tus notificaciones siguen en el Centro de notificaciones: esto es otra vista de ellas, y todo lo que hagas aquí se envía allí.";
 "Notification Center" = "Centro de notificaciones";
-"Use NotificationNanny's Notification Center (experimental)" = "Usar el Centro de notificaciones de NotificationNanny (experimental)";
+"Use NotificationNanny's Notification Center" = "Usar el Centro de notificaciones de NotificationNanny";
 "List" = "Lista";
 "App filter above your notifications" = "Filtro por app sobre las notificaciones";
 "A row of apps above the list; click one to see only its notifications." = "Una fila de apps sobre la lista; haz clic en una para ver solo sus notificaciones.";

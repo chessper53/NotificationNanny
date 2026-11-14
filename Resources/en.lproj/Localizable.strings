@@ -189,7 +189,7 @@
 "Notification Center doesn't share its times, so NotificationNanny notes when each banner appears. Notifications that came in while it wasn't running have no time." = "Notification Center doesn't share its times, so NotificationNanny notes when each banner appears. Notifications that came in while it wasn't running have no time.";
 "NotificationNanny can show its own list when you click the clock, in place of the Notification Center panel. Your notifications stay in Notification Center: this is another view of them, and everything you do in it goes back there." = "NotificationNanny can show its own list when you click the clock, in place of the Notification Center panel. Your notifications stay in Notification Center: this is another view of them, and everything you do in it goes back there.";
 "Notification Center" = "Notification Center";
-"Use NotificationNanny's Notification Center (experimental)" = "Use NotificationNanny's Notification Center (experimental)";
+"Use NotificationNanny's Notification Center" = "Use NotificationNanny's Notification Center";
 "List" = "List";
 "App filter above your notifications" = "App filter above your notifications";
 "A row of apps above the list; click one to see only its notifications." = "A row of apps above the list; click one to see only its notifications.";
