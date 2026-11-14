@@ -53,7 +53,8 @@ package struct SettingsView: View {
                     sidebarItem("Position",   systemImage: "rectangle.inset.topright.filled", tab: .position)
                     sidebarItem("Banner",     systemImage: "paintpalette",            tab: .banner)
                     sidebarItem("Notification Center", systemImage: "rectangle.rightthird.inset.filled", tab: .notificationCenter)
-                    sidebarItem("Sounds",     systemImage: "speaker.wave.2",          tab: .sounds)
+                    // Hidden for now: Sounds needs further testing before release.
+                    // sidebarItem("Sounds",     systemImage: "speaker.wave.2",          tab: .sounds)
                     sidebarItem("Presets",    systemImage: "rectangle.stack",         tab: .presets)
                     sidebarItem("General",    systemImage: "gearshape",               tab: .general)
                     Spacer()
