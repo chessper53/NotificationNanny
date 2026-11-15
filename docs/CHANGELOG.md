@@ -5,7 +5,7 @@ All notable changes to NotificationNanny are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [8.0.5] — 2026-11-15
 
 ### Added
 - **A Notification Center of its own (experimental).** With it on, clicking the clock opens NotificationNanny's list of your notifications in place of the system's panel. It is drawn like the system's, in Light and Dark Mode, with stacks, expanded groups, Show Less, Clear and Clear All, and everything you do in it goes to the real Notification Center, which stays open off screen. Rows take your banners' colour, text colour and privacy blur, and the panel has its own size, side of the screen, screen and animation. It can show when each notification arrived, filter by app, and show the real widgets, which needs Screen Recording and is off unless you turn it on. Widgets are left out otherwise.
