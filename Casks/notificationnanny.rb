@@ -1,6 +1,6 @@
 cask "notificationnanny" do
-  version "8.0.4"
-  sha256 "64e82b5b9807abc31bc9e9d09f1c5943e4595b68eaee6c2f81775b6cbbc23a88"
+  version "8.0.5"
+  sha256 "2f8646044c61ffd184d93882a3c06cc14030ff603903ec53aea20df32e8ef0a7"
 
   url "https://github.com/chessper53/NotificationNanny/releases/download/v#{version}/NotificationNanny-#{version}.zip"
   name "NotificationNanny"
