@@ -85,7 +85,7 @@ jobs:
           - name: banners and placement
             filter: 'NotificationNannyTests\.(BannerDecisionTests|BannerDismissTimersTests|BannerPileGeometryTests|NotificationPositionGeometryTests|NotificationPositionTests|ParkedWindowHomeTests|PileOrderTests|ScreenPlacementTests)'
           - name: Notification Center panel and widgets
-            filter: 'NotificationNannyTests\.(NCActionNamesTests|NCMenuTickTests|NCPanelModelTests|NCPanelOffsetTests|NCWidgetPlacementTests|WidgetBlankTests)'
+            filter: 'NotificationNannyTests\.(ClockClickQueueTests|ClockHitAreaTests|NCActionNamesTests|NCMenuTickTests|NCPanelModelTests|NCPanelOffsetTests|NCWidgetPlacementTests|WidgetBlankTests)'
           - name: diagnostics and system
             filter: 'NotificationNannyTests\.(AppIconCacheTests|AppNameFromDescriptionTests|AXIntegrationTests|AXStringTests|CrashDiagnosticsTests|InstalledAppIndexLocalizedNameTests|LogPrivacyTests|NannyLoggerTests)'
     steps:
