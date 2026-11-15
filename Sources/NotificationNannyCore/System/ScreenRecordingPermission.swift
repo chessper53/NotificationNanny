@@ -1,7 +1,7 @@
 import AppKit
 import CoreGraphics
 
-/// Request Screen Recording only when native widget captures are enabled.
+/// Screen Recording for the native-panel opening cover and native widget images.
 @MainActor
 package final class ScreenRecordingPermission: ObservableObject {
     package static let shared = ScreenRecordingPermission()

@@ -195,6 +195,7 @@
 "A row of apps above the list; click one to see only its notifications." = "A row of apps above the list; click one to see only its notifications.";
 "Widgets" = "Widgets";
 "Widgets are drawn by their own apps, so NotificationNanny can only show them as live pictures of the real ones. That needs Screen Recording. Leave this off and widgets are simply left out." = "Widgets are drawn by their own apps, so NotificationNanny can only show them as live pictures of the real ones. That needs Screen Recording. Leave this off and widgets are simply left out.";
+"Needs Screen Recording, and more likely to act up." = "Needs Screen Recording, and more likely to act up.";
 "Show widgets" = "Show widgets";
 "Screen Recording is allowed" = "Screen Recording is allowed";
 "Screen Recording isn't allowed yet" = "Screen Recording isn't allowed yet";
@@ -269,3 +270,7 @@
 "This file couldn't be read." = "This file couldn't be read.";
 "The backup couldn't be saved." = "The backup couldn't be saved.";
 "OK" = "OK";
+
+/* Native panel opening protection */
+"Screen Recording lets NotificationNanny hide the native panel before it appears. Without it, the native panel may briefly flash when opening." = "Screen Recording lets NotificationNanny hide the native panel before it appears. Without it, the native panel may briefly flash when opening.";
+"Allow Screen Recording" = "Allow Screen Recording";

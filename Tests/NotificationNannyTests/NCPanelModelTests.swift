@@ -117,4 +117,32 @@ struct NCMenuTickTests {
         let edit = items.first { $0.title == "Edit “Featured”…" }!
         #expect(NCMenuItem.choosing(edit, in: items) == items)
     }
+
+    private func entry(_ id: String, _ app: String) -> NCListEntry {
+        .row(NCPanelRow(id: id, appName: app, title: "t\(id)", subtitle: "", body: "", isStack: false))
+    }
+
+    @Test func losingARow_orTheWholeList_countsAsADrop() {
+        let both = NCPanelSnapshot.build(from: [entry("a", "Mail"), entry("b", "Messages")])
+        let one = NCPanelSnapshot.build(from: [entry("a", "Mail")])
+        #expect(both.drops(in: one))
+        #expect(both.drops(in: .empty))
+        #expect(!one.drops(in: both))
+        #expect(!NCPanelSnapshot.empty.drops(in: one))
+    }
+
+    @Test func footerLosingAButton_countsAsADrop() {
+        let full = NCPanelFooter(editWidgets: "Edit Widgets", clear: "Clear")
+        #expect(full.drops(in: NCPanelFooter(editWidgets: "Edit Widgets")))
+        #expect(!NCPanelFooter().drops(in: full))
+    }
+
+    @Test func layout_changesWithHeightButNotText() {
+        var tall = NCPanelRow(id: "a", appName: "Mail", title: "x", subtitle: "", body: "", isStack: false)
+        let base = NCPanelSnapshot.build(from: [.row(tall)])
+        tall.height = 120
+        #expect(NCPanelSnapshot.build(from: [.row(tall)]).layout != base.layout)
+        let retitled = NCPanelRow(id: "a", appName: "Mail", title: "y", subtitle: "", body: "", isStack: false)
+        #expect(NCPanelSnapshot.build(from: [.row(retitled)]).layout == base.layout)
+    }
 }

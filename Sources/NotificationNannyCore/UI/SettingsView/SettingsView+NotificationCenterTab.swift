@@ -54,6 +54,8 @@ struct NotificationCenterTabView: View {
             SettingsNote("NotificationNanny can show its own list when you click the clock, in place of the Notification Center panel. Your notifications stay in Notification Center: this is another view of them, and everything you do in it goes back there.")
 
             if settings.customNotificationCenter {
+                SettingsNote("Screen Recording lets NotificationNanny hide the native panel before it appears. Without it, the native panel may briefly flash when opening.")
+                permissionRow
                 Divider()
                 SettingsToggleRow("Show widgets", isOn: Binding(
                     get: { settings.customNotificationCenterWidgets },
@@ -65,7 +67,13 @@ struct NotificationCenterTabView: View {
                 .padding(.leading, 12)
                 SettingsNote("Widgets are drawn by their own apps, so NotificationNanny can only show them as live pictures of the real ones. That needs Screen Recording. Leave this off and widgets are simply left out.")
                     .padding(.leading, 12)
-                if settings.customNotificationCenterWidgets { permissionRow.padding(.leading, 12) }
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                    LocalizedText("Needs Screen Recording, and more likely to act up.")
+                }
+                .font(.caption2.weight(.medium))
+                .foregroundStyle(.orange)
+                .padding(.leading, 12)
             }
         }
     }
@@ -83,8 +91,11 @@ struct NotificationCenterTabView: View {
             }
             Spacer()
             if !permission.isGranted {
-                Button(loc.string("Open System Settings")) { permission.openSystemSettings() }
-                    .controlSize(.small)
+                VStack(alignment: .trailing, spacing: 6) {
+                    Button(loc.string("Allow Screen Recording")) { permission.request() }
+                    Button(loc.string("Open System Settings")) { permission.openSystemSettings() }
+                }
+                .controlSize(.small)
             }
         }
     }

@@ -20,9 +20,10 @@ final class ScreenFreeze {
     }
 
     /// Wait until the mask is on screen; raise any content that must remain above it first.
-    func show(_ image: CGImage, over rect: NSRect) async {
+    func show(_ image: CGImage, over rect: NSRect, level: NSWindow.Level? = nil) async {
         let panel = window ?? Self.makeWindow()
         window = panel
+        panel.level = level ?? Self.pictureLevel
         panel.setFrame(rect, display: false)
         (panel.contentView as? NSImageView)?.image = NSImage(cgImage: image, size: rect.size)
         panel.orderFrontRegardless()
@@ -33,6 +34,8 @@ final class ScreenFreeze {
     }
 
     func hide() { window?.orderOut(nil) }
+
+    var isShowing: Bool { window?.isVisible == true }
 
     private func capture(_ rect: NSRect, on screen: NSScreen) async -> CGImage? {
         for attempt in 0..<2 {

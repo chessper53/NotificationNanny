@@ -195,6 +195,7 @@
 "A row of apps above the list; click one to see only its notifications." = "Una fila de apps sobre la lista; haz clic en una para ver solo sus notificaciones.";
 "Widgets" = "Widgets";
 "Widgets are drawn by their own apps, so NotificationNanny can only show them as live pictures of the real ones. That needs Screen Recording. Leave this off and widgets are simply left out." = "Los widgets los dibujan sus propias apps, así que NotificationNanny solo puede mostrarlos como imágenes en vivo de los reales. Eso necesita Grabación de pantalla. Déjalo desactivado y los widgets simplemente se omiten.";
+"Needs Screen Recording, and more likely to act up." = "Necesita grabación de pantalla y es más propenso a fallar.";
 "Show widgets" = "Mostrar widgets";
 "Screen Recording is allowed" = "La grabación de pantalla está permitida";
 "Screen Recording isn't allowed yet" = "La grabación de pantalla aún no está permitida";
@@ -269,3 +270,7 @@
 "This file couldn't be read." = "No se pudo leer este archivo.";
 "The backup couldn't be saved." = "No se pudo guardar la copia de seguridad.";
 "OK" = "OK";
+
+/* Native panel opening protection */
+"Screen Recording lets NotificationNanny hide the native panel before it appears. Without it, the native panel may briefly flash when opening." = "La grabación de pantalla permite a NotificationNanny ocultar el panel nativo antes de que aparezca. Sin este permiso, puede verse brevemente al abrirlo.";
+"Allow Screen Recording" = "Permitir grabación de pantalla";

@@ -98,6 +98,23 @@ struct NCPanelSnapshot: Equatable {
     var rowCount: Int { sections.reduce(0) { $0 + $1.groups.reduce(0) { $0 + $1.rows.count } } }
     var isEmpty: Bool { rowCount == 0 }
 
+    private var rowIDs: [String] { sections.flatMap(\.groups).flatMap(\.rows).map(\.id) }
+
+    /// Some row here is missing from `next`.
+    func drops(in next: NCPanelSnapshot) -> Bool {
+        guard !isEmpty else { return false }
+        return !Set(rowIDs).isSubset(of: next.rowIDs)
+    }
+
+    /// What decides where things sit in the list, so moving rows can be animated together.
+    var layout: [String] {
+        sections.flatMap { section in
+            ["s\(section.id)"] + section.groups.flatMap { group in
+                ["g\(group.id) \(group.expanded)"] + group.rows.map { "\($0.id) \(Int($0.height)) \($0.expanded)" }
+            }
+        }
+    }
+
     /// A heading opens an expanded group when the next row belongs to an app with that name.
     static func headingOpensGroup(at i: Int, in entries: [NCListEntry]) -> Bool {
         guard case .heading(let text) = entries[i] else { return false }

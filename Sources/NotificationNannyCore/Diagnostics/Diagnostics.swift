@@ -78,6 +78,16 @@ enum Diagnostics {
             status: repositioner.hasAccessibilityPermission ? .ok : .fail
         ))
 
+        if settings.customNotificationCenter {
+            let allowed = CGPreflightScreenCaptureAccess()
+            r.append(DiagItem(
+                label: "Native panel opening cover",
+                detail: allowed ? "Screen Recording granted"
+                    : "Screen Recording not granted to NotificationNanny — native panel may flash",
+                status: allowed ? .ok : .warn
+            ))
+        }
+
         if repositioner.hasAccessibilityPermission {
             r.append(DiagItem(
                 label: "Repositioner",

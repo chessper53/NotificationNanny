@@ -38,6 +38,7 @@ final class CustomNCPanelController {
     private weak var takeover: NCPanelTakeover?
     private var screen: NSScreen?
     private var contentHeight: CGFloat = 120
+    private var visibilityGeneration = 0
 
     /// Native column dimensions measured on macOS 27, in points.
     static let rowWidth: CGFloat = 344
@@ -133,7 +134,12 @@ final class CustomNCPanelController {
     }
 
     func show(on screen: NSScreen) {
+        visibilityGeneration += 1
+        let generation = visibilityGeneration
         self.screen = screen
+        // Measure the list being shown first, or the window opens at the last one's height and
+        // jumps a frame later.
+        window.contentView?.layoutSubtreeIfNeeded()
         layout()
         window.alphaValue = 1
         window.orderFrontRegardless()
@@ -142,14 +148,19 @@ final class CustomNCPanelController {
         }
         // Start outside, then animate inward on the next pass.
         presentation.shown = false
-        DispatchQueue.main.async { [presentation] in presentation.shown = true }
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.visibilityGeneration == generation else { return }
+            self.presentation.shown = true
+        }
     }
 
     func hide(after outro: Double) {
+        visibilityGeneration += 1
+        let generation = visibilityGeneration
         guard window.isVisible else { return }
         presentation.shown = false
         DispatchQueue.main.asyncAfter(deadline: .now() + outro + 0.05) { [weak self] in
-            guard let self, !self.presentation.shown else { return }
+            guard let self, self.visibilityGeneration == generation, !self.presentation.shown else { return }
             self.window.orderOut(nil)
         }
     }
@@ -183,6 +194,7 @@ final class CustomNCPanelController {
         x += Self.xOffset(o, on: screen.frame)
         let frame = NSRect(x: x, y: top - height, width: width, height: height)
         window.setFrame(frame, display: true)
+        NCPanelTakeover.mark("window height \(Int(height))")
         if ProcessInfo.processInfo.environment["NN_TIMING"] == "1" {
             FileHandle.standardError.write(Data("[panel window] height \(Int(height)) uptime \(ProcessInfo.processInfo.systemUptime)\n".utf8))
         }
@@ -353,6 +365,9 @@ struct CustomNCPanelView: View {
                 Footer(takeover: takeover, hasContent: !sections.isEmpty || !takeover.widgets.isEmpty)
             }
             .environment(\.panelScale, s)
+            // Rows move together when one grows, shrinks, comes or goes; animated row by row, a
+            // row eased while its neighbours jumped.
+            .animation(.smooth(duration: 0.22), value: takeover.snapshot.layout)
             // The inset from the screen's edge on the panel's side, the close button's
             // room on the other.
             .padding([.top, .bottom], chrome)
@@ -641,9 +656,6 @@ private struct RowView: View {
                        takeover.showOptions(for: row, at: CGPoint(x: frame.minX + pill.maxX, y: frame.minY + pill.maxY + 4 * s))
                    })
             .frame(width: CustomNCPanelController.rowWidth * s, height: row.height * s)
-            // Smoothly follow native row height changes while details or replies animate.
-            .animation(.smooth(duration: 0.22), value: row.height)
-            .animation(.smooth(duration: 0.22), value: row.expanded)
             // Clip animated content so a changing row never draws over its neighbour.
             .clipShape(shape)
             .panelBackdrop(shape)
