@@ -78,7 +78,7 @@ enum Diagnostics {
             status: repositioner.hasAccessibilityPermission ? .ok : .fail
         ))
 
-        if settings.customNotificationCenter {
+        if settings.customNotificationCenter, settings.customNotificationCenterCover {
             let allowed = CGPreflightScreenCaptureAccess()
             r.append(DiagItem(
                 label: "Native panel opening cover",
@@ -137,6 +137,7 @@ enum Diagnostics {
             ("Avoid Notification Center panel", settings.avoidNCPanel),
             ("Custom Notification Center", settings.customNotificationCenter),
             ("Widgets in custom Notification Center", settings.customNotificationCenterWidgets),
+            ("Native panel cover in custom Notification Center", settings.customNotificationCenterCover),
             ("App filter in custom Notification Center", settings.customNotificationCenterAppFilter),
             ("Follow active screen",    settings.followActiveScreen),
             ("Pause while screen-sharing", settings.pauseWhileStreaming),
@@ -244,6 +245,7 @@ enum Diagnostics {
                 ("Hold while asleep",               { settings.holdWhileAsleep = $0 }),
                 ("Avoid Notification Center panel", { settings.avoidNCPanel = $0 }),
                 ("Widgets in custom Notification Center", { settings.customNotificationCenterWidgets = $0 }),
+                ("Native panel cover in custom Notification Center", { settings.customNotificationCenterCover = $0 }),
                 ("App filter in custom Notification Center", { settings.customNotificationCenterAppFilter = $0 }),
                 ("Custom Notification Center",      { settings.customNotificationCenter = $0 }),
                 ("Follow active screen",            { settings.followActiveScreen = $0 }),

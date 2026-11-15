@@ -57,6 +57,7 @@ package final class NotificationRepositioner: ObservableObject {
                                   topOffset: CGFloat(s.customNotificationCenterTopOffset),
                                   xOffset: CGFloat(s.customNotificationCenterXOffset),
                                   widgets: s.customNotificationCenterWidgets,
+                                  cover: s.customNotificationCenterCover,
                                   textColor: s.customNotificationCenterOwnText
                                       ? s.customNotificationCenterTextTint?.color : s.effectiveBannerTextColor,
                                   redact: s.redactBannerContent)

@@ -274,5 +274,6 @@
 "OK" = "OK";
 
 /* Native panel opening protection */
-"Screen Recording lets NotificationNanny hide the native panel before it appears. Without it, the native panel may briefly flash when opening." = "L’enregistrement de l’écran permet à NotificationNanny de masquer le panneau natif avant son apparition. Sans cette autorisation, il peut apparaître brièvement à l’ouverture.";
+"Hide the native panel completely" = "Masquer complètement le panneau natif";
+"Turn this on if the native Notification Center briefly flashes before yours appears. NotificationNanny then covers that spot with a picture of your screen while it opens, which needs Screen Recording." = "Activez cette option si le Centre de notifications natif apparaît brièvement avant le vôtre. NotificationNanny recouvre alors cet emplacement d'une image de votre écran pendant l'ouverture, ce qui nécessite l'enregistrement de l'écran.";
 "Allow Screen Recording" = "Autoriser l’enregistrement de l’écran";

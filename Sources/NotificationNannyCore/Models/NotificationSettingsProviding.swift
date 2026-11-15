@@ -10,6 +10,7 @@ package protocol NotificationSettingsProviding: AnyObject {
     var avoidNCPanel: Bool { get }
     var customNotificationCenter: Bool { get }
     var customNotificationCenterWidgets: Bool { get }
+    var customNotificationCenterCover: Bool { get }
     var customNotificationCenterAppFilter: Bool { get }
     var customNotificationCenterAnimation: BannerAnimation { get }
     var customNotificationCenterScale: Double { get }

@@ -33,6 +33,7 @@ struct BackupCompletenessTests {
         s.avoidNCPanel = false
         s.customNotificationCenter = true
         s.customNotificationCenterWidgets = true
+        s.customNotificationCenterCover = true
         s.customNotificationCenterAppFilter = true
         s.customNotificationCenterAnimation = .drop
         s.customNotificationCenterScale = 1.2
@@ -188,6 +189,7 @@ struct ResetAllSettingsTests {
         }
         let s = make()
         s.bannerScale = 1.4; s.customNotificationCenter = true; s.customNotificationCenterWidgets = true
+        s.customNotificationCenterCover = true
         s.pauseDuringFocus = true; s.pauseWhileStreaming = true; s.protectDesktopWidgets = false
         s.followActiveScreen = true; s.hideMenuBarIcon = true; s.redactBannerContent = true
         s.bannerTint = BannerTint(r: 1, g: 0, b: 0); s.saveCurrentAsPreset(name: "Desk")
