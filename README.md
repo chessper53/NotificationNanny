@@ -48,7 +48,7 @@ Or install manually:
 
 ## What it does
 
-- Nine anchor points on any display, with independent settings per screen
+- Custom locations on any display, with independent settings per screen
 - Scale banners from 50% to 250%, tint the background or text, or replace the system banner with a custom styled one
 - Give specific apps their own rules, using named groups with their own position, display, scale, and tint
 - Choose how banners animate in: system default, slide, bounce, fade, or scale
