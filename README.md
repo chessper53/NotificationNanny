@@ -31,44 +31,60 @@
 
 ## Install
 
-With Homebrew:
+**With Homebrew**
 
-```sh
-brew tap chessper53/notificationnanny https://github.com/chessper53/NotificationNanny
-brew install --cask notificationnanny
-```
+    brew tap chessper53/notificationnanny https://github.com/chessper53/NotificationNanny
+    brew install --cask notificationnanny
 
-Then click the bell icon in your menu bar and grant Accessibility permission. If you installed with Homebrew, updates are one click from the settings panel.
+Click the bell icon in your menu bar and grant Accessibility permission. Homebrew installs can
+update with one click from the settings panel.
 
-Or install manually:
+**Manually**
 
-1. [Download the latest zip](https://github.com/chessper53/NotificationNanny/releases/latest) and open it.
-2. Drag `NotificationNanny.app` into Applications, then launch it.
+1. Download the [latest release](https://github.com/chessper53/NotificationNanny/releases/latest) and open the zip.
+2. Drag NotificationNanny.app into Applications and launch it.
 3. Click the bell icon in your menu bar and grant Accessibility permission.
 
 ## What it does
 
-- Custom locations on any display, with independent settings per screen
-- Scale banners from 50% to 250%, tint the background or text, or replace the system banner with a custom styled one
-- Give specific apps their own rules, using named groups with their own position, display, scale, and tint
-- Choose how banners animate in: system default, slide, bounce, fade, or scale
-- Hold banners until your display wakes up, so nothing disappears while you are away
-- Dismiss banners automatically on a timer from 1 to 300 seconds, or leave them until you are ready
-- Answer from a custom banner: it keeps the app's own buttons, Reply included, with the reply typed right in the banner
-- Experimental: a Notification Center of its own when you click the clock. It looks like the system's, takes your banner colours, and adds size, side, screen and animation choices, arrival times, a filter by app, and optionally the real widgets
+- Drag banners anywhere on a live preview of your screen, with separate positions for each display, or let them follow your cursor.
+- Scale banners from 50% to 250%, tint the background or text, pick an animation, or blur the text for privacy.
+- Group apps and give each group its own position, screen, size, tint and animation.
+- Close banners after 1 to 300 seconds, hold them while your display sleeps, and pause them during Focus or screen sharing.
+- Reply right in a custom banner, which keeps the app's own buttons.
+- Click the clock for a Notification Center of your own. It copies the system's and uses your colours, and you choose its size, side and screen. It can filter by app and show your widgets too.
+- Save up to 5 presets, switch between them in one click, and back up or import your settings.
+- App support in English, French, Spanish, German and Italian.
 
 ## Issues and feature requests
 
-I have a full time job, so responses may take a little while, but nothing goes unread. Found a bug or have an idea? [Open an issue here](https://github.com/chessper53/NotificationNanny/issues).
+Found a bug or have an idea? [Open an issue](https://github.com/chessper53/NotificationNanny/issues).
+I work on this alongside a full time job, so replies can take a little while, but I read every issue.
+
+## Support the project
+
+If NotificationNanny makes your day a little quieter, please
+[star the repo](https://github.com/chessper53/NotificationNanny).
 
 ## Privacy
 
-No data is collected, transmitted, or stored outside your device. The Accessibility permission is used solely to observe and control notification windows on your local machine. Screen Recording is only asked for if you turn on widgets in the custom Notification Center, and is only used to show the real widgets there.
+NotificationNanny collects nothing. No data leaves your Mac and nothing is stored anywhere else.
+
+- **Accessibility** is used only to observe and move notification windows on your machine.
+- **Screen Recording** is only requested if you turn on widgets in the custom Notification Center. It is used only to show those widgets.
 
 ## How it works
 
-NotificationNanny uses the macOS Accessibility API to observe the notification center process. When a banner appears it repositions or replaces it according to your rules. For scaled, tinted, or custom banners it intercepts the notification, moves the system banner off screen, and shows its own window matching the macOS banner style. The custom Notification Center works the same way: the real panel stays open off screen, NotificationNanny draws its own list from it, and every click and reply goes back to the real one. This relies on private internals, so Apple can change the behavior in any OS update. The app sandbox is disabled because cross process Accessibility access requires it.
+NotificationNanny uses the macOS Accessibility API to watch the Notification Center process. When
+a banner appears, the app moves or replaces it according to your rules. For scaled, tinted or custom
+banners, it moves the system banner off screen and shows its own window in the macOS banner style.
+
+The custom Notification Center works the same way. The real panel stays open off screen,
+NotificationNanny draws its own list from it, and every click and reply goes back to the real panel.
+
+This relies on private macOS internals, so any OS update can change how it behaves. The app sandbox
+is turned off because Accessibility access to other processes does not work inside it.
 
 ## License
 
-Released under the [MIT License](LICENSE).
+Released under the [MIT License](https://github.com/chessper53/NotificationNanny/blob/main/LICENSE).
