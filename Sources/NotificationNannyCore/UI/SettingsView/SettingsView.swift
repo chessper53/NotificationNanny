@@ -40,6 +40,9 @@ package struct SettingsView: View {
             .animation(.easeInOut(duration: 0.35), value: repositioner.hasAccessibilityPermission)
             .animation(.easeInOut(duration: 0.35), value: newerVersion)
             .animation(.easeInOut(duration: 0.35), value: isBannerDismissed)
+            // The colour panel belongs to a well on the tab being left.
+            .onChange(of: activeTab) { ColorPanelPresenter.shared.close() }
+            .onDisappear { ColorPanelPresenter.shared.close() }
             .onChange(of: repositioner.hasAccessibilityPermission) { _, granted in
                 guard granted else { return }
                 permissionJustGranted = true

@@ -428,6 +428,7 @@ struct CustomColorWell: View {
 final class ColorPanelPresenter: NSObject {
     static let shared = ColorPanelPresenter()
     private var onPick: ((Color) -> Void)?
+    private var clickAway: Any?
 
     func open(color: Color, near point: NSPoint, onPick: @escaping (Color) -> Void) {
         let panel = NSColorPanel.shared
@@ -448,6 +449,21 @@ final class ColorPanelPresenter: NSObject {
         }
         panel.setFrameOrigin(origin)
         panel.orderFront(nil)
+        // The panel never closes by itself; a click anywhere else in the app closes it.
+        // Another well reopens it beside that click.
+        if clickAway == nil {
+            clickAway = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] event in
+                if event.window !== NSColorPanel.shared { self?.close() }
+                return event
+            }
+        }
+    }
+
+    func close() {
+        if let clickAway { NSEvent.removeMonitor(clickAway) }
+        clickAway = nil
+        onPick = nil
+        if NSColorPanel.sharedColorPanelExists { NSColorPanel.shared.orderOut(nil) }
     }
 
     @objc private func colorChanged(_ sender: NSColorPanel) {
