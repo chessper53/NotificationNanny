@@ -137,6 +137,8 @@
 "Browse open and completed issues" = "Explorar tickets abiertos y resueltos";
 "Source code" = "Código fuente";
 "NotificationNanny is open source" = "NotificationNanny es de código abierto";
+"Star it on GitHub" = "Dale una estrella en GitHub";
+"A star helps others find NotificationNanny" = "Una estrella ayuda a otros a encontrar NotificationNanny";
 "Diagnostics and activity logs now live in the **Diagnostics** tab. Handy if you want to inspect them before filing a report." = "El diagnóstico y los registros de actividad ahora están en la pestaña **Diagnóstico**. Útil si quieres revisarlos antes de enviar un informe.";
 "I work full time, nevertheless I read every issue and try to respond to everyone." = "Trabajo a tiempo completo, pero aun así leo todos los tickets e intento responder a todos.";
 "Diagnostics are only attached when you file a report. Nothing is collected or transmitted otherwise." = "El diagnóstico solo se adjunta cuando envías un informe. No se recopila ni transmite nada de otro modo.";
@@ -195,7 +197,7 @@
 "A row of apps above the list; click one to see only its notifications." = "Una fila de apps sobre la lista; haz clic en una para ver solo sus notificaciones.";
 "Widgets" = "Widgets";
 "Widgets are drawn by their own apps, so NotificationNanny can only show them as live pictures of the real ones. That needs Screen Recording. Leave this off and widgets are simply left out." = "Los widgets los dibujan sus propias apps, así que NotificationNanny solo puede mostrarlos como imágenes en vivo de los reales. Eso necesita Grabación de pantalla. Déjalo desactivado y los widgets simplemente se omiten.";
-"Needs Screen Recording, and more likely to act up." = "Necesita grabación de pantalla y es más propenso a fallar.";
+"Widgets are in beta and can make Notification Center slower to open for now." = "Los widgets están en beta y por ahora pueden hacer que el Centro de notificaciones tarde más en abrirse.";
 "Show widgets" = "Mostrar widgets";
 "Screen Recording is allowed" = "La grabación de pantalla está permitida";
 "Screen Recording isn't allowed yet" = "La grabación de pantalla aún no está permitida";

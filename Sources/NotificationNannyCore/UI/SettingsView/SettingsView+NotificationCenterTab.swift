@@ -69,7 +69,7 @@ struct NotificationCenterTabView: View {
                     .padding(.leading, 12)
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
                     Image(systemName: "exclamationmark.triangle.fill")
-                    LocalizedText("Needs Screen Recording, and more likely to act up.")
+                    LocalizedText("Widgets are in beta and can make Notification Center slower to open for now.")
                 }
                 .font(.caption2.weight(.medium))
                 .foregroundStyle(.orange)
@@ -193,7 +193,7 @@ struct NotificationCenterTabView: View {
             SettingsCardHeader("Text Color")
             ColorSwatchRow(isDefault: own && tint == nil,
                            current: own ? tint?.color : nil,
-                           showsPresets: false,
+                           presets: SettingsColors.textPresets,
                            onDefault: {
                                settings.customNotificationCenterOwnText = true
                                settings.customNotificationCenterTextTint = nil

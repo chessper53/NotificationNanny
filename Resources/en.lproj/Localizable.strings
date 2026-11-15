@@ -137,6 +137,8 @@
 "Browse open and completed issues" = "Browse open and completed issues";
 "Source code" = "Source code";
 "NotificationNanny is open source" = "NotificationNanny is open source";
+"Star it on GitHub" = "Star it on GitHub";
+"A star helps others find NotificationNanny" = "A star helps others find NotificationNanny";
 "Diagnostics and activity logs now live in the **Diagnostics** tab. Handy if you want to inspect them before filing a report." = "Diagnostics and activity logs now live in the **Diagnostics** tab. Handy if you want to inspect them before filing a report.";
 "I work full time, nevertheless I read every issue and try to respond to everyone." = "I work full time, nevertheless I read every issue and try to respond to everyone.";
 "Diagnostics are only attached when you file a report. Nothing is collected or transmitted otherwise." = "Diagnostics are only attached when you file a report. Nothing is collected or transmitted otherwise.";
@@ -195,7 +197,7 @@
 "A row of apps above the list; click one to see only its notifications." = "A row of apps above the list; click one to see only its notifications.";
 "Widgets" = "Widgets";
 "Widgets are drawn by their own apps, so NotificationNanny can only show them as live pictures of the real ones. That needs Screen Recording. Leave this off and widgets are simply left out." = "Widgets are drawn by their own apps, so NotificationNanny can only show them as live pictures of the real ones. That needs Screen Recording. Leave this off and widgets are simply left out.";
-"Needs Screen Recording, and more likely to act up." = "Needs Screen Recording, and more likely to act up.";
+"Widgets are in beta and can make Notification Center slower to open for now." = "Widgets are in beta and can make Notification Center slower to open for now.";
 "Show widgets" = "Show widgets";
 "Screen Recording is allowed" = "Screen Recording is allowed";
 "Screen Recording isn't allowed yet" = "Screen Recording isn't allowed yet";
