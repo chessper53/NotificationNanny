@@ -63,8 +63,7 @@ I work on this alongside a full time job, so replies can take a little while, bu
 
 ## Support the project
 
-If NotificationNanny makes your day a little quieter, please
-[star the repo](https://github.com/chessper53/NotificationNanny).
+If NotificationNanny makes your day a little quieter, please star this repo
 
 ## Privacy
 
