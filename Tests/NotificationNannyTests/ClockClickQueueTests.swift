@@ -6,7 +6,7 @@ struct ClockClickQueueTests {
     @Test func missingReleaseCannotBlockLaterClicks() {
         var queue = ClockClickQueue<Int, Int>()
         queue.press(1, on: 10, missingRelease: { -$0 })
-        // A native panel/tap transition lost the first mouse-up.
+        // A native panel/tap transition lost the first release.
         queue.press(2, on: 20, missingRelease: { -$0 })
         #expect(queue.first?.down == 1)
         #expect(queue.first?.up == -1)

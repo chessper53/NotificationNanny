@@ -9,7 +9,7 @@ struct ClockHitAreaTests {
 
     @Test func coversClicksMacOSSendsToTheClock() {
         let area = ClockOpeningShield.hitArea(of: clock, barTop: 0, screenRight: 5120)
-        // Real clicks that opened the native panel without passing the old AX-frame check.
+        // Real clicks that opened the native panel without passing the old check against the AX frame.
         for point in [CGPoint(x: 5119.9, y: 0), CGPoint(x: 5114, y: 6), CGPoint(x: 5105, y: 18),
                       CGPoint(x: 5017, y: 2), CGPoint(x: 4959, y: 20)] {
             #expect(area.contains(point), "\(point)")

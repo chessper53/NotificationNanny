@@ -1,5 +1,5 @@
 // Toggles Notification Center with the Fn+N shortcut, a route that bypasses the clock.
-// Usage: fn-n CYCLES OPEN_SECONDS CLOSED_SECONDS
+// Arguments: cycles, open seconds, closed seconds.
 import AppKit
 
 let args = CommandLine.arguments.dropFirst().map { Double($0) ?? 0 }

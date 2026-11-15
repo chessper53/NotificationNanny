@@ -1,14 +1,14 @@
-// Frame-rate-independent flash detector: samples the window server every ~2 ms and reports
+// Flash detector independent of recording frame rate: samples the window server every ~2 ms and reports
 // moments when a Notification Center window lies in the visible screen area without a
 // NotificationNanny window (opening cover or custom panel) in front of it.
 // Windows already on screen at start (desktop widgets) are ignored.
-// Usage: nc-exposure-probe SECONDS [log-path]
+// Arguments: seconds, optional log path.
 import AppKit
 
 let seconds = Double(CommandLine.arguments.dropFirst().first ?? "30") ?? 30
 let logPath = CommandLine.arguments.count > 2 ? CommandLine.arguments[2] : nil
 let screen = NSScreen.screens.first!.frame
-// The native panel draws in the rightmost column; its full-screen host is mostly transparent.
+// The native panel draws in the rightmost column; its host covers the whole screen but is mostly transparent.
 let visible = CGRect(x: screen.width - 480, y: 25, width: 480, height: screen.height - 25)
 let nanny = NSRunningApplication.runningApplications(withBundleIdentifier: "com.notificationnanny.app").first?.processIdentifier
 

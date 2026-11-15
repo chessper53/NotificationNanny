@@ -293,7 +293,7 @@ final class NCPanelTakeover: ObservableObject {
     // MARK: Lifecycle
 
     private func begin() {
-        // During a rapid reopen AXWindows can omit the still-parked closing host. It is
+        // During a rapid reopen AXWindows can omit the closing host that is still parked. It is
         // already ours; reuse that exact element rather than mistaking a desktop widget for it.
         guard let host = hostWindow() ?? goingHome?.window, let origin = host.point() else {
             if Self.timing { FileHandle.standardError.write(Data("[clock check] opening host unavailable\n".utf8)) }

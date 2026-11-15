@@ -1,5 +1,5 @@
-// Listen-only log of every mouse event (never modifies or blocks input), with absolute uptime.
-// Usage: mouse-log SECONDS
+// Passive log of every mouse event (never modifies or blocks input), with absolute uptime.
+// Argument: seconds to listen.
 import AppKit
 
 let seconds = Double(CommandLine.arguments.dropFirst().first ?? "60") ?? 60

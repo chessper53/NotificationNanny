@@ -91,7 +91,7 @@ final class ClockOpeningShield {
         lastReplay = nil
     }
 
-    /// Geometry discovery runs outside the tap callback; no cross-process AX calls hold input.
+    /// Geometry discovery runs outside the tap callback; no AX calls to other processes hold input.
     private func discoverClocks() {
         guard !discovering else { return }
         discovering = true
@@ -262,7 +262,7 @@ final class ClockOpeningShield {
                     self.processClicks()
                     return
                 }
-                // Native close completion can order out a host that was reopened mid-animation.
+                // Native close completion can order out a host that was reopened during its animation.
                 // Let it finish; paired toggles queued meanwhile cancel each other.
                 self.clicks.cancelPairedToggles { $0.displayID == $1.displayID }
                 self.processing = false
@@ -317,7 +317,7 @@ final class ClockOpeningShield {
             self.trace("forwarded press, waited \(Int((ProcessInfo.processInfo.systemUptime - Double(click.down.timestamp) / 1e9) * 1000)) ms")
             self.processing = false
             self.finishForwardedClick()
-            // Retain the cover through native slide-in and position resets, including a rapid
+            // Retain the cover through the native slide in and position resets, including a rapid
             // closing transition. The parking guard continues after the cover goes away.
             self.removal?.cancel()
             let removal = DispatchWorkItem { [weak self] in

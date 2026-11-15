@@ -1,5 +1,5 @@
 // Physically click only a verified menu bar clock; never act on notification content.
-// Usage: clock-stress <cycles> [open-seconds] [closed-seconds]
+// Arguments: cycles, then optional open and closed seconds.
 import AppKit
 import ApplicationServices
 

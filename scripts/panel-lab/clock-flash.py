@@ -1,7 +1,7 @@
-"""Check a red-custom-panel recording over a gray lab backdrop for gray native rows.
+"""Check a recording of the red custom panel over a gray lab backdrop for gray native rows.
 
 Record the rightmost 460 x 600 points starting just below the menu bar. This is a
-diagnostic for that controlled scene, not an arbitrary-video classifier. Print only
+diagnostic for that controlled scene, not a classifier for arbitrary video. Print only
 counts/timestamps; never extract notification text or persist captured frames.
 Requires ffmpeg, ffprobe, and NumPy. Exit 1 for suspected native exposures.
 """

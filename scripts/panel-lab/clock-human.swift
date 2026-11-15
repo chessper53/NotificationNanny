@@ -1,7 +1,7 @@
-// Human-like clock driver: random waits (including long idle before opening), clicks at
+// Clock driver that behaves like a person: random waits (including long idle before opening), clicks at
 // varied points inside the verified clock, and closes by clock, Escape or a click on empty
 // menu bar space. Never clicks notification content. Prints absolute uptime per action.
-// Usage: clock-human <openings> [seed] [quick]  (quick: always close by clock, reopen after 0.15-0.4 s)
+// Arguments: openings, optional seed, optional "quick" (close by clock, reopen within 0.15 to 0.4 s).
 import AppKit
 import ApplicationServices
 
@@ -54,7 +54,7 @@ for x in stride(from: Double(screen.frame.midX), through: Double(screen.frame.ma
 }
 let pointer = CGEvent(source: nil)?.location
 func log(_ s: String) { print(String(format: "%.3f %@", ProcessInfo.processInfo.systemUptime, s)); fflush(stdout) }
-/// Glide there like a hand does, so hover-driven behavior sees the approach.
+/// Glide there like a hand does, so behavior driven by hovering sees the approach.
 func glide(to point: CGPoint) {
     let from = CGEvent(source: nil)?.location ?? point
     let steps = 12, duration = random(0.15...0.35)
