@@ -33,6 +33,7 @@ enum SessionHeader {
             (s.pauseWhileStreaming, "pause while sharing"), (s.holdWhileAsleep, "hold while asleep"),
             (!s.avoidNCPanel, "NC may move"), (s.customNotificationCenter, "custom NC"),
             (s.customNotificationCenter && s.customNotificationCenterWidgets, "NC widgets"),
+            (s.customNotificationCenter && s.customNotificationCenterCover, "NC cover"),
             (!s.protectDesktopWidgets, "desktop widgets unprotected"),
         ]
         parts += flags.filter(\.0).map(\.1)

@@ -29,6 +29,10 @@ final class ClockOpeningShield {
     private var precapturing = false
     private var precaptured: [CGDirectDisplayID: (image: CGImage, at: Double)] = [:]
     private let logger: NannyLogger
+    /// The cover setting. Without it, or without Screen Recording, clicks are only routed (hit
+    /// area, press timing, early panel) and parking alone hides the native panel.
+    var coverWanted: () -> Bool = { false }
+    private var canCover: Bool { coverWanted() && CGPreflightScreenCaptureAccess() }
     private static let replayTag: Int64 = 0x4E4E434C4F434B
     private static let discoveryQueue = DispatchQueue(label: "com.notificationnanny.clock-discovery", qos: .userInitiated)
 
@@ -37,17 +41,13 @@ final class ClockOpeningShield {
     func start(app: AXUIElement) {
         self.app = app
         guard tap == nil else { return }
-        guard CGPreflightScreenCaptureAccess() else {
-            logger.log("Clock opening cover inactive — Screen Recording isn't allowed for this app", level: .warn, tag: "Panel")
-            return
-        }
         let mask = (1 << CGEventType.leftMouseDown.rawValue) | (1 << CGEventType.leftMouseUp.rawValue)
         guard let tap = CGEvent.tapCreate(
             tap: .cgSessionEventTap, place: .headInsertEventTap, options: .defaultTap,
             eventsOfInterest: CGEventMask(mask), callback: clockOpeningShieldCallback,
             userInfo: Unmanaged.passUnretained(self).toOpaque()
         ) else {
-            logger.log("Clock opening cover inactive — macOS refused its event tap", level: .warn, tag: "Panel")
+            logger.log("Clock click routing inactive — macOS refused its event tap", level: .warn, tag: "Panel")
             return
         }
         let source = CFMachPortCreateRunLoopSource(nil, tap, 0)
@@ -55,7 +55,10 @@ final class ClockOpeningShield {
         self.tap = tap
         self.source = source
         discoverClocks()
-        logger.log("Clock opening cover ready — Screen Recording and event tap available", tag: "Panel")
+        if coverWanted(), !CGPreflightScreenCaptureAccess() {
+            logger.log("Clock opening cover inactive — Screen Recording isn't allowed for this app", level: .warn, tag: "Panel")
+        }
+        logger.log("Clock click routing ready — opening cover \(canCover ? "on" : "off")", tag: "Panel")
         let timer = Timer(timeInterval: 5, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.discoverClocks() }
         }
@@ -144,7 +147,7 @@ final class ClockOpeningShield {
     /// Keep a fresh cover picture while the pointer is near the clock, so a click only waits
     /// for the cover to reach the screen. Refreshes while the pointer rests there.
     private func pointerMoved() {
-        guard precaptureTimer == nil, approachedClock() != nil else { return }
+        guard precaptureTimer == nil, approachedClock() != nil, canCover else { return }
         precaptureNow()
         let timer = Timer(timeInterval: 0.4, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated {
@@ -287,7 +290,7 @@ final class ClockOpeningShield {
                 self.processClicks()
                 return
             }
-            if !covered, !open {
+            if !covered, !open, self.canCover {
                 let screen = click.destination
                 let rect = Self.coverRect(on: screen)
                 let cover = self.covers[screen.displayID] ?? ScreenFreeze()

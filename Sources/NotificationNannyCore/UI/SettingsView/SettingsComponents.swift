@@ -293,11 +293,11 @@ enum SettingsColors {
         ("Pink",   Color(red: 1.0,  green: 0.18, blue: 0.33)),
     ]
 
-    /// Text needs the neutral extremes too.
+    /// As many as the background row: white and black in place of teal and pink.
     static let textPresets: [(String, Color)] = [
         ("White", Color(white: 1)),
         ("Black", Color(white: 0)),
-    ] + presets
+    ] + presets.filter { $0.0 != "Teal" && $0.0 != "Pink" }
 
     static func isMatch(_ a: Color, _ b: Color) -> Bool {
         let ca = NSColor(a).usingColorSpace(.sRGB)

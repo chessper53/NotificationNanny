@@ -54,8 +54,17 @@ struct NotificationCenterTabView: View {
             SettingsNote("NotificationNanny can show its own list when you click the clock, in place of the Notification Center panel. Your notifications stay in Notification Center: this is another view of them, and everything you do in it goes back there.")
 
             if settings.customNotificationCenter {
-                SettingsNote("Screen Recording lets NotificationNanny hide the native panel before it appears. Without it, the native panel may briefly flash when opening.")
-                permissionRow
+                Divider()
+                SettingsToggleRow("Hide the native panel completely", isOn: Binding(
+                    get: { settings.customNotificationCenterCover },
+                    set: { on in
+                        settings.customNotificationCenterCover = on
+                        if on, !permission.isGranted { permission.request() }
+                    }
+                ))
+                .padding(.leading, 12)
+                SettingsNote("Turn this on if the native Notification Center briefly flashes before yours appears. NotificationNanny then covers that spot with a picture of your screen while it opens, which needs Screen Recording.")
+                    .padding(.leading, 12)
                 Divider()
                 SettingsToggleRow("Show widgets", isOn: Binding(
                     get: { settings.customNotificationCenterWidgets },
@@ -74,6 +83,10 @@ struct NotificationCenterTabView: View {
                 .font(.caption2.weight(.medium))
                 .foregroundStyle(.orange)
                 .padding(.leading, 12)
+                if settings.customNotificationCenterCover || settings.customNotificationCenterWidgets {
+                    Divider()
+                    permissionRow
+                }
             }
         }
     }

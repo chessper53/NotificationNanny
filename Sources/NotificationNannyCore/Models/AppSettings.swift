@@ -23,6 +23,7 @@ package final class AppSettings: ObservableObject {
         static let avoidNCPanel         = "avoidNCPanel"
         static let customNotificationCenter = "customNotificationCenter"
         static let customNotificationCenterWidgets = "customNotificationCenterWidgets"
+        static let customNotificationCenterCover = "customNotificationCenterCover"
         static let customNotificationCenterAppFilter = "customNotificationCenterAppFilter"
         static let customNotificationCenterAnimation = "customNotificationCenterAnimation"
         static let customNotificationCenterScale = "customNotificationCenterScale"
@@ -121,6 +122,12 @@ package final class AppSettings: ObservableObject {
     /// Include native widget captures; disabled by default because Screen Recording is required.
     @Published package var customNotificationCenterWidgets: Bool {
         didSet { defaults.set(customNotificationCenterWidgets, forKey: Key.customNotificationCenterWidgets) }
+    }
+
+    /// Cover the native panel with a screen picture while it opens; off by default because
+    /// Screen Recording is required and parking alone is usually enough.
+    @Published package var customNotificationCenterCover: Bool {
+        didSet { defaults.set(customNotificationCenterCover, forKey: Key.customNotificationCenterCover) }
     }
 
     @Published package var customNotificationCenterAppFilter: Bool {
@@ -443,6 +450,7 @@ package final class AppSettings: ObservableObject {
         self.avoidNCPanel           = (defaults.object(forKey: Key.avoidNCPanel) as? Bool) ?? true
         self.customNotificationCenter = (defaults.object(forKey: Key.customNotificationCenter) as? Bool) ?? false
         self.customNotificationCenterWidgets = (defaults.object(forKey: Key.customNotificationCenterWidgets) as? Bool) ?? false
+        self.customNotificationCenterCover = (defaults.object(forKey: Key.customNotificationCenterCover) as? Bool) ?? false
         self.customNotificationCenterAppFilter = (defaults.object(forKey: Key.customNotificationCenterAppFilter) as? Bool) ?? false
         self.customNotificationCenterAnimation = defaults.string(forKey: Key.customNotificationCenterAnimation)
             .flatMap(BannerAnimation.init(rawValue:)) ?? .default
@@ -773,6 +781,7 @@ package final class AppSettings: ObservableObject {
         var avoidNCPanel: Bool?
         var customNotificationCenter: Bool?
         var customNotificationCenterWidgets: Bool?
+        var customNotificationCenterCover: Bool?
         var customNotificationCenterAppFilter: Bool?
         var customNotificationCenterAnimation: BannerAnimation?
         var customNotificationCenterScale: Double?
@@ -819,6 +828,7 @@ package final class AppSettings: ObservableObject {
             avoidNCPanel: avoidNCPanel,
             customNotificationCenter: customNotificationCenter,
             customNotificationCenterWidgets: customNotificationCenterWidgets,
+            customNotificationCenterCover: customNotificationCenterCover,
             customNotificationCenterAppFilter: customNotificationCenterAppFilter,
             customNotificationCenterAnimation: customNotificationCenterAnimation,
             customNotificationCenterScale: customNotificationCenterScale,
@@ -938,6 +948,7 @@ package final class AppSettings: ObservableObject {
         avoidNCPanel        = imported.avoidNCPanel ?? true
         customNotificationCenter = imported.customNotificationCenter ?? false
         customNotificationCenterWidgets = imported.customNotificationCenterWidgets ?? false
+        customNotificationCenterCover = imported.customNotificationCenterCover ?? false
         customNotificationCenterAppFilter = imported.customNotificationCenterAppFilter ?? false
         customNotificationCenterAnimation = imported.customNotificationCenterAnimation ?? .default
         customNotificationCenterScale = imported.customNotificationCenterScale ?? 1

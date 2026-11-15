@@ -16,6 +16,8 @@ struct NCPanelOptions: Equatable {
     var xOffset: CGFloat = 0
     /// Pictures of the real widgets; only acted on with Screen Recording allowed.
     var widgets = false
+    /// Cover the native panel with a screen picture while it opens; needs Screen Recording.
+    var cover = false
     /// The banners' text colour, nil for the system's.
     var textColor: Color? = nil
     var redact = false
@@ -62,6 +64,7 @@ final class NCPanelTakeover: ObservableObject {
     private let router = PanelClickRouter()
     private lazy var clockShield: ClockOpeningShield = {
         let shield = ClockOpeningShield(logger: logger)
+        shield.coverWanted = { [weak self] in self?.readOptions().cover ?? false }
         shield.onReplay = { [weak self] screen, opening in self?.clockWasPressed(on: screen, opening: opening) }
         return shield
     }()
