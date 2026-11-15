@@ -18,8 +18,10 @@ package struct SettingsView: View {
 
     package init() {}
 
-    /// Minimum content size that keeps the sidebar and scrolling tabs usable.
-    package static let minimumContentSize = CGSize(width: 620, height: 412)
+    /// Minimum content size that keeps the sidebar and scrolling tabs usable. The width fits the
+    /// widest fixed preview, the Notification Center tab's 438 points, in its card beside the
+    /// sidebar.
+    package static let minimumContentSize = CGSize(width: 660, height: 412)
     /// The widest a tab's content gets, padding included.
     static let contentMaxWidth: CGFloat = 600
 
@@ -38,6 +40,9 @@ package struct SettingsView: View {
             .animation(.easeInOut(duration: 0.35), value: repositioner.hasAccessibilityPermission)
             .animation(.easeInOut(duration: 0.35), value: newerVersion)
             .animation(.easeInOut(duration: 0.35), value: isBannerDismissed)
+            // The colour panel belongs to a well on the tab being left.
+            .onChange(of: activeTab) { ColorPanelPresenter.shared.close() }
+            .onDisappear { ColorPanelPresenter.shared.close() }
             .onChange(of: repositioner.hasAccessibilityPermission) { _, granted in
                 guard granted else { return }
                 permissionJustGranted = true
@@ -143,6 +148,10 @@ package struct SettingsView: View {
                     .frame(maxWidth: Self.contentMaxWidth)
                     .frame(maxWidth: .infinity)
                 }
+                // Take only the room beside the sidebar: content wider than that pushed the whole
+                // window's content sideways, cutting the sidebar off.
+                .frame(minWidth: 0, maxWidth: .infinity)
+                .clipped()
                 .id(activeTab)
             }
         }

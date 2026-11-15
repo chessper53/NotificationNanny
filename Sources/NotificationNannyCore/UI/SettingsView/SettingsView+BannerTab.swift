@@ -52,7 +52,7 @@ struct BannerTabView: View {
                 SettingsCardHeader("Text Color")
                 ColorSwatchRow(isDefault: !settings.hasBannerTextColor,
                                current: settings.bannerTextTint?.color,
-                               showsPresets: false,
+                               presets: SettingsColors.textPresets,
                                onDefault: { settings.clearBannerTextColor() },
                                onPick: { settings.bannerTextTint = SettingsColors.tint(of: $0) })
                 SettingsNote(settings.hasBannerTextColor

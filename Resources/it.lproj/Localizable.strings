@@ -137,6 +137,8 @@
 "Browse open and completed issues" = "Sfoglia i ticket aperti e completati";
 "Source code" = "Codice sorgente";
 "NotificationNanny is open source" = "NotificationNanny è open source";
+"Star it on GitHub" = "Metti una stella su GitHub";
+"A star helps others find NotificationNanny" = "Una stella aiuta altri a trovare NotificationNanny";
 "Diagnostics and activity logs now live in the **Diagnostics** tab. Handy if you want to inspect them before filing a report." = "Diagnostica e registri attività ora si trovano nella scheda **Diagnostica**. Utile per controllarli prima di inviare una segnalazione.";
 "I work full time, nevertheless I read every issue and try to respond to everyone." = "Lavoro a tempo pieno, ma leggo comunque ogni ticket e cerco di rispondere a tutti.";
 "Diagnostics are only attached when you file a report. Nothing is collected or transmitted otherwise." = "La diagnostica viene allegata solo quando invii una segnalazione. In nessun altro caso viene raccolto o trasmesso alcunché.";
@@ -195,6 +197,7 @@
 "A row of apps above the list; click one to see only its notifications." = "Una riga di app sopra l'elenco; fai clic su una per vedere solo le sue notifiche.";
 "Widgets" = "Widget";
 "Widgets are drawn by their own apps, so NotificationNanny can only show them as live pictures of the real ones. That needs Screen Recording. Leave this off and widgets are simply left out." = "I widget sono disegnati dalle loro app, quindi NotificationNanny può mostrarli solo come immagini dal vivo di quelli reali. Serve la Registrazione schermo. Lascialo disattivato e i widget vengono semplicemente omessi.";
+"Widgets are in beta and can make Notification Center slower to open for now." = "I widget sono in beta e per ora possono rallentare l'apertura del Centro Notifiche.";
 "Show widgets" = "Mostra i widget";
 "Screen Recording is allowed" = "La registrazione schermo è consentita";
 "Screen Recording isn't allowed yet" = "La registrazione schermo non è ancora consentita";
@@ -269,3 +272,7 @@
 "This file couldn't be read." = "Impossibile leggere questo file.";
 "The backup couldn't be saved." = "Impossibile salvare il backup.";
 "OK" = "OK";
+
+/* Native panel opening protection */
+"Screen Recording lets NotificationNanny hide the native panel before it appears. Without it, the native panel may briefly flash when opening." = "La registrazione dello schermo consente a NotificationNanny di nascondere il pannello nativo prima che appaia. Senza questa autorizzazione, può apparire brevemente durante l’apertura.";
+"Allow Screen Recording" = "Consenti registrazione schermo";

@@ -293,6 +293,12 @@ enum SettingsColors {
         ("Pink",   Color(red: 1.0,  green: 0.18, blue: 0.33)),
     ]
 
+    /// Text needs the neutral extremes too.
+    static let textPresets: [(String, Color)] = [
+        ("White", Color(white: 1)),
+        ("Black", Color(white: 0)),
+    ] + presets
+
     static func isMatch(_ a: Color, _ b: Color) -> Bool {
         let ca = NSColor(a).usingColorSpace(.sRGB)
         let cb = NSColor(b).usingColorSpace(.sRGB)
@@ -355,7 +361,7 @@ struct ColorSwatchRow<Leading: View>: View {
     let current: Color?
     /// Off for a group, whose only alternative to a colour is following All apps.
     var showsDefault = true
-    var showsPresets = true
+    var presets = SettingsColors.presets
     var defaultHelpKey = "Default"
     let onDefault: () -> Void
     let onPick: (Color) -> Void
@@ -369,19 +375,17 @@ struct ColorSwatchRow<Leading: View>: View {
             if showsDefault {
                 DefaultColorSwatch(selected: isDefault, helpKey: defaultHelpKey, action: onDefault)
             }
-            if showsPresets {
-                ForEach(SettingsColors.presets, id: \.0) { name, color in
-                    ColorSwatch(selected: current.map { SettingsColors.isMatch(color, $0) } == true,
-                                help: loc.string(name), action: { onPick(color) }) {
-                        Circle().fill(color)
-                    }
+            ForEach(presets, id: \.0) { name, color in
+                ColorSwatch(selected: current.map { SettingsColors.isMatch(color, $0) } == true,
+                            help: loc.string(name), action: { onPick(color) }) {
+                    Circle().fill(color)
+                        .overlay(Circle().strokeBorder(Color.nannyRaised(0.35), lineWidth: 1))
                 }
             }
             Spacer()
             HStack(spacing: 4) {
                 LocalizedText("Custom").font(.system(size: 9)).foregroundStyle(.tertiary)
-                ColorPicker("", selection: Binding(get: { current ?? Color(white: 0.5) }, set: onPick),
-                            supportsOpacity: false).labelsHidden()
+                CustomColorWell(color: current, onPick: onPick)
             }
             .help(loc.string("Pick any custom color"))
         }
@@ -389,11 +393,81 @@ struct ColorSwatchRow<Leading: View>: View {
 }
 
 extension ColorSwatchRow where Leading == EmptyView {
-    init(isDefault: Bool, current: Color?, showsPresets: Bool = true,
+    init(isDefault: Bool, current: Color?, presets: [(String, Color)] = SettingsColors.presets,
          defaultHelpKey: String = "Default",
          onDefault: @escaping () -> Void, onPick: @escaping (Color) -> Void) {
-        self.init(isDefault: isDefault, current: current, showsPresets: showsPresets,
+        self.init(isDefault: isDefault, current: current, presets: presets,
                   defaultHelpKey: defaultHelpKey, onDefault: onDefault, onPick: onPick) { EmptyView() }
+    }
+}
+
+/// Opens the system colour panel beside the click. SwiftUI's ColorPicker always opens it
+/// wherever it was last left, often far from the control.
+struct CustomColorWell: View {
+    let color: Color?
+    let onPick: (Color) -> Void
+
+    var body: some View {
+        Button {
+            ColorPanelPresenter.shared.open(color: color ?? Color(white: 0.5), near: NSEvent.mouseLocation,
+                                            onPick: onPick)
+        } label: {
+            Capsule().fill(color ?? Color(white: 0.5))
+                .frame(width: 40, height: 18)
+                .padding(3)
+                .background(Capsule().fill(Color.nannyRaised(0.1)))
+                .overlay(Capsule().strokeBorder(Color.nannyRaised(0.35), lineWidth: 1))
+                .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+/// One shared panel serves every well; the latest one opened receives its colours.
+@MainActor
+final class ColorPanelPresenter: NSObject {
+    static let shared = ColorPanelPresenter()
+    private var onPick: ((Color) -> Void)?
+    private var clickAway: Any?
+
+    func open(color: Color, near point: NSPoint, onPick: @escaping (Color) -> Void) {
+        let panel = NSColorPanel.shared
+        // Setting the starting colour must not count as a pick.
+        self.onPick = nil
+        panel.showsAlpha = false
+        panel.isContinuous = true
+        panel.color = NSColor(color)
+        self.onPick = onPick
+        panel.setTarget(self)
+        panel.setAction(#selector(colorChanged(_:)))
+        // Below and right of the click, kept on that screen.
+        let size = panel.frame.size
+        var origin = NSPoint(x: point.x + 12, y: point.y - size.height - 12)
+        if let visible = (NSScreen.screens.first { $0.frame.contains(point) } ?? NSScreen.main)?.visibleFrame {
+            origin.x = min(max(origin.x, visible.minX), visible.maxX - size.width)
+            origin.y = min(max(origin.y, visible.minY), visible.maxY - size.height)
+        }
+        panel.setFrameOrigin(origin)
+        panel.orderFront(nil)
+        // The panel never closes by itself; a click anywhere else in the app closes it.
+        // Another well reopens it beside that click.
+        if clickAway == nil {
+            clickAway = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] event in
+                if event.window !== NSColorPanel.shared { self?.close() }
+                return event
+            }
+        }
+    }
+
+    func close() {
+        if let clickAway { NSEvent.removeMonitor(clickAway) }
+        clickAway = nil
+        onPick = nil
+        if NSColorPanel.sharedColorPanelExists { NSColorPanel.shared.orderOut(nil) }
+    }
+
+    @objc private func colorChanged(_ sender: NSColorPanel) {
+        onPick?(Color(nsColor: sender.color))
     }
 }
 

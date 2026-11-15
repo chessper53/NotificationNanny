@@ -137,6 +137,8 @@
 "Browse open and completed issues" = "Parcourir les tickets ouverts et résolus";
 "Source code" = "Code source";
 "NotificationNanny is open source" = "NotificationNanny est open source";
+"Star it on GitHub" = "Ajouter une étoile sur GitHub";
+"A star helps others find NotificationNanny" = "Une étoile aide d'autres personnes à trouver NotificationNanny";
 "Diagnostics and activity logs now live in the **Diagnostics** tab. Handy if you want to inspect them before filing a report." = "Les diagnostics et journaux d'activité se trouvent désormais dans l'onglet **Diagnostics**. Pratique pour les consulter avant de signaler un problème.";
 "I work full time, nevertheless I read every issue and try to respond to everyone." = "Je travaille à temps plein, mais je lis chaque ticket et j'essaie de répondre à tout le monde.";
 "Diagnostics are only attached when you file a report. Nothing is collected or transmitted otherwise." = "Les diagnostics ne sont joints que lorsque vous envoyez un rapport. Rien n'est collecté ni transmis autrement.";
@@ -195,6 +197,7 @@
 "A row of apps above the list; click one to see only its notifications." = "Une rangée d'apps au-dessus de la liste ; cliquez sur l'une pour ne voir que ses notifications.";
 "Widgets" = "Widgets";
 "Widgets are drawn by their own apps, so NotificationNanny can only show them as live pictures of the real ones. That needs Screen Recording. Leave this off and widgets are simply left out." = "Les widgets sont dessinés par leurs propres apps, NotificationNanny ne peut donc les montrer que comme des images en direct des vrais. Cela demande l'enregistrement de l'écran. Laissez ceci désactivé et les widgets sont simplement omis.";
+"Widgets are in beta and can make Notification Center slower to open for now." = "Les widgets sont en bêta et peuvent pour l'instant ralentir l'ouverture du Centre de notifications.";
 "Show widgets" = "Afficher les widgets";
 "Screen Recording is allowed" = "L'enregistrement de l'écran est autorisé";
 "Screen Recording isn't allowed yet" = "L'enregistrement de l'écran n'est pas encore autorisé";
@@ -269,3 +272,7 @@
 "This file couldn't be read." = "Ce fichier n’a pas pu être lu.";
 "The backup couldn't be saved." = "La sauvegarde n’a pas pu être enregistrée.";
 "OK" = "OK";
+
+/* Native panel opening protection */
+"Screen Recording lets NotificationNanny hide the native panel before it appears. Without it, the native panel may briefly flash when opening." = "L’enregistrement de l’écran permet à NotificationNanny de masquer le panneau natif avant son apparition. Sans cette autorisation, il peut apparaître brièvement à l’ouverture.";
+"Allow Screen Recording" = "Autoriser l’enregistrement de l’écran";

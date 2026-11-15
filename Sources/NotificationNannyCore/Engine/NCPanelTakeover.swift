@@ -60,6 +60,18 @@ final class NCPanelTakeover: ObservableObject {
 
     private let logger: NannyLogger
     private let router = PanelClickRouter()
+    private lazy var clockShield: ClockOpeningShield = {
+        let shield = ClockOpeningShield(logger: logger)
+        shield.onReplay = { [weak self] screen, opening in self?.clockWasPressed(on: screen, opening: opening) }
+        return shield
+    }()
+    private var clockSequence = 0
+    /// What the panel last showed, for an early opening.
+    private var lastShown: (snapshot: NCPanelSnapshot, widgets: [NCWidget])?
+    private var earlyShown = false
+    private var earlyTimeout: DispatchWorkItem?
+    private var clockChecking = false
+    private var clockScreen: NSScreen?
     private lazy var panel = CustomNCPanelController(takeover: self)
 
     private var ncApp: AXUIElement?
@@ -74,7 +86,10 @@ final class NCPanelTakeover: ObservableObject {
     private var watchdog: Timer?
     private var pendingRefresh: DispatchWorkItem?
     /// Desired native origin: parked, or barely visible for widget capture.
-    private var desiredOrigin: CGPoint?
+    private var desiredOrigin: CGPoint? {
+        didSet { updateParkingGuard() }
+    }
+    private var parkingGuard: DispatchSourceTimer?
     private var widgetElements: [String: AXUIElement] = [:]
     private let widgetCapture = WidgetCapture()
     /// Reuse widget images across openings to avoid empty placeholders during the first capture.
@@ -123,6 +138,8 @@ final class NCPanelTakeover: ObservableObject {
     }
 
     func settingsChanged(enabled: Bool) {
+        if enabled, let ncApp { clockShield.start(app: ncApp) }
+        else { stopClockShield() }
         if !enabled, isActive { end(reason: "turned off", stillOpen: isPanelOpen()) }
         let next = readOptions()
         guard next != options else { return }
@@ -130,22 +147,136 @@ final class NCPanelTakeover: ObservableObject {
         if isActive { panel.relayout() }
     }
 
+    /// Observe clock input before the first AX panel event, including the first opening.
+    func attach(ncApp: AXUIElement, enabled: Bool) {
+        self.ncApp = ncApp
+        if enabled { clockShield.start(app: ncApp) }
+        else { stopClockShield() }
+    }
+
+    func stopClockShield() {
+        clockSequence += 1
+        clockScreen = nil
+        clockShield.stop()
+    }
+
+    /// Reopening during the native close animation can change AXExpanded without another
+    /// layout/focus event. Confirm clock transitions even when AX sends no opening event.
+    private func clockWasPressed(on screen: NSScreen, opening: Bool) {
+        if opening { showEarly(on: screen) } else if earlyShown { cancelEarly() }
+        clockSequence += 1
+        let sequence = clockSequence
+        clockScreen = screen
+        for delay in [0.05, 0.15, 0.3, 0.5, 0.8, 1.2, 1.6] {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+                guard let self, self.clockSequence == sequence, !self.clockChecking, let app = self.ncApp else { return }
+                self.clockChecking = true
+                Self.checkQueue.async { [weak self] in
+                    let open = Self.isPanelOpen(app)
+                    DispatchQueue.main.async { [weak self] in
+                        guard let self else { return }
+                        self.clockChecking = false
+                        guard self.clockSequence == sequence else { return }
+                        if Self.timing {
+                            FileHandle.standardError.write(Data("[clock check] \(sequence) after \(delay)s open=\(open) active=\(self.isActive)\n".utf8))
+                        }
+                        if open, !self.isActive { self.begin() }
+                    }
+                }
+            }
+        }
+    }
+
+    /// The forwarded click opens Notification Center; ours needn't wait for AX to say so.
+    /// The normal opening takes over the shown panel; without one it goes away again.
+    private func showEarly(on screen: NSScreen) {
+        if Self.timing {
+            FileHandle.standardError.write(Data("[early] active=\(isActive) shown=\(earlyShown) last=\(lastShown.map { "\($0.snapshot.rowCount) rows" } ?? "none")\n".utf8))
+        }
+        guard !isActive, !earlyShown, let last = lastShown else { return }
+        options = readOptions()
+        snapshot = last.snapshot
+        widgets = last.widgets
+        earlyShown = true
+        panel.show(on: screen)
+        Self.mark("early panel shown")
+        let timeout = DispatchWorkItem { [weak self] in
+            guard let self, self.earlyShown, !self.isActive else { return }
+            self.logger.log("Notification Center didn't open after the clock click — hiding the early panel",
+                            level: .warn, tag: "Panel")
+            self.cancelEarly()
+        }
+        earlyTimeout = timeout
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5, execute: timeout)
+    }
+
+    private func cancelEarly() {
+        earlyTimeout?.cancel()
+        earlyTimeout = nil
+        earlyShown = false
+        guard !isActive else { return }
+        panel.hide(after: options.animation.outroDuration)
+        DispatchQueue.main.asyncAfter(deadline: .now() + options.animation.outroDuration + 0.1) { [weak self] in
+            guard let self, !self.isActive, !self.earlyShown else { return }
+            self.snapshot = .empty
+            self.widgets = []
+        }
+    }
+
     private func evaluate(trigger: String) {
-        let open = isPanelOpen()
-        switch (open, isActive) {
-        case (true, false): begin()
-        case (true, true): keepInPlace(); scheduleRefresh()
-        case (false, true): end(reason: "closed, seen on \(trigger)")
-        case (false, false): break
+        guard isActive else {
+            if isPanelOpen() { begin() }
+            return
+        }
+        keepInPlace()
+        check(trigger: trigger)
+    }
+
+    /// While ours is up, asks Notification Center off the main thread: it answers slowly while
+    /// its own panel animates, and asking from here froze our opening animation halfway.
+    private nonisolated static let checkQueue = DispatchQueue(label: "com.notificationnanny.panel-check", qos: .userInteractive)
+    private var checking = false
+    private var checkAgain: String?
+
+    private func check(trigger: String) {
+        guard !checking else { checkAgain = trigger; return }
+        guard let ncApp, let window else { return }
+        checking = true
+        let sequence = clockSequence
+        Self.checkQueue.async {
+            let open = Self.panelOpenState(ncApp)
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated { [weak self] in
+                    guard let self else { return }
+                    self.checking = false
+                    if let open, self.clockSequence == sequence, self.isActive,
+                       let current = self.window, CFEqual(current, window) {
+                        if open { self.scheduleRefresh() } else { self.end(reason: "closed, seen on \(trigger)") }
+                    }
+                    if let again = self.checkAgain {
+                        self.checkAgain = nil
+                        if self.isActive { self.check(trigger: again) }
+                    }
+                }
+            }
         }
     }
 
     /// Take over only when Notification Center reports AXExpanded.
     private func isPanelOpen() -> Bool {
         guard let ncApp else { return false }
+        return Self.isPanelOpen(ncApp)
+    }
+
+    nonisolated static func isPanelOpen(_ ncApp: AXUIElement) -> Bool {
+        panelOpenState(ncApp) ?? false
+    }
+
+    /// An AX timeout says nothing about whether the panel closed.
+    private nonisolated static func panelOpenState(_ ncApp: AXUIElement) -> Bool? {
         var value: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(ncApp, "AXExpanded" as CFString, &value) == .success else { return false }
-        return value as? Bool ?? false
+        guard AXUIElementCopyAttributeValue(ncApp, "AXExpanded" as CFString, &value) == .success else { return nil }
+        return value as? Bool
     }
 
     private func hostWindow() -> AXUIElement? {
@@ -162,7 +293,12 @@ final class NCPanelTakeover: ObservableObject {
     // MARK: Lifecycle
 
     private func begin() {
-        guard let host = hostWindow(), let origin = host.point() else { return }
+        // During a rapid reopen AXWindows can omit the closing host that is still parked. It is
+        // already ours; reuse that exact element rather than mistaking a desktop widget for it.
+        guard let host = hostWindow() ?? goingHome?.window, let origin = host.point() else {
+            if Self.timing { FileHandle.standardError.write(Data("[clock check] opening host unavailable\n".utf8)) }
+            return
+        }
         window = host
         // A reopened panel still has its previous restore destination.
         if let going = goingHome, CFEqual(going.window, host) {
@@ -175,11 +311,13 @@ final class NCPanelTakeover: ObservableObject {
         goingHome = nil
         isActive = true
         openedAt = ProcessInfo.processInfo.systemUptime
+        Self.openedAtForMarks = openedAt
         // Park before other work to prevent a visible native frame.
         desiredOrigin = CGPoint(x: origin.x, y: Self.parkedY)
-        keepInPlace()
+        keepInPlace(waiting: true)
         options = readOptions()
-        let screen = preferredScreen() ?? Self.screen(atAXPoint: origin) ?? NSScreen.main ?? NSScreen.screens[0]
+        let screen = preferredScreen() ?? clockScreen ?? Self.screen(atAXPoint: origin) ?? NSScreen.main ?? NSScreen.screens[0]
+        clockScreen = nil
         onBegin?()
         refresh(now: true)
         // Keep the panel open while its position is dragged in Settings.
@@ -199,19 +337,54 @@ final class NCPanelTakeover: ObservableObject {
         RunLoop.main.add(timer, forMode: .common)
         watchdog = timer
         showWhenFilled(on: screen, deadline: ProcessInfo.processInfo.systemUptime + 0.3)
+        if Self.timing { watchForStalls() }
     }
+
+    /// NN_TIMING=1: logs main thread gaps over 50 ms in the first two seconds after opening.
+    private var stallTimer: Timer?
+
+    private func watchForStalls() {
+        stallTimer?.invalidate()
+        var last = ProcessInfo.processInfo.systemUptime
+        let timer = Timer(timeInterval: 0.01, repeats: true) { [weak self] timer in
+            MainActor.assumeIsolated {
+                let now = ProcessInfo.processInfo.systemUptime
+                guard let self, now - self.openedAt < 2 else { return timer.invalidate() }
+                if now - last > 0.05 {
+                    Self.mark("STALL \(Int((now - last) * 1000)) ms ending")
+                }
+                last = now
+            }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        stallTimer = timer
+    }
+
+    /// NN_TIMING=1: a step of opening, in ms since Notification Center opened.
+    static func mark(_ what: String) {
+        guard timing else { return }
+        FileHandle.standardError.write(Data("[open] \(what) at \(Int((ProcessInfo.processInfo.systemUptime - openedAtForMarks) * 1000)) ms\n".utf8))
+    }
+    private static var openedAtForMarks: Double = 0
 
     /// Wait for the AX list before showing ours to avoid flashing an empty panel.
     private func showWhenFilled(on screen: NSScreen, deadline: Double) {
         guard isActive else { return }
-        if snapshot.isEmpty, ProcessInfo.processInfo.systemUptime < deadline {
+        if snapshot.isEmpty, !earlyShown, ProcessInfo.processInfo.systemUptime < deadline {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.03) { [weak self] in
                 self?.refresh()
                 self?.showWhenFilled(on: screen, deadline: deadline)
             }
             return
         }
-        panel.show(on: screen)
+        if earlyShown {
+            // Already on screen from the clock click; showing again would restart its animation.
+            earlyShown = false
+            earlyTimeout?.cancel()
+            earlyTimeout = nil
+        } else {
+            panel.show(on: screen)
+        }
         if Self.timing {
             FileHandle.standardError.write(Data("[timing] panel shown \(Int((ProcessInfo.processInfo.systemUptime - openedAt) * 1000)) ms after Notification Center opened, \(snapshot.rowCount) rows\n".utf8))
         }
@@ -231,16 +404,21 @@ final class NCPanelTakeover: ObservableObject {
         pendingRefresh?.cancel()
         refreshBurst.forEach { $0.cancel() }
         refreshBurst = []
+        dropSeenAt = nil
+        checkAgain = nil
         menu = nil
         if let window, let home {
             if stillOpen {
-                _ = setPosition(window, home)
+                parkingGuard?.cancel()
+                parkingGuard = nil
+                Self.restore(window, home)
                 onEnd?()
             } else {
                 let work = DispatchWorkItem { [weak self] in
                     guard let self, let going = self.goingHome else { return }
                     self.goingHome = nil
-                    _ = self.setPosition(going.window, going.home)
+                    self.updateParkingGuard()
+                    Self.restore(going.window, going.home)
                     self.onEnd?()
                 }
                 goingHome = (window, home, work)
@@ -258,9 +436,10 @@ final class NCPanelTakeover: ObservableObject {
         sectionButtons = [:]
         editWidgetsButton = nil
         clearMenuButton = nil
+        lastShown = (snapshot, widgets)
         // Keep rows and widgets through the exit animation.
         DispatchQueue.main.asyncAfter(deadline: .now() + options.animation.outroDuration + 0.1) { [weak self] in
-            guard let self, !self.isActive else { return }
+            guard let self, !self.isActive, !self.earlyShown else { return }
             self.snapshot = .empty
             self.widgets = []
         }
@@ -269,9 +448,12 @@ final class NCPanelTakeover: ObservableObject {
 
     /// Restore the native window before quitting so future banners cannot arrive off screen.
     func releaseForQuit() {
+        stopClockShield()
+        parkingGuard?.cancel()
+        parkingGuard = nil
         guard isActive, let window, let home else { return finishClosing() }
         router.stop()
-        _ = setPosition(window, home)
+        Self.restore(window, home)
         isActive = false
         self.window = nil
         self.home = nil
@@ -283,17 +465,56 @@ final class NCPanelTakeover: ObservableObject {
         guard let going = goingHome else { return }
         going.work.cancel()
         goingHome = nil
-        _ = setPosition(going.window, going.home)
+        updateParkingGuard()
+        Self.restore(going.window, going.home)
     }
 
-    /// Reapply the parked position if Notification Center restores its host.
-    private func keepInPlace() {
-        guard let window, let target = desiredOrigin, let p = window.point() else { return }
-        if hypot(p.x - target.x, p.y - target.y) > 1 { setPosition(window, target) }
+    /// Puts Notification Center's window back, after any parking still queued.
+    private static func restore(_ window: AXUIElement, _ home: CGPoint) {
+        parkQueue.sync { _ = setPosition(window, home) }
+    }
+
+    /// Parking has a queue of its own, so it never waits behind a slower question to
+    /// Notification Center: it puts its window back while opening, and any wait shows it.
+    private nonisolated static let parkQueue = DispatchQueue(label: "com.notificationnanny.panel-park", qos: .userInteractive)
+
+    /// Native opening/layout animations can reset the host while the main thread is reading
+    /// the AX tree. Stop writing when it closes so a subsequent opening can create its host.
+    private func updateParkingGuard() {
+        parkingGuard?.cancel()
+        parkingGuard = nil
+        guard isActive, let host = window, let target = desiredOrigin else { return }
+        let timer = DispatchSource.makeTimerSource(queue: Self.parkQueue)
+        timer.schedule(deadline: .now(), repeating: .milliseconds(16), leeway: .milliseconds(2))
+        timer.setEventHandler { Self.keep(host, at: target) }
+        parkingGuard = timer
+        timer.resume()
+    }
+
+    /// Reapply the parked position if Notification Center restores its host; `waiting` when what
+    /// follows needs the window there already.
+    private func keepInPlace(waiting: Bool = false) {
+        guard let window, let target = desiredOrigin else { return }
+        let asked = ProcessInfo.processInfo.systemUptime
+        if waiting {
+            Self.parkQueue.sync { Self.keep(window, at: target, asked: asked) }
+        } else {
+            Self.parkQueue.async { Self.keep(window, at: target, asked: asked) }
+        }
+    }
+
+    private nonisolated static func keep(_ window: AXUIElement, at target: CGPoint, asked: Double? = nil) {
+        guard let p = window.point() else { return }
+        guard hypot(p.x - target.x, p.y - target.y) > 1 else { return }
+        setPosition(window, target)
+        if timing {
+            let waited = asked.map { Int((ProcessInfo.processInfo.systemUptime - $0) * 1000) } ?? 0
+            FileHandle.standardError.write(Data("[park] moved back from (\(Int(p.x)),\(Int(p.y))) to y \(Int(target.y)), \(waited) ms after asking, uptime \(ProcessInfo.processInfo.systemUptime)\n".utf8))
+        }
     }
 
     @discardableResult
-    private func setPosition(_ window: AXUIElement, _ point: CGPoint) -> AXError {
+    private nonisolated static func setPosition(_ window: AXUIElement, _ point: CGPoint) -> AXError {
         var p = point
         guard let value = AXValueCreate(.cgPoint, &p) else { return .failure }
         return AXUIElementSetAttributeValue(window, kAXPositionAttribute as CFString, value)
@@ -320,7 +541,7 @@ final class NCPanelTakeover: ObservableObject {
     }
 
     /// NN_TIMING=1 reports list read durations.
-    private static let timing = ProcessInfo.processInfo.environment["NN_TIMING"] == "1"
+    private nonisolated static let timing = ProcessInfo.processInfo.environment["NN_TIMING"] == "1"
 
     private struct ListRead {
         /// The list's children that decide the layout, with their elements; nil with no list.
@@ -328,6 +549,8 @@ final class NCPanelTakeover: ObservableObject {
         var editWidgets: AXUIElement?
         var clearMenu: AXUIElement?
         var footer = NCPanelFooter()
+        /// The panel's widgets with their frames in the window; nil when not asked for.
+        var widgets: [(String, AXUIElement, CGRect)]?
     }
 
     /// Notification Center's own names and roles a read needs, taken on the main thread.
@@ -351,14 +574,17 @@ final class NCPanelTakeover: ObservableObject {
 
     /// Read synchronously when `now` is true so the opening panel has content before it shows.
     private func refresh(now: Bool = false) {
-        readWidgets()
         guard let window else {
             if snapshot != .empty { snapshot = .empty }
+            if !widgets.isEmpty { widgets = [] }
             return
         }
         let names = readNames
+        // Widgets are read with the list, off the main thread: walking the tree here every event
+        // and every watchdog tick made the panel stutter.
+        let withWidgets = showsWidgets
         if now {
-            apply(Self.read(window, names))
+            apply(Self.read(window, names, widgets: withWidgets), confirmingDrops: false)
             return
         }
         // Coalesce events during an active read into one additional read.
@@ -366,7 +592,7 @@ final class NCPanelTakeover: ObservableObject {
         reading = true
         let started = ProcessInfo.processInfo.systemUptime
         Self.readQueue.async {
-            let result = Self.read(window, names)
+            let result = Self.read(window, names, widgets: withWidgets)
             DispatchQueue.main.async {
                 MainActor.assumeIsolated { [weak self] in
                     guard let self else { return }
@@ -385,7 +611,14 @@ final class NCPanelTakeover: ObservableObject {
         }
     }
 
-    private func apply(_ read: ListRead) {
+    /// When a read first lost rows or footer buttons that ours still shows (system uptime).
+    private var dropSeenAt: Double?
+    /// How long a loss must last before ours follows it.
+    private static let dropConfirm: Double = 0.06
+
+    /// Losses wait for a second read: Notification Center briefly drops rows, or the whole list,
+    /// while it rebuilds its tree, and following that blanked ours for a frame.
+    private func apply(_ read: ListRead, confirmingDrops: Bool = true) {
         let started = ProcessInfo.processInfo.systemUptime
         defer {
             if Self.timing {
@@ -393,15 +626,35 @@ final class NCPanelTakeover: ObservableObject {
                 FileHandle.standardError.write(Data("[timing] panel apply \(ms) ms, \(snapshot.rowCount) rows\n".utf8))
             }
         }
+        if showsWidgets {
+            applyWidgets(read.widgets ?? [])
+        } else if !widgets.isEmpty {
+            widgets = []
+        }
+        let entries = read.entries?.map(\.0)
+        let next = entries.map(NCPanelSnapshot.build) ?? .empty
+        if confirmingDrops, snapshot.drops(in: next) || footer.drops(in: read.footer) {
+            if let since = dropSeenAt, started - since >= Self.dropConfirm {
+                if Self.timing { FileHandle.standardError.write(Data("[snapshot] loss confirmed\n".utf8)) }
+            } else {
+                if dropSeenAt == nil {
+                    dropSeenAt = started
+                    DispatchQueue.main.asyncAfter(deadline: .now() + Self.dropConfirm + 0.02) { [weak self] in
+                        guard let self, self.isActive else { return }
+                        self.refresh()
+                    }
+                }
+                return
+            }
+        }
+        dropSeenAt = nil
         editWidgetsButton = read.editWidgets
         clearMenuButton = read.clearMenu
         if read.footer != footer { footer = read.footer }
-        guard let pairs = read.entries else {
+        guard let pairs = read.entries, let entries else {
             if snapshot != .empty { snapshot = .empty }
             return
         }
-        let entries = pairs.map(\.0)
-        let next = NCPanelSnapshot.build(from: entries)
         mapElements(entries: entries, elements: pairs.map(\.1))
         if next != snapshot {
             if Self.timing {
@@ -413,8 +666,9 @@ final class NCPanelTakeover: ObservableObject {
     }
 
     /// Reads the list and footer using AX only; safe off the main thread.
-    private nonisolated static func read(_ window: AXUIElement, _ names: ReadNames) -> ListRead {
+    private nonisolated static func read(_ window: AXUIElement, _ names: ReadNames, widgets: Bool) -> ListRead {
         var result = ListRead()
+        if widgets { result.widgets = widgetFrames(in: window) }
         // Read the footer separately: an empty panel may have no list, only Edit Widgets.
         if let scroll = find(in: window, depth: 0, { $0.stringAttribute(kAXRoleAttribute as String) == (kAXScrollAreaRole as String) }) {
             let kids = scroll.children()
@@ -533,13 +787,19 @@ final class NCPanelTakeover: ObservableObject {
         options.widgets && ScreenRecordingPermission.shared.isGranted
     }
 
-    private func readWidgets() {
-        guard showsWidgets, let window, let origin = window.point() else {
-            if !widgets.isEmpty { widgets = [] }
-            return
-        }
+    /// Each widget with its frame in Notification Center's window; AX only, safe off the main
+    /// thread.
+    private nonisolated static func widgetFrames(in window: AXUIElement) -> [(String, AXUIElement, CGRect)] {
+        guard let origin = window.point() else { return [] }
         var found: [(String, AXUIElement)] = []
-        Self.collectWidgets(in: window, into: &found)
+        collectWidgets(in: window, into: &found)
+        return found.compactMap { id, el in
+            guard let p = el.point(), let size = el.size() else { return nil }
+            return (id, el, CGRect(x: p.x - origin.x, y: p.y - origin.y, width: size.width, height: size.height))
+        }
+    }
+
+    private func applyWidgets(_ found: [(String, AXUIElement, CGRect)]) {
         // Keep missing widgets for one second while a resize temporarily removes them from AX.
         let now = ProcessInfo.processInfo.systemUptime
         if found.isEmpty, !widgets.isEmpty {
@@ -550,9 +810,7 @@ final class NCPanelTakeover: ObservableObject {
         let previous = Dictionary(widgets.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
         var next: [NCWidget] = []
         var elements: [String: AXUIElement] = [:]
-        for (id, el) in found {
-            guard let p = el.point(), let size = el.size() else { continue }
-            let frame = CGRect(x: p.x - origin.x, y: p.y - origin.y, width: size.width, height: size.height)
+        for (id, el, frame) in found {
             // A menu lifts a duplicate widget with the same identifier; keep the one at its
             // original position.
             if let i = next.firstIndex(where: { $0.id == id }) {
@@ -578,7 +836,7 @@ final class NCPanelTakeover: ObservableObject {
     }
 
     /// Collect panel widgets only; desktop widgets live in separate windows.
-    private static func collectWidgets(in el: AXUIElement, into found: inout [(String, AXUIElement)], depth: Int = 0) {
+    private nonisolated static func collectWidgets(in el: AXUIElement, into found: inout [(String, AXUIElement)], depth: Int = 0) {
         guard depth < 10 else { return }
         if let id = el.identifier, id.hasPrefix("widget-local:") {
             found.append((id, el))
@@ -641,18 +899,38 @@ final class NCPanelTakeover: ObservableObject {
 
     /// Keep the native window rendering and capture widgets every two seconds.
     private func startWidgets() {
+        Self.mark("widgets start")
+        defer { Self.mark("widgets started") }
         ScreenRecordingPermission.shared.refresh()
         if options.widgets, !ScreenRecordingPermission.shared.isGranted {
             logger.log("Widgets are on, but Screen Recording isn't allowed — leaving them out", level: .warn, tag: "Panel")
         }
-        readWidgets()
-        guard showsWidgets, !widgets.isEmpty, let window, let size = window.size() else { return }
+        guard showsWidgets, let window else {
+            if !widgets.isEmpty { widgets = [] }
+            return
+        }
+        Task { @MainActor [weak self] in
+            let (found, size) = await Self.offMain { (Self.widgetFrames(in: window), window.size()) }
+            guard let self, self.isActive, let current = self.window, CFEqual(current, window) else { return }
+            self.applyWidgets(found)
+            guard !self.widgets.isEmpty, let size else { return }
+            self.drawWidgets(in: window, size: size)
+        }
+    }
+
+    /// Runs AX work on the check queue, off the main thread.
+    private nonisolated static func offMain<T: Sendable>(_ work: @escaping @Sendable () -> T) async -> T {
+        await withCheckedContinuation { done in checkQueue.async { done.resume(returning: work()) } }
+    }
+
+    private func drawWidgets(in window: AXUIElement, size: CGSize) {
         guard let target = Self.drawnOffScreen(windowSize: size, screens: Self.axScreens) else {
             logger.log("No place to draw Notification Center's widgets unseen — leaving them out", level: .warn, tag: "Panel")
             return
         }
         desiredOrigin = target
         keepInPlace()
+        Self.mark("moved to draw widgets")
         captureWidgets()
         let timer = Timer(timeInterval: 2, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.captureWidgets() }
@@ -675,18 +953,25 @@ final class NCPanelTakeover: ObservableObject {
         }
         guard isActive, ProcessInfo.processInfo.systemUptime >= widgetCaptureHold,
               let window, let id = PrivateWindowAPI.windowID(for: window) else { return }
-        readWidgets()
-        let rects = Dictionary(widgets.map { ($0.id, $0.frameInWindow) }, uniquingKeysWith: { a, _ in a })
+        // Widget frames are read off the main thread: Notification Center answers slowly right
+        // after opening, and reading them here froze the opening animation.
+        let readFrames = { [weak self] () async -> Bool in
+            let found = await Self.offMain { Self.widgetFrames(in: window) }
+            guard let self, self.isActive, self.showsWidgets, let current = self.window, CFEqual(current, window)
+            else { return false }
+            self.applyWidgets(found)
+            return true
+        }
         Task { @MainActor [weak self] in
-            guard let self else { return }
+            guard await readFrames(), let self else { return }
+            let rects = Dictionary(self.widgets.map { ($0.id, $0.frameInWindow) }, uniquingKeysWith: { a, _ in a })
             let started = ProcessInfo.processInfo.systemUptime
             let images = await self.widgetCapture.capture(windowID: id, rects: rects)
             if Self.timing {
                 let ms = Int((ProcessInfo.processInfo.systemUptime - started) * 1000)
                 FileHandle.standardError.write(Data("[timing] widget capture \(ms) ms, \(images.count) of \(rects.count)\n".utf8))
             }
-            guard self.isActive else { return }
-            self.readWidgets()
+            guard self.isActive, await readFrames() else { return }
             let settled = self.widgets.allSatisfy { w in
                 rects[w.id].map { abs($0.minX - w.frameInWindow.minX) < 1 && abs($0.minY - w.frameInWindow.minY) < 1 } ?? false
             }
@@ -704,6 +989,7 @@ final class NCPanelTakeover: ObservableObject {
             if images.count < rects.count {
                 self.logger.log("Captured \(images.count) of \(rects.count) widget(s)", level: .warn, tag: "Panel")
             }
+            Self.mark("widget pictures in (\(images.count))")
             for i in self.widgets.indices {
                 if let image = images[self.widgets[i].id] {
                     self.widgets[i].image = image
@@ -720,7 +1006,7 @@ final class NCPanelTakeover: ObservableObject {
         guard let under = underOurs() else { return }
         let parked = desiredOrigin
         desiredOrigin = under
-        keepInPlace()
+        keepInPlace(waiting: true)
         let f = widget.frameInWindow
         let point = CGPoint(x: under.x + f.minX + f.width * fraction.x, y: under.y + f.minY + f.height * fraction.y)
         let back = CGEvent(source: nil)?.location
@@ -1084,7 +1370,7 @@ final class NCPanelTakeover: ObservableObject {
         let resting = desiredOrigin.flatMap { $0.y > Self.parkedY + 1 ? $0 : nil }
         if let resting {
             desiredOrigin = CGPoint(x: resting.x, y: Self.parkedY)
-            keepInPlace()
+            keepInPlace(waiting: true)
         }
         NCMenus.read(of: el, in: window, press: press, logger: logger) { [weak self] items in
             done(items)
@@ -1104,6 +1390,11 @@ final class NCPanelTakeover: ObservableObject {
 struct NCPanelFooter: Equatable {
     var editWidgets: String?
     var clear: String?
+
+    /// A button here is missing from `next`.
+    func drops(in next: NCPanelFooter) -> Bool {
+        (editWidgets != nil && next.editWidgets == nil) || (clear != nil && next.clear == nil)
+    }
 }
 
 struct NCPanelMenu: Identifiable, Equatable {

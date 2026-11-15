@@ -36,6 +36,11 @@ struct HelpTabView: View {
                         systemImage: "chevron.left.forwardslash.chevron.right") {
                     open("https://github.com/chessper53/NotificationNanny")
                 }
+                Divider().padding(.leading, 14)
+                helpRow(title: "Star it on GitHub", description: "A star helps others find NotificationNanny",
+                        systemImage: "star") {
+                    open("https://github.com/chessper53/NotificationNanny")
+                }
             }
             .settingsCardBackground()
 

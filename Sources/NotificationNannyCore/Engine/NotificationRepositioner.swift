@@ -161,6 +161,7 @@ package final class NotificationRepositioner: ObservableObject {
             return
         }
         isObserving = true
+        if let ncApp { panelTakeover.attach(ncApp: ncApp, enabled: customNotificationCenterEnabled) }
         iconCache.prewarm()
         logger.log("Observer started — NC PID \(axController.ncPid)", tag: "AX")
         // Which panel check applies here; see isNCPanelOpen. Untested releases report it.
@@ -258,6 +259,7 @@ package final class NotificationRepositioner: ObservableObject {
     }
 
     private func teardownObserver() {
+        panelTakeover.stopClockShield()
         axController.stop()
         isObserving = false
         lastSelfSetPositions.removeAll()
