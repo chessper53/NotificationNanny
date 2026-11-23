@@ -184,3 +184,6 @@ sound groups) is laid out the same way:
 3. Look at the window unfocused too (click another app): nothing should turn grey.
 4. If a saved setting is involved, add a test that loads settings saved before the
    change and checks they behave as before.
+
+Settings screenshot comparison instructions and CI artifact review are in
+[VISUAL-TESTING.md](VISUAL-TESTING.md).

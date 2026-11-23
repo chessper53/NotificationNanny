@@ -12,6 +12,8 @@ struct SettingsSnapshotTests {
 
     nonisolated static let outputDirectory = ProcessInfo.processInfo.environment["NN_SNAPSHOT_DIR"]
 
+    nonisolated static let visualReview = ProcessInfo.processInfo.environment["NN_VISUAL_REVIEW"] == "1"
+
     // Website capture size excludes the sidebar from the original 660 by 640 point window.
     static let paneSize = NSSize(width: 509, height: 640)
 
@@ -29,7 +31,7 @@ struct SettingsSnapshotTests {
         let settings = makeDemoSettings(knownAppsFile: directory.appendingPathComponent("known_apps.json"))
         let repositioner = NotificationRepositioner(logger: .shared)
         let launchAtLogin = LaunchAtLogin()
-        fillDemoLog()
+        if !Self.visualReview { fillDemoLog() }
 
         let tabs: [(name: String, view: AnyView, clicks: [NSPoint])] = [
             ("position", AnyView(PositionTabView()), []),
@@ -40,44 +42,53 @@ struct SettingsSnapshotTests {
             ("sounds", AnyView(SoundsTabView()), []),
             ("presets", AnyView(PresetsTabView()), []),
             ("general", AnyView(GeneralTabView()), []),
-            ("diagnostics", AnyView(DebugTabView()), Self.diagnosticsClicks),
+            ("diagnostics", AnyView(DebugTabView()), Self.visualReview ? [] : Self.diagnosticsClicks),
             ("help", AnyView(HelpTabView()), []),
         ]
 
-        for appearance in [NSAppearance.Name.darkAqua, .aqua] {
-            let suffix = appearance == .aqua ? "-light" : ""
-            for tab in tabs {
-                let pane = ScrollView { tab.view.padding(16) }
-                    // Avoid a legacy scroll gutter that changes the capture width when a mouse is
-                    // attached.
-                    .scrollIndicators(.never)
-                    .frame(width: Self.paneSize.width, height: Self.paneSize.height)
-                    .background(Color.nannyWindow)
-                    .tint(Color.nannyProminent)
-                    // Draw as the frontmost window does, so prominent buttons keep
-                    // their accent fill instead of the inactive grey.
-                    .environment(\.controlActiveState, .key)
-                    // Numbers like the display size read 5,120 rather than the
-                    // machine's regional grouping.
-                    .environment(\.locale, Locale(identifier: "en_US"))
-                    .environmentObject(settings)
-                    .environmentObject(repositioner)
-                    .environmentObject(launchAtLogin)
-                let png = try render(pane, appearance: appearance, clicks: tab.clicks)
-                try png.write(to: directory.appendingPathComponent("\(tab.name)\(suffix).png"))
+        let variants: [(suffix: String, size: NSSize, active: Bool)] = Self.visualReview ? [
+            ("", Self.paneSize, true),
+            ("-inactive", Self.paneSize, false),
+            ("-narrow", NSSize(width: 469, height: 412), true),
+        ] : [("", Self.paneSize, true)]
+
+        for variant in variants {
+            for appearance in [NSAppearance.Name.darkAqua, .aqua] {
+                let suffix = appearance == .aqua ? "-light" : ""
+                for tab in tabs {
+                    // The same wrapper SettingsView puts around the active tab.
+                    let pane = ScrollView { tab.view.padding(16) }
+                        // Avoid a legacy scroller gutter narrowing the content
+                        // when the machine has a mouse attached.
+                        .scrollIndicators(.never)
+                        .frame(width: variant.size.width, height: variant.size.height)
+                        .background(Color.nannyWindow)
+                        .tint(Color.nannyProminent)
+                        // Match active and inactive controls without taking desktop focus.
+                        .environment(\.controlActiveState, variant.active ? .key : .inactive)
+                        // Numbers like the display size read 5,120 rather than the
+                        // machine's regional grouping.
+                        .environment(\.locale, Locale(identifier: "en_US"))
+                        .environmentObject(settings)
+                        .environmentObject(repositioner)
+                        .environmentObject(launchAtLogin)
+                    let png = try render(pane, appearance: appearance, clicks: tab.clicks, size: variant.size, active: variant.active)
+                    try png.write(to: directory.appendingPathComponent("\(tab.name)\(suffix)\(variant.suffix).png"))
+                }
             }
         }
     }
 
     // MARK: Rendering
 
-    private func render(_ view: some View, appearance: NSAppearance.Name, clicks: [NSPoint]) throws -> Data {
+    private func render(_ view: some View, appearance: NSAppearance.Name, clicks: [NSPoint], size: NSSize, active: Bool) throws -> Data {
         let host = NSHostingView(rootView: view)
-        host.frame = NSRect(origin: .zero, size: Self.paneSize)
+        host.frame = NSRect(origin: .zero, size: size)
 
-        // Keep the window off every display so snapshots remain invisible.
-        let window = KeyLookingWindow(contentRect: NSRect(origin: NSPoint(x: -20_000, y: -20_000), size: Self.paneSize),
+        // Borderless and far off every display, so nothing ever shows on screen.
+        let window = KeyLookingWindow(contentRect: NSRect(origin: NSPoint(x: -20_000, y: -20_000), size: size),
                               styleMask: [.borderless], backing: .buffered, defer: false)
+        window.drawsActive = active
         window.appearance = NSAppearance(named: appearance)
         window.contentView = host
         window.orderFrontRegardless()
@@ -87,7 +98,7 @@ struct SettingsSnapshotTests {
         RunLoop.main.run(until: Date().addingTimeInterval(1.2))
         for click in clicks {
             // Window y increases upward.
-            let location = NSPoint(x: click.x, y: Self.paneSize.height - click.y)
+            let location = NSPoint(x: click.x, y: size.height - click.y)
             for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
                 let event = try #require(NSEvent.mouseEvent(
                     with: type, location: location, modifierFlags: [],
@@ -104,10 +115,10 @@ struct SettingsSnapshotTests {
         let scale: CGFloat = 2
         let rep = try #require(NSBitmapImageRep(
             bitmapDataPlanes: nil,
-            pixelsWide: Int(Self.paneSize.width * scale), pixelsHigh: Int(Self.paneSize.height * scale),
+            pixelsWide: Int(size.width * scale), pixelsHigh: Int(size.height * scale),
             bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
             colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0))
-        rep.size = Self.paneSize
+        rep.size = size
         NSAppearance(named: appearance)?.performAsCurrentDrawingAppearance {
             host.cacheDisplay(in: host.bounds, to: rep)
         }
@@ -170,10 +181,11 @@ struct SettingsSnapshotTests {
     }
 }
 
-/// Draw active AppKit controls without taking focus from the user's app.
+/// Match active or inactive AppKit controls without taking focus from the user.
 private final class KeyLookingWindow: NSWindow {
-    override var isKeyWindow: Bool { true }
-    override var isMainWindow: Bool { true }
+    var drawsActive = true
+    override var isKeyWindow: Bool { drawsActive }
+    override var isMainWindow: Bool { drawsActive }
 
     // Pin the backing scale so an offscreen window cannot upscale a 1x render into the Retina
     // bitmap.
