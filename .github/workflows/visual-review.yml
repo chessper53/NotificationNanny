@@ -14,7 +14,7 @@ concurrency:
 jobs:
   compare:
     name: Settings screenshots (review only)
-    runs-on: macos-26-intel
+    runs-on: macos-26
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
@@ -51,9 +51,11 @@ jobs:
           cp current/scripts/visual-tests/render.sh baseline/scripts/visual-tests/render.sh
           cp current/scripts/test.sh baseline/scripts/test.sh
       - name: Render base revision
+        timeout-minutes: 8
         working-directory: baseline
         run: scripts/visual-tests/render.sh "$GITHUB_WORKSPACE/artifacts/baseline"
       - name: Render proposed revision
+        timeout-minutes: 8
         working-directory: current
         run: scripts/visual-tests/render.sh "$GITHUB_WORKSPACE/artifacts/current"
       - name: Compare (differences are advisory)
