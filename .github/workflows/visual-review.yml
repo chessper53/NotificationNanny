@@ -49,6 +49,7 @@ jobs:
           cp current/Tests/NotificationNannyTests/SettingsSnapshotTests.swift baseline/Tests/NotificationNannyTests/SettingsSnapshotTests.swift
           mkdir -p baseline/scripts/visual-tests
           cp current/scripts/visual-tests/render.sh baseline/scripts/visual-tests/render.sh
+          cp current/scripts/test.sh baseline/scripts/test.sh
       - name: Render base revision
         working-directory: baseline
         run: scripts/visual-tests/render.sh "$GITHUB_WORKSPACE/artifacts/baseline"

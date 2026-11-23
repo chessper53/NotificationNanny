@@ -18,4 +18,8 @@ if [[ "${DEVROOT}" == *"CommandLineTools"* ]]; then
     fi
 fi
 
-exec swift test "${ARGS[@]}" "$@"
+# Bash 3 treats an empty array as unset when nounset is enabled.
+if [[ ${#ARGS[@]} -gt 0 ]]; then
+    exec swift test "${ARGS[@]}" "$@"
+fi
+exec swift test "$@"

@@ -9,7 +9,7 @@ render, build and comparison errors still fail the job.
 The workflow renders both revisions on the same `macos-26` runner using the same
 Xcode selection, display, installed icons and capture harness. This avoids keeping
 OS-dependent reference images in git. The exact OS and toolchain versions are saved
-in `environment.txt`. The base capture uses the proposed revision's snapshot test,
+in `environment.txt`. The base capture uses the proposed revision's snapshot test and test launcher,
 with app Sources and Resources from the base revision. If a view's API changes,
 keep the harness compatible with both revisions for that PR, or adapt this workflow
 explicitly. No baseline is silently accepted or updated.
