@@ -6,7 +6,7 @@ It shows the base revision, proposed revision and amplified pixel differences.
 `results.json` contains the measurements. Differences are advisory during the pilot;
 render, build and comparison errors still fail the job.
 
-The workflow renders both revisions on the same `macos-26` runner using the same
+The workflow renders both revisions on the same `macos-26-intel` runner using the same
 Xcode selection, display, installed icons and capture harness. This avoids keeping
 OS-dependent reference images in git. The exact OS and toolchain versions are saved
 in `environment.txt`. The base capture uses the proposed revision's snapshot test and test launcher,

@@ -14,7 +14,7 @@ concurrency:
 jobs:
   compare:
     name: Settings screenshots (review only)
-    runs-on: macos-26
+    runs-on: macos-26-intel
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
