@@ -1,0 +1,67 @@
+name: Settings visual review
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: visual-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  compare:
+    name: Settings screenshots (review only)
+    runs-on: macos-26
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: current
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          path: baseline
+          persist-credentials: false
+      - name: Select one toolchain for both revisions
+        shell: bash
+        run: |
+          XCODE=$(ls -d /Applications/Xcode*.app | sort -V | tail -1)
+          sudo xcode-select -s "$XCODE"
+          mkdir -p artifacts
+          sw_vers > artifacts/environment.txt
+          xcodebuild -version >> artifacts/environment.txt
+          swift --version >> artifacts/environment.txt
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install comparison dependency
+        run: python3 -m pip install -r current/scripts/visual-tests/requirements.txt
+      - name: Test comparison logic
+        run: python3 current/scripts/visual-tests/test_compare.py
+      - name: Use the same capture harness for both revisions
+        # The harness must also work before this PR introduced visual review mode.
+        # App Sources and Resources remain those of each respective revision.
+        run: |
+          cp current/Tests/NotificationNannyTests/SettingsSnapshotTests.swift baseline/Tests/NotificationNannyTests/SettingsSnapshotTests.swift
+          mkdir -p baseline/scripts/visual-tests
+          cp current/scripts/visual-tests/render.sh baseline/scripts/visual-tests/render.sh
+      - name: Render base revision
+        working-directory: baseline
+        run: scripts/visual-tests/render.sh "$GITHUB_WORKSPACE/artifacts/baseline"
+      - name: Render proposed revision
+        working-directory: current
+        run: scripts/visual-tests/render.sh "$GITHUB_WORKSPACE/artifacts/current"
+      - name: Compare (differences are advisory)
+        run: python3 current/scripts/visual-tests/compare.py artifacts/baseline artifacts/current artifacts/report
+      - name: Upload captures and report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: settings-visual-review
+          path: artifacts/
+          retention-days: 14
+          if-no-files-found: warn
