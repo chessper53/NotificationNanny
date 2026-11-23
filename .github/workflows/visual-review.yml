@@ -41,7 +41,7 @@ jobs:
       - name: Install comparison dependency
         run: python3 -m pip install -r current/scripts/visual-tests/requirements.txt
       - name: Test comparison logic
-        run: python3 current/scripts/visual-tests/test_compare.py
+        run: python3 -m unittest discover -s current/scripts/visual-tests -p 'test_*.py' -v
       - name: Use the same capture harness for both revisions
         # The harness must also work before this PR introduced visual review mode.
         # App Sources and Resources remain those of each respective revision.

@@ -12,7 +12,16 @@ if compgen -G "$OUT_DIR/*.png" > /dev/null; then
 fi
 # Isolate preferences, localization and caches from the desktop user.
 SNAPSHOT_HOME=$(mktemp -d "${TMPDIR:-/tmp}/nn-visual-home.XXXXXX")
-trap 'rm -rf "$SNAPSHOT_HOME"' EXIT
+cleanup() {
+    local result=$?
+    trap - EXIT
+    # Xcode may mount a read only Metal toolchain here. Never traverse other filesystems.
+    if ! find "$SNAPSHOT_HOME" -xdev -depth -delete 2>/dev/null; then
+        echo "warning: temporary snapshot home retained mounted or busy files" >&2
+    fi
+    exit "$result"
+}
+trap cleanup EXIT
 NN_VISUAL_REVIEW=1 NN_SNAPSHOT_DIR="$OUT_DIR" CFFIXED_USER_HOME="$SNAPSHOT_HOME" \
     scripts/test.sh --filter SettingsSnapshotTests "$@"
 python3 - "$OUT_DIR" <<'PY'

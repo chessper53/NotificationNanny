@@ -23,7 +23,8 @@ Nine Settings content views, each in Light and Dark, at three configurations:
 - Minimum window pane: 469 × 412 points, active controls.
 
 All images use 2× resolution, demo settings and an English locale. Preferences and
-caches are isolated in a temporary home. Diagnostics stays collapsed so its live log
+caches are isolated in a temporary home. Cleanup skips mounted filesystems, such as
+Xcode's Metal toolchain, and reports busy files without changing the test result. Diagnostics stays collapsed so its live log
 timestamps are excluded. The existing website capture mode remains unchanged.
 
 These are content-pane snapshots. They do not cover the sidebar, window chrome,
@@ -61,7 +62,7 @@ could hide small missing controls. Use `--tolerance N` to adjust this, or
 captures also count as changes. An empty capture set is an error.
 
 ```sh
-build/visual-venv/bin/python scripts/visual-tests/test_compare.py
+build/visual-venv/bin/python -m unittest discover -s scripts/visual-tests -p 'test_*.py' -v
 ```
 
 For custom banners and Notification Center, continue using `scripts/banner-lab`
